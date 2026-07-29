@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trato Core - Produtos</title>
+
+    <link rel="stylesheet" href="produtos.css">
+</head>
+
+<body>
+
+<header class="topo">
+    <h1>TRATO CORE</h1>
+
+    <nav>
+        <a href="index.html">Novo Produto</a>
+        <a href="produtos.html" class="ativo">Produtos</a>
+    </nav>
+</header>
+
+<main class="container">
+
+    <section class="barra">
+        <input
+            type="text"
+            id="pesquisa"
+            placeholder="Pesquisar produto...">
+    </section>
+
+    <section>
+
+        <table id="tabelaProdutos">
+
+            <thead>
+
+                <tr>
+                    <th>Foto</th>
+                    <th>ID</th>
+                    <th>SKU</th>
+                    <th>Título</th>
+                    <th>Preço</th>
+                    <th>Quantidade</th>
+                    <th>Status</th>
+                    <th>Ações</th>
+                </tr>
+
+            </thead>
+
+            <tbody></tbody>
+
+        </table>
+
+    </section>
+
+</main>
+
+<div id="modalEditar" class="modal">
+
+    <div class="modal-box">
+
+        <h2>Editar Produto</h2>
+
+        <input type="hidden" id="editId">
+
+        <label>SKU</label>
+        <input type="text" id="editSku">
+
+        <label>Título</label>
+        <input type="text" id="editTitulo">
+
+        <label>Preço</label>
+        <input type="number" step="0.01" id="editPreco">
+
+        <label>Quantidade</label>
+        <input type="number" id="editQuantidade">
+
+        <label>Status</label>
+
+        <select id="editStatus">
+            <option value="NEW">NEW</option>
+            <option value="USED">USED</option>
+            <option value="SOLD">SOLD</option>
+        </select>
+
+        <div class="modal-botoes">
+            <button id="btnSalvar" class="editar">Salvar</button>
+            <button id="btnCancelar" class="cancelar">Cancelar</button>
+        </div>
+
+    </div>
+
+</div>
+
+<div id="modalImagem" class="modal">
+
+    <div class="modal-imagem">
+
+        <span id="fecharImagem">&times;</span>
+
+        <img
+            id="imagemGrande"
+            src=""
+            alt="Imagem do produto">
+
+    </div>
+
+</div>
+
+<script src="js/core/api.js"></script>
+<script src="js/services/productService.js"></script>
+<script src="js/services/imageService.js"></script>
+<script src="produtos.js"></script>
+
+</body>
+</html>

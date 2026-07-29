@@ -1,24 +1,30 @@
 {
   "name": "tratocore",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "directories": {
-    "doc": "docs"
-  },
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "version": "0.4.0",
+  "description": "Trato Core",
+  "main": "api/server.js",
   "type": "commonjs",
+  "scripts": {
+    "start": "node api/server.js",
+    "dev": "nodemon api/server.js"
+  },
+  "keywords": [
+    "tratocore",
+    "mercadolivre",
+    "ia",
+    "openai"
+  ],
+  "author": "Marco Aurélio Silva",
+  "license": "ISC",
   "dependencies": {
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
+    "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "multer": "^2.2.0",
+    "openai": "^6.49.0",
     "pg": "^8.22.0",
+    "sharp": "^0.35.3",
     "uuid": "^14.0.1"
   },
   "devDependencies": {

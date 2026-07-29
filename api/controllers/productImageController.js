@@ -1,90 +1,20 @@
-const ProductService = require("../services/productService");
+const ProductImageService = require("../services/productImageService");
 
 // ======================================================
-// LISTAR TODOS
-// ======================================================
-
-async function getAll(req, res) {
-
-    try {
-
-        const products = await ProductService.getAll();
-
-        return res.status(200).json(products);
-
-    }
-
-    catch (err) {
-
-        console.error(err);
-
-        return res.status(500).json({
-
-            success: false,
-            message: err.message
-
-        });
-
-    }
-
-}
-
-// ======================================================
-// BUSCAR POR ID
-// ======================================================
-
-async function getById(req, res) {
-
-    try {
-
-        const product = await ProductService.getById(req.params.id);
-
-        if (!product) {
-
-            return res.status(404).json({
-
-                success: false,
-                message: "Produto não encontrado."
-
-            });
-
-        }
-
-        return res.status(200).json(product);
-
-    }
-
-    catch (err) {
-
-        console.error(err);
-
-        return res.status(500).json({
-
-            success: false,
-            message: err.message
-
-        });
-
-    }
-
-}
-
-// ======================================================
-// CADASTRAR
+// CADASTRAR IMAGEM
 // ======================================================
 
 async function create(req, res) {
 
     try {
 
-        const product = await ProductService.create(req.body);
+        const image = await ProductImageService.create(req.body);
 
         return res.status(201).json({
 
             success: true,
-            message: "Produto cadastrado com sucesso.",
-
-            data: product
+            message: "Imagem cadastrada com sucesso.",
+            data: image
 
         });
 
@@ -106,37 +36,86 @@ async function create(req, res) {
 }
 
 // ======================================================
-// ATUALIZAR
+// LISTAR IMAGENS DO PRODUTO
 // ======================================================
 
-async function update(req, res) {
+async function getByProductId(req, res) {
 
     try {
 
-        const product = await ProductService.update(
-
-            req.params.id,
-            req.body
-
+        const images = await ProductImageService.getByProductId(
+            req.params.productId
         );
 
-        if (!product) {
+        return res.status(200).json(images);
 
-            return res.status(404).json({
+    }
 
-                success: false,
-                message: "Produto não encontrado."
+    catch (err) {
 
-            });
+        console.error(err);
 
-        }
+        return res.status(500).json({
+
+            success: false,
+            message: err.message
+
+        });
+
+    }
+
+}
+
+// ======================================================
+// IMAGEM PRINCIPAL
+// ======================================================
+
+async function getMainImage(req, res) {
+
+    try {
+
+        const image = await ProductImageService.getMainImage(
+            req.params.productId
+        );
+
+        return res.status(200).json(image);
+
+    }
+
+    catch (err) {
+
+        console.error(err);
+
+        return res.status(500).json({
+
+            success: false,
+            message: err.message
+
+        });
+
+    }
+
+}
+
+// ======================================================
+// DEFINIR IMAGEM PRINCIPAL
+// ======================================================
+
+async function setMainImage(req, res) {
+
+    try {
+
+        await ProductImageService.setMainImage(
+
+            req.params.productId,
+            req.params.imageId
+
+        );
 
         return res.status(200).json({
 
             success: true,
-            message: "Produto atualizado.",
-
-            data: product
+            message: "Imagem principal atualizada."
 
         });
 
@@ -165,12 +144,12 @@ async function remove(req, res) {
 
     try {
 
-        await ProductService.remove(req.params.id);
+        await ProductImageService.remove(req.params.id);
 
         return res.status(200).json({
 
             success: true,
-            message: "Produto removido."
+            message: "Imagem removida."
 
         });
 
@@ -191,12 +170,14 @@ async function remove(req, res) {
 
 }
 
+// ======================================================
+
 module.exports = {
 
-    getAll,
-    getById,
     create,
-    update,
+    getByProductId,
+    getMainImage,
+    setMainImage,
     remove
 
 };
