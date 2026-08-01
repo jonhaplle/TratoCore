@@ -11,6 +11,7 @@ const productsRoutes = require("./routes/products");
 const uploadRoutes = require("./routes/upload");
 const aiRoutes = require("./routes/ai");
 const productImagesRoutes = require("./routes/productImages");
+const mlRoutes = require("./routes/ml");
 
 const app = express();
 
@@ -61,6 +62,7 @@ app.use("/api/upload", uploadRoutes);
 app.use("/api/ai", aiRoutes);
 
 app.use("/api/product-images", productImagesRoutes);
+app.use("/api/ml", mlRoutes);
 
 // ======================================================
 // HOME
