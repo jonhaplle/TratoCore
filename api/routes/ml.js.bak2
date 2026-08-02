@@ -5,7 +5,6 @@ const controller = require("../controllers/mlController");
 
 router.get("/login", controller.login);
 router.get("/callback", controller.callback);
-router.get("/me", controller.me);
 
 router.post("/publish/:id", controller.publish);
 
