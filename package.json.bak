@@ -1,13 +1,12 @@
 {
   "name": "tratocore",
-  "version": "0.5.0",
-  "description": "TratoCore Platform",
+  "version": "0.4.0",
+  "description": "Trato Core",
   "main": "api/server.js",
   "type": "commonjs",
   "scripts": {
     "start": "node api/server.js",
-    "dev": "nodemon api/server.js",
-    "doctor": "node tools/doctor.js"
+    "dev": "nodemon api/server.js"
   },
   "keywords": [
     "tratocore",
