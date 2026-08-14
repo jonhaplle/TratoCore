@@ -56,7 +56,31 @@ async function getById(id) {
 
     const result = await db.query(sql, [id]);
 
-    return result.rows[0] || null;
+    if (!result.rows.length) {
+        return null;
+    }
+
+    const product = result.rows[0];
+
+    product.sale_price = Number(product.sale_price || 0);
+    product.quantity = Math.max(1, Number(product.quantity || 1));
+
+    product.condition =
+        String(product.condition || "used").toLowerCase() === "new"
+            ? "new"
+            : "used";
+
+    product.ml_listing_type =
+        product.ml_listing_type || "gold_special";
+
+    product.brand = product.brand || "";
+    product.model = product.model || "";
+    product.gtin = product.gtin || "";
+
+    product.title = (product.title || "").trim();
+    product.description = product.description || "";
+
+    return product;
 
 }
 
@@ -75,31 +99,47 @@ async function create(product) {
             description,
             sale_price,
             quantity,
-            status
+            status,
+            product_type,
+            brand,
+            line,
+            model,
+            generation,
+            version,
+            color,
+            condition,
+            ai_confidence
         )
         VALUES
         (
-            $1,$2,$3,$4,$5,$6,$7
+            $1,$2,$3,$4,$5,$6,$7,$8,
+            $9,$10,$11,$12,$13,$14,$15,$16
         )
         RETURNING *
     `;
 
     const values = [
-
-        product.sku,
-        product.barcode,
-        product.title,
-        product.description,
-        product.sale_price,
-        product.quantity,
-        product.status || "NEW"
-
+        product.sku || "",
+        product.barcode || "",
+        product.title || "",
+        product.description || "",
+        Number(product.sale_price || 0),
+        Math.max(1, Number(product.quantity || 1)),
+        product.status || "NEW",
+        product.product_type || "",
+        product.brand || "",
+        product.line || "",
+        product.model || "",
+        product.generation || "",
+        product.version || "",
+        product.color || "",
+        product.condition || "used",
+        Number(product.ai_confidence || 0)
     ];
 
     const result = await db.query(sql, values);
 
     return result.rows[0];
-
 }
 
 // ======================================================
@@ -111,38 +151,52 @@ async function update(id, product) {
     const sql = `
         UPDATE products
         SET
-
             sku=$1,
             barcode=$2,
             title=$3,
             description=$4,
             sale_price=$5,
             quantity=$6,
-            status=$7
-
-        WHERE id=$8
-
+            status=$7,
+            product_type=$8,
+            brand=$9,
+            line=$10,
+            model=$11,
+            generation=$12,
+            version=$13,
+            color=$14,
+            condition=$15,
+            ai_confidence=$16
+        WHERE id=$17
         RETURNING *
     `;
 
     const values = [
-
-        product.sku,
-        product.barcode,
-        product.title,
-        product.description,
-        product.sale_price,
-        product.quantity,
-        product.status,
+        product.sku || "",
+        product.barcode || "",
+        product.title || "",
+        product.description || "",
+        Number(product.sale_price || 0),
+        Math.max(1, Number(product.quantity || 1)),
+        product.status || "NEW",
+        product.product_type || "",
+        product.brand || "",
+        product.line || "",
+        product.model || "",
+        product.generation || "",
+        product.version || "",
+        product.color || "",
+        product.condition || "used",
+        Number(product.ai_confidence || 0),
         id
-
     ];
 
     const result = await db.query(sql, values);
 
     return result.rows[0] || null;
-
 }
+
+// ======================================================
 
 // ======================================================
 // REMOVER
@@ -153,7 +207,7 @@ async function remove(id) {
     const sql = `
         DELETE
         FROM products
-        WHERE id=$1
+        WHERE id = $1
     `;
 
     await db.query(sql, [id]);

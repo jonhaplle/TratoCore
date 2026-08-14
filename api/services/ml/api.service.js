@@ -1,74 +1,19 @@
 ﻿const axios = require("axios");
-const querystring = require("querystring");
 const pool = require("../../db");
+const tokenService = require("./token.service");
 
-exports.getLoginUrl = () => {
+const API = "https://api.mercadolibre.com";
 
-    const params = querystring.stringify({
-        response_type: "code",
-        client_id: process.env.ML_CLIENT_ID,
-        redirect_uri: process.env.ML_REDIRECT_URI
-    });
+let accessToken = null;
 
-    return "https://auth.mercadolivre.com.br/authorization?" + params;
-
-};
-
-exports.callback = async (req) => {
-
-    const code = req.query.code;
-
-    if (!code)
-        throw new Error("Código de autorização não informado.");
-
-    const response = await axios.post(
-        "https://api.mercadolibre.com/oauth/token",
-        {
-            grant_type: "authorization_code",
-            client_id: process.env.ML_CLIENT_ID,
-            client_secret: process.env.ML_CLIENT_SECRET,
-            code,
-            redirect_uri: process.env.ML_REDIRECT_URI
-        },
-        {
-            headers: {
-                "Content-Type": "application/json"
-            }
-        }
-    );
-
-    const token = response.data;
-
-    await pool.query(`
-        INSERT INTO ml_tokens
-        (user_id, access_token, refresh_token, token_type, scope, expires_in)
-        VALUES ($1,$2,$3,$4,$5,$6)
-        ON CONFLICT (user_id)
-        DO UPDATE SET
-            access_token = EXCLUDED.access_token,
-            refresh_token = EXCLUDED.refresh_token,
-            token_type = EXCLUDED.token_type,
-            scope = EXCLUDED.scope,
-            expires_in = EXCLUDED.expires_in,
-            created_at = NOW()
-    `, [
-        token.user_id,
-        token.access_token,
-        token.refresh_token,
-        token.token_type,
-        token.scope,
-        token.expires_in
-    ]);
-
-    return {
-        success: true,
-        message: "Token salvo com sucesso.",
-        user_id: token.user_id
-    };
-
+exports.setAccessToken = (token) => {
+    accessToken = token;
 };
 
 exports.getAccessToken = async () => {
+    if (accessToken) {
+        return accessToken;
+    }
 
     const result = await pool.query(`
         SELECT access_token
@@ -77,80 +22,182 @@ exports.getAccessToken = async () => {
         LIMIT 1
     `);
 
-    if (!result.rows.length)
-        throw new Error("Token não encontrado.");
+    if (result.rows.length === 0) {
+        throw new Error("Access Token nao configurado.");
+    }
 
-    return result.rows[0].access_token;
+    accessToken = result.rows[0].access_token;
 
+    return accessToken;
 };
 
-exports.refreshAccessToken = async () => {
+async function request(config, retry = true) {
+    try {
+        const token = await exports.getAccessToken();
 
-    const result = await pool.query(`
-        SELECT *
-        FROM ml_tokens
-        ORDER BY created_at DESC
-        LIMIT 1
-    `);
+        config.headers = {
+            ...(config.headers || {}),
+            Authorization: `Bearer ${token}`,
+            "User-Agent": "TratoCore/1.0"
+        };
 
-    if (!result.rows.length)
-        throw new Error("Token não encontrado.");
+        return await axios(config);
 
-    const atual = result.rows[0];
+    } catch (err) {
 
-    const response = await axios.post(
-        "https://api.mercadolibre.com/oauth/token",
-        {
-            grant_type: "refresh_token",
-            client_id: process.env.ML_CLIENT_ID,
-            client_secret: process.env.ML_CLIENT_SECRET,
-            refresh_token: atual.refresh_token
-        },
-        {
-            headers: {
-                "Content-Type": "application/json"
-            }
+        if (
+            retry &&
+            err.response &&
+            err.response.status === 401
+        ) {
+            console.log("====================================");
+            console.log("ACCESS TOKEN EXPIRADO");
+            console.log("RENOVANDO TOKEN...");
+            console.log("====================================");
+
+            accessToken = await tokenService.refresh();
+
+            return request(config, false);
         }
-    );
 
-    const novo = response.data;
+        throw err;
+    }
+}
 
-    await pool.query(`
-        UPDATE ml_tokens
-        SET
-            access_token=$1,
-            refresh_token=$2,
-            token_type=$3,
-            scope=$4,
-            expires_in=$5,
-            created_at=NOW()
-        WHERE user_id=$6
-    `, [
-        novo.access_token,
-        novo.refresh_token,
-        novo.token_type,
-        novo.scope,
-        novo.expires_in,
-        atual.user_id
-    ]);
+exports.publishItem = async (item) => {
 
-    return novo.access_token;
+    const response = await request({
+        method: "post",
+        url: `${API}/items`,
+        data: item,
+        headers: {
+            "Content-Type": "application/json"
+        },
+        timeout: 30000
+    });
 
+    return response.data;
+};
+
+exports.createDescription = async (itemId, description) => {
+
+    const response = await request({
+        method: "post",
+        url: `${API}/items/${itemId}/description`,
+        data: {
+            plain_text: description
+        },
+        headers: {
+            "Content-Type": "application/json"
+        },
+        timeout: 30000
+    });
+
+    return response.data;
+};
+
+exports.getItem = async (itemId) => {
+
+    const response = await request({
+        method: "get",
+        url: `${API}/items/${itemId}`,
+        timeout: 30000
+    });
+
+    return response.data;
 };
 
 exports.getMe = async () => {
 
-    const token = await exports.getAccessToken();
-
-    const response = await axios.get(
-        "https://api.mercadolibre.com/users/me",
-        {
-            headers: {
-                Authorization: `Bearer ${token}`
-            }
-        }
-    );
+    const response = await request({
+        method: "get",
+        url: `${API}/users/me`,
+        timeout: 30000
+    });
 
     return response.data;
+};
 
+exports.updateItem = async (itemId, body) => {
+
+    const response = await request({
+        method: "put",
+        url: `${API}/items/${itemId}`,
+        data: body,
+        headers: {
+            "Content-Type": "application/json"
+        },
+        timeout: 30000
+    });
+
+    return response.data;
+};
+
+// ======================================================
+// PREDITOR DE CATEGORIA MERCADO LIVRE
+// ======================================================
+
+exports.predictCategory = async (title) => {
+
+    if (!title || !String(title).trim()) {
+        throw new Error(
+            "Titulo nao informado para previsao de categoria."
+        );
+    }
+
+    const response = await request({
+        method: "get",
+        url: `${API}/sites/MLB/domain_discovery/search`,
+        params: {
+            limit: 3,
+            q: String(title).trim()
+        },
+        timeout: 30000
+    });
+
+    if (
+        !Array.isArray(response.data) ||
+        response.data.length === 0
+    ) {
+        throw new Error(
+            "Mercado Livre nao encontrou categoria para este produto."
+        );
+    }
+
+    return response.data;
+};
+
+// ======================================================
+// BUSCADOR DE PRODUTOS DE CATALOGO
+// ======================================================
+
+exports.searchProducts = async (params = {}) => {
+
+    const response = await request({
+        method: "get",
+        url: `${API}/products/search`,
+        params: {
+            site_id: "MLB",
+            status: "active",
+            ...params
+        },
+        timeout: 30000
+    });
+
+    return response.data;
+};
+
+exports.getProduct = async (productId) => {
+
+    if (!productId) {
+        throw new Error("Product ID nao informado.");
+    }
+
+    const response = await request({
+        method: "get",
+        url: `${API}/products/${encodeURIComponent(productId)}`,
+        timeout: 30000
+    });
+
+    return response.data;
 };

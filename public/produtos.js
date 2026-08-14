@@ -25,20 +25,16 @@ async function carregarProdutos() {
 
         const response = await fetch("/api/products");
 
-        if (!response.ok) {
+        if (!response.ok)
             throw new Error("Erro ao buscar produtos.");
-        }
 
         produtos = await response.json();
 
         renderizarTabela(produtos);
 
-    }
-
-    catch (err) {
+    } catch (err) {
 
         console.error(err);
-
         alert("Erro ao carregar produtos.");
 
     }
@@ -66,9 +62,7 @@ function renderizarTabela(lista) {
                     style="width:60px;height:60px;object-fit:cover;cursor:pointer;border-radius:6px"
                     onclick="abrirImagem('${produto.original_url}')">
               `
-            : `
-                <div class="sem-foto">📦</div>
-              `;
+            : `<div class="sem-foto">📦</div>`;
 
         tr.innerHTML = `
 
@@ -87,6 +81,12 @@ function renderizarTabela(lista) {
             <td>${produto.status}</td>
 
             <td>
+
+                <button
+                    class="publicar"
+                    onclick="publicarML(${produto.id})">
+                    Publicar ML
+                </button>
 
                 <button
                     class="editar"
@@ -109,6 +109,7 @@ function renderizarTabela(lista) {
     });
 
 }
+
 // =========================================
 // PESQUISA
 // =========================================
@@ -141,15 +142,10 @@ function editar(id) {
         return;
 
     editId.value = produto.id;
-
     editSku.value = produto.sku || "";
-
     editTitulo.value = produto.title;
-
     editPreco.value = produto.sale_price;
-
     editQuantidade.value = produto.quantity;
-
     editStatus.value = produto.status;
 
     modal.style.display = "flex";
@@ -213,7 +209,8 @@ btnSalvar.onclick = async () => {
         modal.style.display = "none";
 
         await carregarProdutos();
-            }
+
+    }
 
     catch (err) {
 
@@ -237,11 +234,8 @@ btnCancelar.onclick = () => {
 
 window.onclick = (e) => {
 
-    if (e.target === modal) {
-
+    if (e.target === modal)
         modal.style.display = "none";
-
-    }
 
 };
 
@@ -262,11 +256,8 @@ async function excluirProduto(id) {
 
         });
 
-        if (!response.ok) {
-
+        if (!response.ok)
             throw new Error("Erro ao excluir.");
-
-        }
 
         await carregarProdutos();
 
@@ -283,12 +274,60 @@ async function excluirProduto(id) {
 }
 
 // =========================================
-// DISPONIBILIZA FUNÇÕES GLOBAIS
+// PUBLICAR MERCADO LIVRE
+// =========================================
+
+async function publicarML(id) {
+
+    if (!confirm("Deseja publicar este produto no Mercado Livre?"))
+        return;
+
+    try {
+
+        const response = await fetch(`/api/ml/publish/${id}`, {
+
+            method: "POST"
+
+        });
+
+        const retorno = await response.json();
+
+        if (!response.ok) {
+
+            console.error(retorno);
+
+            alert(retorno.error || "Erro ao publicar.");
+
+            return;
+
+        }
+
+        alert("Produto publicado com sucesso!");
+
+        console.log(retorno);
+
+        await carregarProdutos();
+
+    }
+
+    catch (err) {
+
+        console.error(err);
+
+        alert("Erro ao publicar no Mercado Livre.");
+
+    }
+
+}
+
+// =========================================
+// DISPONIBILIZA FUNÇÕES
 // =========================================
 
 window.editar = editar;
 window.excluirProduto = excluirProduto;
+window.publicarML = publicarML;
 
 // =========================================
 
-carregarProdutos()
+carregarProdutos();

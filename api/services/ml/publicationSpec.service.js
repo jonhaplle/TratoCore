@@ -1,4 +1,5 @@
 const apiService = require("./api.service");
+const catalogMatcher = require("./catalogMatcher.service");
 
 const DEFAULT_SITE_ID = process.env.ML_SITE_ID || "MLB";
 const DEFAULT_LISTING_TYPE =

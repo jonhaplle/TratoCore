@@ -1,9 +1,9 @@
-﻿const express = require("express");
+const express = require("express");
 const multer = require("multer");
 const sharp = require("sharp");
 const path = require("path");
 const fs = require("fs");
-const { v4: uuidv4 } = require("uuid");const ProductImageService = require("../services/productImageService");
+const { v4: uuidv4 } = require("uuid");
 
 const router = express.Router();
 
@@ -17,7 +17,7 @@ const originalsDir = path.join(storageRoot, "originals");
 const thumbsDir = path.join(storageRoot, "thumbs");
 const tempDir = path.join(storageRoot, "temp");
 
-[storageRoot, originalsDir, thumbsDir, tempDir].forEach(dir => {
+[storageRoot, originalsDir, thumbsDir, tempDir].forEach((dir) => {
 
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
@@ -53,7 +53,8 @@ const upload = multer({
 
     limits: {
 
-        fileSize: 20 * 1024 * 1024
+        fileSize: 20 * 1024 * 1024,
+        files: 10
 
     },
 
@@ -70,7 +71,9 @@ const upload = multer({
 
         if (!permitidos.includes(file.mimetype)) {
 
-            return cb(new Error("Formato de imagem nÃ£o permitido."));
+            return cb(
+                new Error("Formato de imagem não permitido.")
+            );
 
         }
 
@@ -81,14 +84,16 @@ const upload = multer({
 });
 
 // ======================================================
-// UPLOAD
+// UPLOAD MULTIFOTO
 // ======================================================
 
-router.post("/", upload.single("imagem"), async (req, res, next) => {
+router.post("/", upload.array("imagem", 10), async (req, res, next) => {
+
+    const arquivosProcessados = [];
 
     try {
 
-        if (!req.file) {
+        if (!req.files || req.files.length === 0) {
 
             return res.status(400).json({
 
@@ -99,55 +104,112 @@ router.post("/", upload.single("imagem"), async (req, res, next) => {
 
         }
 
-        const extensao = path.extname(req.file.filename).toLowerCase();
-
-        const baseName = path.basename(req.file.filename, extensao);
-
-        const originalName = baseName + extensao;
-
-        const thumbName = baseName + ".webp";
-
-        const tempFile = req.file.path;
-
-        const originalFile = path.join(originalsDir, originalName);
-
-        const thumbFile = path.join(thumbsDir, thumbName);
-
         // ==================================================
-        // ORIGINAL
+        // PROCESSAR TODAS AS IMAGENS
         // ==================================================
 
-        fs.copyFileSync(tempFile, originalFile);
+        for (const file of req.files) {
+
+            const extensao = path.extname(file.filename).toLowerCase();
+
+            const baseName = path.basename(
+                file.filename,
+                extensao
+            );
+
+            const originalName = baseName + extensao;
+
+            const thumbName = baseName + ".webp";
+
+            const tempFile = file.path;
+
+            const originalFile = path.join(
+                originalsDir,
+                originalName
+            );
+
+            const thumbFile = path.join(
+                thumbsDir,
+                thumbName
+            );
+
+            // ==================================================
+            // DIMENSÕES
+            // ==================================================
+
+            const metadata = await sharp(tempFile).metadata();
+
+            // ==================================================
+            // ORIGINAL
+            // ==================================================
+
+            fs.copyFileSync(
+                tempFile,
+                originalFile
+            );
+
+            // ==================================================
+            // MINIATURA
+            // ==================================================
+
+            await sharp(tempFile)
+
+                .rotate()
+
+                .resize(250, 250, {
+
+                    fit: "inside",
+                    withoutEnlargement: true
+
+                })
+
+                .webp({
+
+                    quality: 75
+
+                })
+
+                .toFile(thumbFile);
+
+            // ==================================================
+            // REMOVE TEMP
+            // ==================================================
+
+            if (fs.existsSync(tempFile)) {
+
+                fs.unlinkSync(tempFile);
+
+            }
+
+            // ==================================================
+            // RESULTADO
+            // ==================================================
+
+            arquivosProcessados.push({
+
+                fileName: originalName,
+
+                original: file.originalname,
+
+                fileSize: file.size,
+
+                mimeType: file.mimetype,
+
+                width: metadata.width || null,
+
+                height: metadata.height || null,
+
+                originalUrl:
+                    "/storage/originals/" + originalName,
+
+                thumbUrl:
+                    "/storage/thumbs/" + thumbName
+
+            });
+
+        }
 
         // ==================================================
-        // MINIATURA
-        // ==================================================
-
-        await sharp(tempFile)
-
-            .rotate()
-
-            .resize(250, 250, {
-
-                fit: "inside",
-                withoutEnlargement: true
-
-            })
-
-            .webp({
-
-                quality: 75
-
-            })
-
-            .toFile(thumbFile);
-
-        // ==================================================
-        // REMOVE TEMP
-        // ==================================================
-
-        fs.unlinkSync(tempFile);
-                // ==================================================
         // RETORNO
         // ==================================================
 
@@ -155,21 +217,13 @@ router.post("/", upload.single("imagem"), async (req, res, next) => {
 
             sucesso: true,
 
-            arquivo: {
+            quantidade: arquivosProcessados.length,
 
-                nome: originalName,
+            // Compatibilidade com o upload antigo
+            arquivo: arquivosProcessados[0],
 
-                original: req.file.originalname,
-
-                tamanho: req.file.size,
-
-                tipo: req.file.mimetype,
-
-                originalUrl: "/storage/originals/" + originalName,
-
-                thumbUrl: "/storage/thumbs/" + thumbName
-
-            }
+            // Novo formato multifoto
+            arquivos: arquivosProcessados
 
         });
 
@@ -177,45 +231,74 @@ router.post("/", upload.single("imagem"), async (req, res, next) => {
 
     catch (err) {
 
-        // Remove arquivos caso exista erro
+        console.error("Erro no upload:", err);
+
+        // ==================================================
+        // LIMPEZA DOS TEMPORÁRIOS
+        // ==================================================
 
         try {
 
-            if (req.file?.path && fs.existsSync(req.file.path)) {
-                fs.unlinkSync(req.file.path);
+            if (req.files) {
+
+                for (const file of req.files) {
+
+                    if (
+                        file.path &&
+                        fs.existsSync(file.path)
+                    ) {
+
+                        fs.unlinkSync(file.path);
+
+                    }
+
+                }
+
             }
 
-            const extensao = req.file
-                ? path.extname(req.file.filename).toLowerCase()
-                : "";
+            // ==================================================
+            // LIMPEZA DOS ARQUIVOS PROCESSADOS
+            // ==================================================
 
-            const baseName = req.file
-                ? path.basename(req.file.filename, extensao)
-                : "";
+            for (const arquivo of arquivosProcessados) {
 
-            const originalFile = path.join(
-                originalsDir,
-                baseName + extensao
-            );
+                const originalFile = path.join(
+                    originalsDir,
+                    arquivo.fileName
+                );
 
-            const thumbFile = path.join(
-                thumbsDir,
-                baseName + ".webp"
-            );
+                const baseName = path.basename(
+                    arquivo.fileName,
+                    path.extname(arquivo.fileName)
+                );
 
-            if (fs.existsSync(originalFile)) {
-                fs.unlinkSync(originalFile);
-            }
+                const thumbFile = path.join(
+                    thumbsDir,
+                    baseName + ".webp"
+                );
 
-            if (fs.existsSync(thumbFile)) {
-                fs.unlinkSync(thumbFile);
+                if (fs.existsSync(originalFile)) {
+
+                    fs.unlinkSync(originalFile);
+
+                }
+
+                if (fs.existsSync(thumbFile)) {
+
+                    fs.unlinkSync(thumbFile);
+
+                }
+
             }
 
         }
 
-        catch (e) {
+        catch (cleanupError) {
 
-            console.error("Erro limpando arquivos:", e);
+            console.error(
+                "Erro limpando arquivos:",
+                cleanupError
+            );
 
         }
 
