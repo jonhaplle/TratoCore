@@ -71,7 +71,7 @@ async function getById(id) {
             : "used";
 
     product.ml_listing_type =
-        product.ml_listing_type || "gold_special";
+        product.ml_listing_type || "gold_pro";
 
     product.brand = product.brand || "";
     product.model = product.model || "";

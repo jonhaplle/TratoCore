@@ -623,25 +623,38 @@ async function analyzePhoto() {
         }
 
         const p = json.resultado || {};
+        const identification = p.identification || {};
+        const draft = p.listing_draft || {};
 
-        aiProductType = p.product_type || "";
-        aiLine = p.line || "";
-        aiGeneration = p.generation || "";
-        aiVersion = p.version || "";
-        aiColor = p.color || "";
-        aiCondition = p.condition || "used";
+        // Compatibilidade defensiva: aceita tanto a resposta nova quanto
+        // a estrutura de identificação retornada pelo ML007 anterior.
+        const fallbackTitle = [
+            identification.brand,
+            identification.line,
+            identification.model,
+            identification.generation,
+            identification.product_type,
+            identification.color
+        ].map(v => String(v || "").trim()).filter(Boolean).join(" ");
+
+        aiProductType = p.product_type || identification.product_type || "";
+        aiLine = p.line || identification.line || "";
+        aiGeneration = p.generation || identification.generation || "";
+        aiVersion = p.version || identification.version || "";
+        aiColor = p.color || identification.color || "";
+        aiCondition = p.condition || identification.condition || "used";
         aiConfidence = Number(p.confidence || 0);
 
         if (title) {
-            title.value = p.title || "";
+            title.value = p.title || draft.title || fallbackTitle || "";
         }
 
         if (brand) {
-            brand.value = p.brand || "";
+            brand.value = p.brand || identification.brand || "";
         }
 
         if (model) {
-            model.value = p.model || "";
+            model.value = p.model || identification.model || "";
         }
 
         if (category) {
@@ -649,11 +662,11 @@ async function analyzePhoto() {
         }
 
         if (description) {
-            description.value = p.description || "";
+            description.value = p.description || draft.description || "";
         }
 
         if (salePrice) {
-            salePrice.value = p.suggested_price || "";
+            salePrice.value = p.suggested_price || draft.suggested_price || "";
         }
 
         await finalizarAnimacaoIA(true);

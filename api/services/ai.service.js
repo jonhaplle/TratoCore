@@ -63,6 +63,11 @@ REGRAS OBRIGATÓRIAS:
 5. Só considere a identificação consolidada quando houver evidência compatível.
 6. A descrição do anúncio deve usar apenas informações sustentadas pela identificação.
 7. O preço sugerido é estimativa comercial e não deve ser apresentado como fato de mercado.
+8. Gere também um rascunho de anúncio usando SOMENTE os fatos sustentados pela análise.
+9. O título deve ser objetivo, comercial e adequado ao Mercado Livre, sem inventar marca, modelo ou acessórios.
+10. Se marca/modelo não forem confirmados, não invente. Use o tipo de produto e as características confirmadas.
+11. Se houver ambiguidade sobre qual peça é o item principal, o título deve refletir a interpretação mais segura (por exemplo, "Base Carregadora para Controle Xbox Preta"), sem afirmar que o controle está incluído.
+12. A categoria retornada pela IA é apenas sugestão textual; a categoria oficial do Mercado Livre será resolvida posteriormente pelo serviço de publicação.
 
 RETORNE SOMENTE JSON VÁLIDO:
 {
@@ -100,6 +105,12 @@ RETORNE SOMENTE JSON VÁLIDO:
   "decision": {
     "status": "PROVISIONAL",
     "reason": ""
+  },
+  "listing_draft": {
+    "title": "",
+    "description": "",
+    "suggested_price": 0,
+    "category": ""
   }
 }
 `
@@ -135,6 +146,35 @@ RETORNE SOMENTE JSON VÁLIDO:
         // a identificação com a etapa posterior de geração do anúncio.
         const id = resultado.identification || {};
         const conf = resultado.confidence || {};
+        const draft = resultado.listing_draft || {};
+
+        // Fallback seguro: se o modelo não gerar o título, o TratoCore
+        // ainda entrega um título mínimo baseado exclusivamente nos fatos
+        // identificados, sem inventar marca/modelo.
+        const partesTitulo = [
+            id.brand,
+            id.line,
+            id.model,
+            id.generation,
+            id.product_type,
+            id.color
+        ].map(v => String(v || "").trim()).filter(Boolean);
+
+        let tituloFallback = partesTitulo.join(" ");
+
+        if (!tituloFallback && Array.isArray(resultado.facts) && resultado.facts.length) {
+            tituloFallback = String(id.product_type || "Produto identificado").trim();
+        }
+
+        const title = String(draft.title || resultado.title || tituloFallback || "").trim();
+        const description = String(
+            draft.description || resultado.description ||
+            (Array.isArray(resultado.facts) ? resultado.facts.slice(0, 6).join(" ") : "")
+        ).trim();
+
+        const suggestedPrice = Number(
+            draft.suggested_price ?? resultado.suggested_price ?? 0
+        );
 
         return {
             ...resultado,
@@ -148,10 +188,10 @@ RETORNE SOMENTE JSON VÁLIDO:
             condition: id.condition || "",
             confidence: Number(conf.score || 0),
             confidence_details: conf,
-            title: "",
-            description: "",
-            suggested_price: 0,
-            category: ""
+            title,
+            description,
+            suggested_price: Number.isFinite(suggestedPrice) ? suggestedPrice : 0,
+            category: String(draft.category || resultado.category || "").trim()
         };
     } catch (erro) {
         console.log("====================================");

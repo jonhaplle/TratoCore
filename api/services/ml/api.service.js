@@ -118,6 +118,90 @@ exports.getMe = async () => {
     return response.data;
 };
 
+
+// ======================================================
+// CATEGORIA / ATRIBUTOS / VALIDACAO
+// ======================================================
+
+exports.getCategory = async (categoryId) => {
+    if (!categoryId || !String(categoryId).trim()) {
+        throw new Error("category_id não informado.");
+    }
+
+    const response = await request({
+        method: "get",
+        url: `${API}/categories/${String(categoryId).trim()}`,
+        timeout: 30000
+    });
+
+    return response.data;
+};
+
+exports.getCategoryAttributes = async (categoryId) => {
+    if (!categoryId || !String(categoryId).trim()) {
+        throw new Error("category_id não informado.");
+    }
+
+    const response = await request({
+        method: "get",
+        url: `${API}/categories/${String(categoryId).trim()}/attributes`,
+        timeout: 30000
+    });
+
+    return response.data;
+};
+
+exports.getConditionalAttributes = async (categoryId, item) => {
+    if (!categoryId || !String(categoryId).trim()) {
+        throw new Error("category_id não informado.");
+    }
+
+    const response = await request({
+        method: "post",
+        url: `${API}/categories/${String(categoryId).trim()}/attributes/conditional`,
+        data: item,
+        headers: {
+            "Content-Type": "application/json"
+        },
+        timeout: 30000
+    });
+
+    return response.data;
+};
+
+exports.getAvailableListingTypes = async (userId, categoryId) => {
+    if (!userId || !categoryId) {
+        throw new Error(
+            "user_id e category_id são obrigatórios para consultar listing types."
+        );
+    }
+
+    const response = await request({
+        method: "get",
+        url: `${API}/users/${userId}/available_listing_types`,
+        params: {
+            category_id: categoryId
+        },
+        timeout: 30000
+    });
+
+    return response.data;
+};
+
+exports.validateItem = async (item) => {
+    const response = await request({
+        method: "post",
+        url: `${API}/items/validate`,
+        data: item,
+        headers: {
+            "Content-Type": "application/json"
+        },
+        timeout: 30000
+    });
+
+    return response.data;
+};
+
 exports.updateItem = async (itemId, body) => {
 
     const response = await request({

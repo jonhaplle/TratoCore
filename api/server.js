@@ -84,7 +84,7 @@ app.get("/api", (req, res) => {
 
         sistema: "Trato Core",
 
-        versao: "0.5.0",
+        versao: "0.6.0",
 
         status: "online",
 
@@ -146,7 +146,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
 
     console.log("======================================");
-    console.log("        TRATO CORE 0.5.0");
+    console.log("        TRATO CORE 0.6.0");
     console.log("======================================");
     console.log("");
     console.log("Servidor:");

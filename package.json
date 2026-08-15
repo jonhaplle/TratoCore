@@ -1,6 +1,6 @@
 {
   "name": "tratocore",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "TratoCore Platform",
   "main": "api/server.js",
   "type": "commonjs",
