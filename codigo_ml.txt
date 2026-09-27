@@ -1,0 +1,1713 @@
+
+
+============================================================
+ARQUIVO: C:\TratoCore\api\server.js
+============================================================
+require("dotenv").config();
+
+const express = require("express");
+const cors = require("cors");
+const path = require("path");
+const fs = require("fs");
+
+require("./db");
+
+const productsRoutes = require("./routes/products");
+const uploadRoutes = require("./routes/upload");
+const aiRoutes = require("./routes/ai");
+const productImagesRoutes = require("./routes/productImages");
+const mlRoutes = require("./routes/ml");
+
+const app = express();
+
+// ======================================================
+// CONFIGURAÇÕES
+// ======================================================
+
+app.use(cors());
+
+app.use(express.json({ limit: "50mb" }));
+
+app.use(express.urlencoded({
+    extended: true,
+    limit: "50mb"
+}));
+
+// ======================================================
+// PASTAS
+// ======================================================
+
+const storagePath = path.join(__dirname, "../storage");
+const productsPath = path.join(storagePath, "products");
+
+if (!fs.existsSync(storagePath)) {
+    fs.mkdirSync(storagePath, { recursive: true });
+}
+
+if (!fs.existsSync(productsPath)) {
+    fs.mkdirSync(productsPath, { recursive: true });
+}
+
+// ======================================================
+// ARQUIVOS ESTÁTICOS
+// ======================================================
+
+app.use(express.static(path.join(__dirname, "../public")));
+
+app.use("/storage", express.static(storagePath));
+
+// ======================================================
+// ROTAS API
+// ======================================================
+
+app.use("/api/products", productsRoutes);
+
+app.use("/api/upload", uploadRoutes);
+
+app.use("/api/ai", aiRoutes);
+
+app.use("/api/product-images", productImagesRoutes);
+app.use("/api/ml", mlRoutes);
+
+// ======================================================
+// HOME
+// ======================================================
+
+app.get("/", (req, res) => {
+
+    res.sendFile(path.join(__dirname, "../public/index.html"));
+
+});
+
+// ======================================================
+// STATUS
+// ======================================================
+
+app.get("/api", (req, res) => {
+
+    res.json({
+
+        sistema: "Trato Core",
+
+        versao: "0.5.0",
+
+        status: "online",
+
+        banco: "PostgreSQL",
+
+        upload: "ativo",
+
+        ia: "OpenAI",
+
+        storage: "/storage",
+
+        imagens: "product_images"
+
+    });
+
+});
+
+// ======================================================
+// 404
+// ======================================================
+
+app.use((req, res) => {
+
+    res.status(404).json({
+
+        erro: "Rota não encontrada."
+
+    });
+
+});
+
+// ======================================================
+// ERROS
+// ======================================================
+
+app.use((err, req, res, next) => {
+
+    console.error("======================================");
+    console.error("ERRO");
+    console.error("======================================");
+    console.error(err);
+
+    res.status(500).json({
+
+        sucesso: false,
+
+        erro: err.message || "Erro interno do servidor."
+
+    });
+
+});
+
+// ======================================================
+// START
+// ======================================================
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+
+    console.log("======================================");
+    console.log("        TRATO CORE 0.5.0");
+    console.log("======================================");
+    console.log("");
+    console.log("Servidor:");
+    console.log(`http://localhost:${PORT}`);
+    console.log("");
+    console.log("API:");
+    console.log(`http://localhost:${PORT}/api`);
+    console.log("");
+    console.log("Produtos:");
+    console.log(`http://localhost:${PORT}/api/products`);
+    console.log("");
+    console.log("Upload:");
+    console.log(`http://localhost:${PORT}/api/upload`);
+    console.log("");
+    console.log("Imagens:");
+    console.log(`http://localhost:${PORT}/api/product-images`);
+    console.log("");
+    console.log("IA:");
+    console.log(`http://localhost:${PORT}/api/ai/analyze`);
+    console.log("");
+    console.log("Storage:");
+    console.log(storagePath);
+    console.log("");
+    console.log("OpenAI:");
+    console.log(process.env.OPENAI_API_KEY ? "✅ Chave carregada" : "❌ Chave não encontrada");
+    console.log("");
+    console.log("======================================");
+
+});
+
+
+============================================================
+ARQUIVO: C:\TratoCore\api\routes\ml.js
+============================================================
+const express = require("express");
+const router = express.Router();
+
+const controller = require("../controllers/mlController");
+
+// ======================================================
+// MERCADO LIVRE
+// ======================================================
+
+// OAuth
+router.get("/login", controller.login);
+router.get("/callback", controller.callback);
+
+// Conta autenticada
+router.get("/me", controller.me);
+
+// Publica��o
+router.post("/publish/:id", controller.publish);
+
+// Health Check
+router.get("/health", (req, res) => {
+    res.json({
+        success: true,
+        service: "Mercado Livre",
+        status: "online",
+        timestamp: new Date().toISOString()
+    });
+});
+
+module.exports = router;
+
+
+============================================================
+ARQUIVO: C:\TratoCore\api\controllers\mlController.js
+============================================================
+const publishService = require("../services/ml/publish.service");
+const oauthService = require("../services/ml/oauth.service");
+const api = require("../services/ml/api.service");
+
+exports.login = (req, res) => {
+
+    res.redirect(oauthService.getLoginUrl());
+
+};
+
+exports.callback = async (req, res) => {
+
+    try {
+
+        const result = await oauthService.callback(req);
+
+        res.json(result);
+
+    } catch (err) {
+
+        console.error("====================================");
+        console.error("ERRO CALLBACK OAUTH");
+        console.error("====================================");
+
+        console.error(err.response?.data || err);
+
+        res.status(500).json({
+            success: false,
+            error: err.response?.data || err.message
+        });
+
+    }
+
+};
+
+exports.me = async (req, res) => {
+
+    try {
+
+        const me = await api.getMe();
+
+        res.json(me);
+
+    } catch (err) {
+
+        console.error("====================================");
+        console.error("ERRO CONSULTA USU�RIO");
+        console.error("====================================");
+
+        console.error(err.response?.data || err);
+
+        res.status(500).json({
+            success: false,
+            error: err.response?.data || err.message
+        });
+
+    }
+
+};
+
+exports.publish = async (req, res) => {
+
+    try {
+
+        console.log("====================================");
+        console.log("PUBLICA��O SOLICITADA");
+        console.log("Produto:", req.params.id);
+        console.log("====================================");
+
+        const result = await publishService.publish(req.params.id);
+
+        res.json(result);
+
+    } catch (err) {
+
+        console.error("====================================");
+        console.error("ERRO PUBLICA��O");
+        console.error("====================================");
+
+        if (err.response) {
+
+            console.log("HTTP:", err.response.status);
+
+            console.dir(err.response.data, {
+                depth: null
+            });
+
+            return res.status(err.response.status).json({
+                success: false,
+                error: err.response.data
+            });
+
+        }
+
+        console.error(err.stack || err.message);
+
+        return res.status(500).json({
+            success: false,
+            error: err.message
+        });
+
+    }
+
+};
+
+exports.getItem = (req, res) => {
+
+    res.json({
+        ok: true
+    });
+
+};
+
+exports.update = (req, res) => {
+
+    res.json({
+        ok: true
+    });
+
+};
+
+exports.pause = (req, res) => {
+
+    res.json({
+        ok: true
+    });
+
+};
+
+exports.activate = (req, res) => {
+
+    res.json({
+        ok: true
+    });
+
+};
+
+
+============================================================
+ARQUIVO: C:\TratoCore\api\services\ml\api.service.js
+============================================================
+const axios = require("axios");
+const pool = require("../../db");
+const tokenService = require("./token.service");
+
+const API = "https://api.mercadolibre.com";
+
+let accessToken = null;
+
+exports.setAccessToken = (token) => {
+    accessToken = token;
+};
+
+exports.getAccessToken = async () => {
+
+    if (accessToken) {
+        return accessToken;
+    }
+
+    const result = await pool.query(`
+        SELECT access_token
+        FROM ml_tokens
+        ORDER BY created_at DESC
+        LIMIT 1
+    `);
+
+    if (result.rows.length === 0) {
+        throw new Error("Access Token n�o configurado.");
+    }
+
+    accessToken = result.rows[0].access_token;
+
+    return accessToken;
+
+};
+
+async function request(config, retry = true) {
+
+    try {
+
+        const token = await exports.getAccessToken();
+
+        config.headers = {
+            ...(config.headers || {}),
+            Authorization: `Bearer ${token}`,
+            "User-Agent": "TratoCore/1.0"
+        };
+
+        return await axios(config);
+
+    } catch (err) {
+
+        if (
+            retry &&
+            err.response &&
+            err.response.status === 401
+        ) {
+
+            console.log("====================================");
+            console.log("ACCESS TOKEN EXPIRADO");
+            console.log("RENOVANDO TOKEN...");
+            console.log("====================================");
+
+            accessToken = await tokenService.refresh();
+
+            return request(config, false);
+
+        }
+
+        throw err;
+
+    }
+
+}
+
+exports.publishItem = async (item) => {
+
+    try {
+
+        console.log("====================================");
+        console.log("PUBLICANDO AN�NCIO MERCADO LIVRE");
+        console.log("====================================");
+
+        const response = await request({
+            method: "post",
+            url: `${API}/items`,
+            data: item,
+            headers: {
+                "Content-Type": "application/json"
+            },
+            timeout: 30000
+        });
+
+        console.log("====================================");
+        console.log("AN�NCIO PUBLICADO");
+        console.log("ID:", response.data.id);
+        console.log("STATUS:", response.data.status);
+        console.log("====================================");
+
+        return response.data;
+
+    } catch (err) {
+
+        console.log("====================================");
+        console.log("ERRO API MERCADO LIVRE");
+        console.log("====================================");
+
+        if (err.response) {
+
+            console.log("HTTP:", err.response.status);
+
+            console.dir(err.response.data, {
+                depth: null
+            });
+
+        } else {
+
+            console.error(err.message);
+
+        }
+
+        throw err;
+
+    }
+
+};
+
+exports.createDescription = async (itemId, description) => {
+
+    const response = await request({
+        method: "post",
+        url: `${API}/items/${itemId}/description`,
+        data: {
+            plain_text: description
+        },
+        headers: {
+            "Content-Type": "application/json"
+        },
+        timeout: 30000
+    });
+
+    return response.data;
+
+};
+
+exports.getItem = async (itemId) => {
+
+    const response = await request({
+        method: "get",
+        url: `${API}/items/${itemId}`,
+        timeout: 30000
+    });
+
+    return response.data;
+
+};
+
+exports.getMe = async () => {
+
+    const response = await request({
+        method: "get",
+        url: `${API}/users/me`,
+        timeout: 30000
+    });
+
+    return response.data;
+
+};
+
+exports.updateItem = async (itemId, body) => {
+
+    const response = await request({
+        method: "put",
+        url: `${API}/items/${itemId}`,
+        data: body,
+        headers: {
+            "Content-Type": "application/json"
+        },
+        timeout: 30000
+    });
+
+    return response.data;
+
+};
+
+
+============================================================
+ARQUIVO: C:\TratoCore\api\services\ml\item.service.js
+============================================================
+const pictureService = require("./picture.service");
+
+exports.build = async (product, pictures) => {
+
+    const uploadedPictures = await pictureService.upload(
+        pictures.map(p => ({
+            source: p.original_url || p.source || p.path,
+            path: p.path
+        }))
+    );
+
+    if (!uploadedPictures.length) {
+        throw new Error("Nenhuma imagem válida foi enviada.");
+    }
+
+    if (!product.title || !product.title.trim()) {
+        throw new Error("Produto sem título.");
+    }
+
+    if (!product.ml_category_id) {
+        throw new Error("Produto sem categoria do Mercado Livre.");
+    }
+
+    const price = Number(product.sale_price);
+
+    if (isNaN(price) || price <= 0) {
+        throw new Error("Preço inválido.");
+    }
+
+    const quantity = Math.max(
+        1,
+        Number(product.quantity || 1)
+    );
+
+    const condition =
+        String(product.condition || "used").toLowerCase() === "new"
+            ? "new"
+            : "used";
+
+    const attributes = [];
+
+    // ======================================================
+    // MARCA
+    // ======================================================
+
+    if (product.brand) {
+
+        attributes.push({
+            id: "BRAND",
+            value_name: product.brand
+        });
+
+    }
+
+    // ======================================================
+    // CATEGORIA: PRATOS - MLB191838
+    // ======================================================
+
+    if (product.ml_category_id === "MLB191838") {
+
+        // Tipo de prato
+        attributes.push({
+            id: "DISH_PLATE_TYPE",
+            value_id: "2528231"
+        });
+
+        // Cor
+        if (product.color) {
+
+            const color = String(product.color).trim().toLowerCase();
+
+            if (
+                color === "marrom" ||
+                color === "âmbar" ||
+                color === "ambar"
+            ) {
+
+                attributes.push({
+                    id: "COLOR",
+                    value_id: "52005"
+                });
+
+            } else {
+
+                attributes.push({
+                    id: "COLOR",
+                    value_name: product.color
+                });
+
+            }
+
+        }
+
+        // Material
+        attributes.push({
+            id: "MATERIAL",
+            value_id: "2431731"
+        });
+
+        // Formato de venda
+        attributes.push({
+            id: "SALE_FORMAT",
+            value_id: "1359392"
+        });
+
+        // Quantidade de unidades no kit
+        attributes.push({
+            id: "UNITS_PER_PACK",
+            value_name: String(quantity === 1 ? 4 : quantity)
+        });
+
+    }
+
+    // ======================================================
+    // CONDIÇÃO DO ITEM
+    // ======================================================
+
+    attributes.push({
+        id: "ITEM_CONDITION",
+        value_id: condition === "used"
+            ? "2230581"
+            : "2230582"
+    });
+
+    // ======================================================
+    // PRODUTO SEM GTIN
+    //
+    // Para este caso:
+    // SALE_FORMAT = Kit
+    // EMPTY_GTIN_REASON = 17055159
+    //
+    // Não usamos GTIN falso.
+    // ======================================================
+
+    if (!product.gtin) {
+
+        attributes.push({
+            id: "EMPTY_GTIN_REASON",
+            value_id: "17055159"
+        });
+
+    } else {
+
+        attributes.push({
+            id: "GTIN",
+            value_name: String(product.gtin).trim()
+        });
+
+    }
+
+    // ======================================================
+    // FAMÍLIA DO PRODUTO
+    // ======================================================
+
+    const familyName =
+        String(product.title || "")
+            .trim()
+            .substring(0, 60);
+
+    // ======================================================
+    // PAYLOAD MERCADO LIVRE
+    // ======================================================
+
+    const item = {
+
+        family_name: familyName,
+
+        category_id: product.ml_category_id,
+
+        price,
+
+        currency_id: "BRL",
+
+        available_quantity: quantity,
+
+        buying_mode: "buy_it_now",
+
+        listing_type_id:
+            product.ml_listing_type || "gold_pro",
+
+        condition,
+
+        pictures: uploadedPictures,
+
+        attributes
+
+    };
+
+    // ======================================================
+    // DEBUG
+    // ======================================================
+
+    console.log("========== PAYLOAD ML ==========");
+    console.dir(item, {
+        depth: null
+    });
+    console.log("================================");
+
+    return item;
+};
+
+
+============================================================
+ARQUIVO: C:\TratoCore\api\services\ml\mlProduct.service.js
+============================================================
+const pool = require("../../db");
+
+exports.savePublication = async (productId, ml) => {
+
+    await pool.query(`
+        UPDATE products
+        SET
+            ml_item_id=$1,
+            ml_permalink=$2,
+            ml_status=$3,
+            published_at=NOW(),
+            last_sync_at=NOW()
+        WHERE id=$4
+    `,[
+        ml.id,
+        ml.permalink,
+        ml.status,
+        productId
+    ]);
+
+};
+
+exports.updateStatus = async(productId,status)=>{
+
+    await pool.query(`
+        UPDATE products
+        SET
+            ml_status=$1,
+            last_sync_at=NOW()
+        WHERE id=$2
+    `,[
+        status,
+        productId
+    ]);
+
+};
+
+exports.getPublication = async(productId)=>{
+
+    const result = await pool.query(`
+        SELECT
+            ml_item_id,
+            ml_permalink,
+            ml_status,
+            published_at,
+            last_sync_at
+        FROM products
+        WHERE id=$1
+    `,[productId]);
+
+    return result.rows[0];
+
+};
+
+
+============================================================
+ARQUIVO: C:\TratoCore\api\services\ml\oauth.service.js
+============================================================
+const axios = require("axios");
+const crypto = require("crypto");
+const querystring = require("querystring");
+const pool = require("../../db");
+const apiService = require("./api.service");
+
+// ======================================================
+// PKCE
+// ======================================================
+
+const pkceStore = new Map();
+
+// ======================================================
+// GERAR URL DE LOGIN
+// ======================================================
+
+exports.getLoginUrl = () => {
+
+    const codeVerifier = crypto
+        .randomBytes(32)
+        .toString("base64url");
+
+    const state = crypto
+        .randomBytes(32)
+        .toString("hex");
+
+    const codeChallenge = crypto
+        .createHash("sha256")
+        .update(codeVerifier)
+        .digest("base64url");
+
+    pkceStore.set(state, {
+        codeVerifier,
+        createdAt: Date.now()
+    });
+
+    setTimeout(() => {
+        pkceStore.delete(state);
+    }, 10 * 60 * 1000);
+
+    const params = querystring.stringify({
+        response_type: "code",
+        client_id: process.env.ML_CLIENT_ID,
+        redirect_uri: process.env.ML_REDIRECT_URI,
+        state,
+        code_challenge: codeChallenge,
+        code_challenge_method: "S256"
+    });
+
+    return (
+        "https://auth.mercadolivre.com.br/authorization?" +
+        params
+    );
+};
+
+// ======================================================
+// CALLBACK OAUTH
+// ======================================================
+
+exports.callback = async (req) => {
+
+    const code = req.query.code;
+    const state = req.query.state;
+
+    if (!code) {
+        throw new Error(
+            "Código de autorização não informado."
+        );
+    }
+
+    if (!state) {
+        throw new Error(
+            "State não informado pelo Mercado Livre."
+        );
+    }
+
+    const pkceData = pkceStore.get(state);
+
+    if (!pkceData) {
+        throw new Error(
+            "State inválido ou expirado. Inicie novamente a autorização."
+        );
+    }
+
+    const codeVerifier = pkceData.codeVerifier;
+
+    pkceStore.delete(state);
+
+    // ==================================================
+    // TROCAR CODE POR TOKEN
+    // ==================================================
+
+    const body = querystring.stringify({
+        grant_type: "authorization_code",
+        client_id: process.env.ML_CLIENT_ID,
+        client_secret: process.env.ML_CLIENT_SECRET,
+        code,
+        redirect_uri: process.env.ML_REDIRECT_URI,
+        code_verifier: codeVerifier
+    });
+
+    const response = await axios.post(
+        "https://api.mercadolibre.com/oauth/token",
+        body,
+        {
+            headers: {
+                "Accept": "application/json",
+                "Content-Type": "application/x-www-form-urlencoded"
+            }
+        }
+    );
+
+    const token = response.data;
+
+    // ==================================================
+    // VALIDAR TOKEN
+    // ==================================================
+
+    if (!token.access_token) {
+        throw new Error(
+            "Mercado Livre não retornou access_token."
+        );
+    }
+
+    if (!token.refresh_token) {
+        throw new Error(
+            "Mercado Livre não retornou refresh_token."
+        );
+    }
+
+    // ==================================================
+    // ATUALIZAR TOKEN EM MEMÓRIA
+    // ==================================================
+
+    apiService.setAccessToken(token.access_token);
+
+    // ==================================================
+    // SALVAR TOKEN
+    // ==================================================
+
+    await pool.query(
+        `
+        INSERT INTO ml_tokens
+        (
+            user_id,
+            access_token,
+            refresh_token,
+            token_type,
+            scope,
+            expires_in
+        )
+        VALUES ($1,$2,$3,$4,$5,$6)
+
+        ON CONFLICT (user_id)
+
+        DO UPDATE SET
+            access_token = EXCLUDED.access_token,
+            refresh_token = EXCLUDED.refresh_token,
+            token_type = EXCLUDED.token_type,
+            scope = EXCLUDED.scope,
+            expires_in = EXCLUDED.expires_in,
+            created_at = NOW()
+        `,
+        [
+            token.user_id,
+            token.access_token,
+            token.refresh_token,
+            token.token_type,
+            token.scope,
+            token.expires_in
+        ]
+    );
+
+    return {
+        success: true,
+        message: "Token salvo com sucesso.",
+        user_id: token.user_id,
+        expires_in: token.expires_in,
+        scope: token.scope
+    };
+};
+
+// ======================================================
+// USUÁRIO AUTENTICADO
+// ======================================================
+
+exports.getMe = async () => {
+
+    const result = await pool.query(`
+        SELECT access_token
+        FROM ml_tokens
+        ORDER BY created_at DESC
+        LIMIT 1
+    `);
+
+    if (result.rows.length === 0) {
+        throw new Error(
+            "Token não encontrado."
+        );
+    }
+
+    const token = result.rows[0].access_token;
+
+    const response = await axios.get(
+        "https://api.mercadolibre.com/users/me",
+        {
+            headers: {
+                Authorization: `Bearer ${token}`
+            }
+        }
+    );
+
+    return response.data;
+};
+
+
+============================================================
+ARQUIVO: C:\TratoCore\api\services\ml\picture.service.js
+============================================================
+const fs = require("fs");
+const path = require("path");
+const axios = require("axios");
+const FormData = require("form-data");
+
+const apiService = require("./api.service");
+
+const API = "https://api.mercadolibre.com";
+
+exports.upload = async (pictures) => {
+
+    console.log("==================================");
+    console.log("UPLOAD DAS IMAGENS");
+    console.log("==================================");
+
+    if (!Array.isArray(pictures) || pictures.length === 0) {
+        throw new Error("Nenhuma imagem encontrada.");
+    }
+
+    const token = await apiService.getAccessToken();
+
+    const uploaded = [];
+
+    for (const picture of pictures) {
+
+        let filePath =
+            picture.path ||
+            picture.source ||
+            picture.original_url;
+
+        if (!filePath) {
+            continue;
+        }
+
+        if (/^https?:\/\//i.test(filePath)) {
+            throw new Error("Este projeto utiliza apenas imagens locais.");
+        }
+
+        filePath = filePath.replace(/\//g, path.sep);
+
+        if (filePath.startsWith(path.sep)) {
+            filePath = filePath.substring(1);
+        }
+
+        const absolutePath = path.resolve(process.cwd(), filePath);
+
+        if (!fs.existsSync(absolutePath)) {
+            throw new Error(`Imagem não encontrada: ${absolutePath}`);
+        }
+
+        console.log("Arquivo:");
+        console.log(absolutePath);
+
+        const form = new FormData();
+
+        form.append(
+            "file",
+            fs.createReadStream(absolutePath)
+        );
+
+        const response = await axios.post(
+            `${API}/pictures/items/upload`,
+            form,
+            {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    ...form.getHeaders(),
+                    "User-Agent": "TratoCore/1.0"
+                },
+                maxBodyLength: Infinity,
+                maxContentLength: Infinity,
+                timeout: 120000
+            }
+        );
+
+        console.log("Picture ID:", response.data.id);
+
+        uploaded.push({
+            id: response.data.id
+        });
+
+    }
+
+    if (!uploaded.length) {
+        throw new Error("Nenhuma imagem enviada.");
+    }
+
+    console.log("----------------------------------");
+    console.log(`${uploaded.length} imagem(ns) enviada(s).`);
+    console.log("----------------------------------");
+
+    return uploaded;
+
+};
+
+
+============================================================
+ARQUIVO: C:\TratoCore\api\services\ml\publish.service.js
+============================================================
+console.log("### NOVO PUBLISH SERVICE EXECUTADO ###");
+
+const productService = require("../productService");
+const productImageService = require("../productImageService");
+const itemService = require("./item.service");
+const apiService = require("./api.service");
+const mlProductService = require("./mlProduct.service");
+
+module.exports.publish = async (productId) => {
+
+    console.log("========================================");
+    console.log("PUBLICANDO PRODUTO NO MERCADO LIVRE");
+    console.log("Produto ID:", productId);
+    console.log("========================================");
+
+    const product = await productService.getById(productId);
+
+    if (!product) {
+        throw new Error("Produto não encontrado.");
+    }
+
+    const pictures = await productImageService.getByProductId(productId);
+
+    if (!pictures || pictures.length === 0) {
+        throw new Error("O produto não possui imagens.");
+    }
+
+    console.log(`Produto: ${product.title}`);
+    console.log(`Fotos encontradas: ${pictures.length}`);
+
+    // Apenas valida se existe token
+    await apiService.getAccessToken();
+
+    // Monta o payload do anúncio
+    const item = await itemService.build(
+        product,
+        pictures
+    );
+
+    console.log("========== PAYLOAD MERCADO LIVRE ==========");
+    console.log(JSON.stringify(item, null, 2));
+    console.log("===========================================");
+
+    let mlResponse;
+
+    try {
+
+        mlResponse = await apiService.publishItem(item);
+
+    } catch (err) {
+
+        console.log("========================================");
+        console.log("FALHA AO PUBLICAR");
+        console.log("========================================");
+
+        throw err;
+
+    }
+
+    if (
+        product.description &&
+        product.description.trim().length > 0
+    ) {
+
+        console.log("Criando descrição...");
+
+        await apiService.createDescription(
+            mlResponse.id,
+            product.description
+        );
+
+    }
+
+    await mlProductService.savePublication(
+        productId,
+        mlResponse
+    );
+
+    console.log("========================================");
+    console.log("ANÚNCIO PUBLICADO COM SUCESSO");
+    console.log("ID:", mlResponse.id);
+    console.log("STATUS:", mlResponse.status);
+    console.log("========================================");
+
+    return {
+        success: true,
+        ml: mlResponse,
+        item
+    };
+
+};
+
+
+============================================================
+ARQUIVO: C:\TratoCore\api\services\ml\token.service.js
+============================================================
+const axios = require("axios");
+const pool = require("../../db");
+const apiService = require("./api.service");
+
+exports.getToken = async () => {
+
+    const result = await pool.query(`
+        SELECT *
+        FROM ml_tokens
+        ORDER BY created_at DESC
+        LIMIT 1
+    `);
+
+    if (!result.rows.length) {
+        throw new Error("Nenhum token encontrado.");
+    }
+
+    return result.rows[0];
+
+};
+
+exports.refresh = async () => {
+
+    const token = await exports.getToken();
+
+    const response = await axios.post(
+        "https://api.mercadolibre.com/oauth/token",
+        {
+            grant_type: "refresh_token",
+            client_id: process.env.ML_CLIENT_ID,
+            client_secret: process.env.ML_CLIENT_SECRET,
+            refresh_token: token.refresh_token
+        },
+        {
+            headers: {
+                "Content-Type": "application/json"
+            }
+        }
+    );
+
+    const newToken = response.data;
+
+    await pool.query(
+        `
+        UPDATE ml_tokens
+        SET
+            access_token = $1,
+            refresh_token = $2,
+            token_type = $3,
+            scope = $4,
+            expires_in = $5,
+            created_at = NOW()
+        WHERE user_id = $6
+        `,
+        [
+            newToken.access_token,
+            newToken.refresh_token,
+            newToken.token_type,
+            newToken.scope,
+            newToken.expires_in,
+            token.user_id
+        ]
+    );
+
+    apiService.setAccessToken(newToken.access_token);
+
+    return newToken.access_token;
+
+};
+
+
+============================================================
+ARQUIVO: C:\TratoCore\api\services\ml\user.service.js
+============================================================
+const axios = require("axios");
+const pool = require("../../db");
+
+exports.getMe = async () => {
+
+    const result = await pool.query(`
+        SELECT access_token
+        FROM ml_tokens
+        ORDER BY created_at DESC
+        LIMIT 1
+    `);
+
+    if (result.rows.length === 0) {
+        throw new Error("Nenhum token encontrado.");
+    }
+
+    const token = result.rows[0].access_token;
+
+    const response = await axios.get(
+        "https://api.mercadolibre.com/users/me",
+        {
+            headers: {
+                Authorization: `Bearer ${token}`
+            }
+        }
+    );
+
+    return response.data;
+
+};
+
+
+============================================================
+ARQUIVO: C:\TratoCore\api\services\mlTemplate.service.js
+============================================================
+const ExcelJS = require("exceljs");
+
+class MLTemplateService {
+
+    constructor(templatePath) {
+        this.templatePath = templatePath;
+        this.workbook = new ExcelJS.Workbook();
+    }
+
+    async load() {
+
+        await this.workbook.xlsx.readFile(this.templatePath);
+
+    }
+
+    getWorksheet(sheetName) {
+
+        const sheet = this.workbook.getWorksheet(sheetName);
+
+        if (!sheet) {
+            throw new Error(`Aba "${sheetName}" não encontrada.`);
+        }
+
+        return sheet;
+
+    }
+
+    getHeaderMap(sheet) {
+
+        const map = {};
+
+        const headerRow = sheet.getRow(1);
+
+        headerRow.eachCell((cell, colNumber) => {
+
+            const name = String(cell.value || "").trim();
+
+            if (name !== "") {
+
+                map[name] = colNumber;
+
+            }
+
+        });
+
+        return map;
+
+    }
+
+    findFirstEmptyRow(sheet) {
+
+        let row = 2;
+
+        while (true) {
+
+            const current = sheet.getRow(row);
+
+            let empty = true;
+
+            current.eachCell(cell => {
+
+                if (cell.value !== null && cell.value !== "") {
+
+                    empty = false;
+
+                }
+
+            });
+
+            if (empty)
+                return row;
+
+            row++;
+
+        }
+
+    }
+
+    fillProduct(sheetName, product) {
+
+        const sheet = this.getWorksheet(sheetName);
+
+        const columns = this.getHeaderMap(sheet);
+
+        const rowNumber = this.findFirstEmptyRow(sheet);
+
+        const row = sheet.getRow(rowNumber);
+
+        const set = (header, value) => {
+
+            if (columns[header]) {
+
+                row.getCell(columns[header]).value = value;
+
+            }
+
+        };
+
+        set("Título", product.title);
+
+        set("Preço", product.price);
+
+        set("Preço [R$]", product.price);
+
+        set("Marca", product.brand);
+
+        set("Modelo", product.model);
+
+        set("SKU", product.sku);
+
+        set("Quantidade", product.stock);
+
+        set("Estoque", product.stock);
+
+        set("Descrição", product.description);
+
+        set("Condição", product.condition);
+
+        if (product.photos && product.photos.length) {
+
+            set("Fotos", product.photos.join(","));
+
+        }
+
+        row.commit();
+
+        return rowNumber;
+
+    }
+
+    async save(outputFile) {
+
+        await this.workbook.xlsx.writeFile(outputFile);
+
+    }
+
+}
+
+module.exports = MLTemplateService;
+
+
+============================================================
+ARQUIVO: C:\TratoCore\api\services\productService.js
+============================================================
+const Product = require("../models/productModel");
+
+// ======================================================
+// LISTAR TODOS
+// ======================================================
+
+async function getAll() {
+
+    return await Product.getAll();
+
+}
+
+// ======================================================
+// BUSCAR POR ID
+// ======================================================
+
+async function getById(id) {
+
+    if (!id) {
+        throw new Error("ID do produto não informado.");
+    }
+
+    const product = await Product.getById(id);
+
+    if (!product) {
+        return null;
+    }
+
+    // Valores padrão para publicação ML
+    product.sale_price = Number(product.sale_price || 0);
+    product.quantity = Math.max(1, Number(product.quantity || 1));
+
+    product.condition =
+        String(product.condition || "used").toLowerCase() === "new"
+            ? "new"
+            : "used";
+
+    product.ml_listing_type =
+        product.ml_listing_type || "gold_special";
+
+    product.brand = product.brand || "";
+    product.model = product.model || "";
+    product.gtin = product.gtin || "";
+
+    product.title = (product.title || "").trim();
+    product.description = product.description || "";
+
+    return product;
+
+}
+
+// ======================================================
+// CADASTRAR
+// ======================================================
+
+async function create(data) {
+
+    if (!data.title || data.title.trim() === "") {
+        throw new Error("Título obrigatório.");
+    }
+
+    const product = {
+
+        sku: data.sku || "",
+
+        barcode: data.barcode || "",
+
+        title: data.title.trim(),
+
+        description: data.description || "",
+
+        sale_price: Number(data.sale_price || 0),
+
+        quantity: Math.max(
+            1,
+            Number(data.quantity || 1)
+        ),
+
+        status: data.status || "NEW"
+
+    };
+
+    return await Product.create(product);
+
+}
+
+// ======================================================
+// ATUALIZAR
+// ======================================================
+
+async function update(id, data) {
+
+    if (!id) {
+        throw new Error("ID inválido.");
+    }
+
+    const atual = await Product.getById(id);
+
+    if (!atual) {
+        throw new Error("Produto não encontrado.");
+    }
+
+    const product = {
+
+        sku: data.sku ?? atual.sku,
+
+        barcode: data.barcode ?? atual.barcode,
+
+        title: (data.title ?? atual.title).trim(),
+
+        description: data.description ?? atual.description,
+
+        sale_price: Number(
+            data.sale_price ?? atual.sale_price
+        ),
+
+        quantity: Math.max(
+            1,
+            Number(data.quantity ?? atual.quantity)
+        ),
+
+        status: data.status ?? atual.status
+
+    };
+
+    return await Product.update(id, product);
+
+}
+
+// ======================================================
+// REMOVER
+// ======================================================
+
+async function remove(id) {
+
+    if (!id) {
+        throw new Error("ID inválido.");
+    }
+
+    return await Product.remove(id);
+
+}
+
+module.exports = {
+
+    getAll,
+    getById,
+    create,
+    update,
+    remove
+
+};
+
+
+============================================================
+ARQUIVO: C:\TratoCore\sql\018_ml_products.sql
+============================================================
+-- =====================================================
+-- TRATO CORE
+-- Mercado Livre
+-- =====================================================
+
+ALTER TABLE products
+ADD COLUMN IF NOT EXISTS ml_item_id VARCHAR(30);
+
+ALTER TABLE products
+ADD COLUMN IF NOT EXISTS ml_permalink TEXT;
+
+ALTER TABLE products
+ADD COLUMN IF NOT EXISTS ml_status VARCHAR(30);
+
+ALTER TABLE products
+ADD COLUMN IF NOT EXISTS ml_category_id VARCHAR(30);
+
+ALTER TABLE products
+ADD COLUMN IF NOT EXISTS ml_listing_type VARCHAR(50);
+
+ALTER TABLE products
+ADD COLUMN IF NOT EXISTS published_at TIMESTAMP;
+
+ALTER TABLE products
+ADD COLUMN IF NOT EXISTS last_sync_at TIMESTAMP;
+
+CREATE INDEX IF NOT EXISTS idx_products_ml_item
+ON products(ml_item_id);
+
+CREATE INDEX IF NOT EXISTS idx_products_ml_status
+ON products(ml_status);
+
+
+============================================================
+ARQUIVO: C:\TratoCore\package.json
+============================================================
+{
+  "name": "tratocore",
+  "version": "0.5.0",
+  "description": "TratoCore Platform",
+  "main": "api/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node api/server.js",
+    "dev": "nodemon api/server.js",
+    "doctor": "node tools/doctor.js"
+  },
+  "keywords": [
+    "tratocore",
+    "mercadolivre",
+    "ia",
+    "openai"
+  ],
+  "author": "Marco Aurélio Silva",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.19.0",
+    "cloudinary": "^2.10.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "exceljs": "^4.4.0",
+    "express": "^5.2.1",
+    "form-data": "^4.0.6",
+    "mime-types": "^3.0.2",
+    "multer": "^2.2.0",
+    "openai": "^6.49.0",
+    "pg": "^8.22.0",
+    "sharp": "^0.35.3",
+    "uuid": "^14.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}

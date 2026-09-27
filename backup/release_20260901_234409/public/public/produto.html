@@ -1,0 +1,117 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Produto | Trato Core</title>
+
+    <link rel="stylesheet" href="produto.css">
+</head>
+
+<body>
+
+<header class="topo">
+    <div class="logo">TRATO CORE</div>
+
+    <nav>
+        <a href="produtos.html">Produtos</a>
+    </nav>
+</header>
+
+<main class="produto-pagina">
+
+    <div class="produto-breadcrumb">
+        Produtos / Detalhes do produto
+    </div>
+
+    <section class="produto-principal">
+
+        <div class="produto-imagens">
+
+            <div class="imagem-principal-box">
+                <img id="imagemPrincipal" src="" alt="Produto">
+            </div>
+
+            <div id="miniaturas" class="miniaturas"></div>
+
+        </div>
+
+        <div class="produto-informacoes">
+
+            <div class="produto-status" id="produtoStatus">
+                DISPONÍVEL
+            </div>
+
+            <h1 id="produtoTitulo">Carregando produto...</h1>
+
+            <div class="produto-sku">
+                SKU: <span id="produtoSku">-</span>
+            </div>
+
+            <div class="avaliacao">
+                ★★★★★
+                <span>Produto Trato Core</span>
+            </div>
+
+            <hr>
+
+            <div class="produto-preco-label">
+                Por apenas
+            </div>
+
+            <div class="produto-preco" id="produtoPreco">
+                R$ 0,00
+            </div>
+
+            <div class="produto-parcelamento">
+                Consulte as condições de pagamento
+            </div>
+
+            <button class="btn-comprar">
+                COMPRAR AGORA
+            </button>
+
+            <div class="produto-info-box">
+
+                <div>
+                    <strong>🚚</strong>
+                    <span>Entrega rápida</span>
+                </div>
+
+                <div>
+                    <strong>🔒</strong>
+                    <span>Compra segura</span>
+                </div>
+
+                <div>
+                    <strong>✓</strong>
+                    <span>Produto disponível</span>
+                </div>
+
+            </div>
+
+        </div>
+
+    </section>
+
+    <section class="descricao">
+
+        <h2>Descrição do produto</h2>
+
+        <div id="produtoDescricao">
+            Carregando descrição...
+        </div>
+
+    </section>
+
+<div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;">
+    <button id="btnCorrigirIA" type="button">Corrigir com IA</button>
+    <button id="btnPublicarML" type="button">Publicar ML</button>
+    <button id="btnEditarProduto" type="button">Editar</button>
+</div>
+</main>
+
+<script src="produto.js"></script>
+
+</body>
+</html>

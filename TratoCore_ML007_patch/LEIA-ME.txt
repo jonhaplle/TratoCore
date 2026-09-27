@@ -1,0 +1,30 @@
+TRATOCORE - ML-007.2
+
+Alterações desta etapa:
+
+1. A análise inicial passou a seguir:
+   foto local -> Google Lens -> GPT com foto + evidências do Lens.
+
+2. O Google Lens é tratado como fonte auxiliar de pesquisa visual.
+
+3. O GPT não gera título, descrição ou preço nesta etapa.
+   A saída é identificação + fatos + hipóteses + evidências + cruzamento + confiança.
+
+4. O frontend agora informa que a identificação foi concluída e que a próxima etapa é o Catalog Matcher.
+
+5. Foram criados backups dos arquivos alterados.
+
+ARQUIVOS PARA SUBSTITUIR:
+C:\TratoCore\api\services\lens.service.js  (novo)
+C:\TratoCore\api\services\ai.service.js
+C:\TratoCore\api\routes\ai.js
+C:\TratoCore\public\app.js
+
+IMPORTANTE:
+- A pesquisa do Lens usa uma URL pública da imagem. O serviço publica temporariamente a imagem no Cloudinary e chama o endpoint uploadbyurl do Google Lens.
+- O ambiente de teste desta execução não possui acesso DNS externo, então a chamada real ao Cloudinary/Lens não pôde ser executada aqui.
+- Os quatro arquivos passaram em node --check.
+- Depois de substituir os arquivos no Windows, reinicie o TratoCore e teste pelo botão Analisar com uma foto real.
+
+PRÓXIMA ETAPA:
+ML-007.3/007.4 -> usar a identificação retornada para o Catalog Matcher e somente depois chamar o GPT para gerar título, descrição e preço.

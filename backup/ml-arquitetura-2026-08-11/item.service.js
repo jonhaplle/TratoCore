@@ -1,0 +1,278 @@
+const pictureService = require("./picture.service");
+
+exports.build = async (product, pictures) => {
+
+    const uploadedPictures = await pictureService.upload(
+        pictures.map(p => ({
+            source: p.original_url || p.source || p.path,
+            path: p.path
+        }))
+    );
+
+    if (!uploadedPictures.length) {
+        throw new Error("Nenhuma imagem válida foi enviada.");
+    }
+
+    if (!product.title || !product.title.trim()) {
+        throw new Error("Produto sem título.");
+    }
+
+    if (!product.ml_category_id) {
+        throw new Error("Produto sem categoria do Mercado Livre.");
+    }
+
+    const price = Number(product.sale_price);
+
+    if (isNaN(price) || price <= 0) {
+        throw new Error("Preço inválido.");
+    }
+
+    const quantity = Math.max(
+        1,
+        Number(product.quantity || 1)
+    );
+
+    const condition =
+        String(product.condition || "used").toLowerCase() === "new"
+            ? "new"
+            : "used";
+
+    const attributes = [];
+
+    // ======================================================
+    // CATEGORIA: CONSOLES - MLB11172
+    // ======================================================
+
+    if (product.ml_category_id === "MLB11172") {
+
+        // --------------------------------------------------
+        // MARCA - obrigatório
+        // --------------------------------------------------
+
+        if (!product.brand) {
+            throw new Error(
+                "Produto sem marca. A categoria MLB11172 exige BRAND."
+            );
+        }
+
+        attributes.push({
+            id: "BRAND",
+            value_name: String(product.brand).trim()
+        });
+
+        // --------------------------------------------------
+        // MODELO - obrigatório
+        // --------------------------------------------------
+
+        if (!product.model) {
+            throw new Error(
+                "Produto sem modelo. A categoria MLB11172 exige MODEL."
+            );
+        }
+
+        attributes.push({
+            id: "MODEL",
+            value_name: String(product.model).trim()
+        });
+
+        // --------------------------------------------------
+        // COR
+        // --------------------------------------------------
+
+        if (product.color) {
+
+            const color = String(product.color)
+                .trim()
+                .toLowerCase();
+
+            if (color === "preto") {
+
+                attributes.push({
+                    id: "COLOR",
+                    value_id: "52049"
+                });
+
+            } else {
+
+                attributes.push({
+                    id: "COLOR",
+                    value_name: String(product.color).trim()
+                });
+
+            }
+        }
+
+        // --------------------------------------------------
+        // VOLTAGEM
+        //
+        // Produto informado pelo usuário como 110V.
+        // Na categoria do Mercado Livre o valor correspondente
+        // disponível é 127V.
+        // --------------------------------------------------
+
+        attributes.push({
+            id: "VOLTAGE",
+            value_id: "39205162"
+        });
+    }
+
+    // ======================================================
+    // CATEGORIA: PRATOS - MLB191838
+    // ======================================================
+
+    if (product.ml_category_id === "MLB191838") {
+
+        // Tipo de prato
+        attributes.push({
+            id: "DISH_PLATE_TYPE",
+            value_id: "2528231"
+        });
+
+        // Cor
+        if (product.color) {
+
+            const color = String(product.color)
+                .trim()
+                .toLowerCase();
+
+            if (
+                color === "marrom" ||
+                color === "âmbar" ||
+                color === "ambar"
+            ) {
+
+                attributes.push({
+                    id: "COLOR",
+                    value_id: "52005"
+                });
+
+            } else {
+
+                attributes.push({
+                    id: "COLOR",
+                    value_name: product.color
+                });
+            }
+        }
+
+        // Material
+        attributes.push({
+            id: "MATERIAL",
+            value_id: "2431731"
+        });
+
+        // Formato de venda
+        attributes.push({
+            id: "SALE_FORMAT",
+            value_id: "1359392"
+        });
+
+        // Quantidade de unidades no kit
+        attributes.push({
+            id: "UNITS_PER_PACK",
+            value_name: String(
+                quantity === 1 ? 4 : quantity
+            )
+        });
+    }
+
+    // ======================================================
+    // CONDIÇÃO DO ITEM
+    // ======================================================
+
+    attributes.push({
+        id: "ITEM_CONDITION",
+        value_id: condition === "used"
+            ? "2230581"
+            : "2230582"
+    });
+
+    // ======================================================
+    // GTIN
+    //
+    // Sem código:
+    // 17055160 = O produto não tem código cadastrado
+    //
+    // Não usar código falso.
+    // ======================================================
+
+    if (!product.gtin) {
+
+        attributes.push({
+            id: "EMPTY_GTIN_REASON",
+            value_id: "17055160"
+        });
+
+    } else {
+
+        attributes.push({
+            id: "GTIN",
+            value_name: String(product.gtin).trim()
+        });
+    }
+
+    // ======================================================
+    // FAMÍLIA DO PRODUTO
+    // ======================================================
+
+    const familyName =
+        String(product.title || "")
+            .trim()
+            .substring(0, 60);
+
+    // ======================================================
+    // PAYLOAD MERCADO LIVRE
+    // ======================================================
+
+    const item = {
+
+        family_name: familyName,
+
+        category_id: product.ml_category_id,
+
+        price,
+
+        currency_id: "BRL",
+
+        available_quantity: quantity,
+
+        buying_mode: "buy_it_now",
+
+        listing_type_id:
+            product.ml_listing_type || "gold_pro",
+
+        condition,
+
+        pictures: uploadedPictures,
+
+        // ==================================================
+        // MERCADO ENVIOS 2
+        //
+        // A conta do vendedor possui ME2 habilitado.
+        // Não utilizar ME1.
+        // ==================================================
+
+        shipping: {
+            mode: "me2",
+            local_pick_up: false,
+            free_shipping: false,
+            free_methods: []
+        },
+
+        attributes
+    };
+
+    // ======================================================
+    // DEBUG
+    // ======================================================
+
+    console.log("========== PAYLOAD ML ==========");
+
+    console.dir(item, {
+        depth: null
+    });
+
+    console.log("================================");
+
+    return item;
+};

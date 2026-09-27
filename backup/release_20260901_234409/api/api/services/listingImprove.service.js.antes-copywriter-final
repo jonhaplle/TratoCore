@@ -1,0 +1,80 @@
+const OpenAI = require("openai");
+
+const client = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY
+});
+
+function clean(value) {
+    return String(value ?? "").trim();
+}
+
+function stripJson(text) {
+    return clean(text)
+        .replace(/```json/gi, "")
+        .replace(/```/g, "")
+        .trim();
+}
+
+async function improveListing(product) {
+    const input = {
+        title: clean(product.title),
+        description: clean(product.description),
+        product_type: clean(product.product_type),
+        brand: clean(product.brand),
+        line: clean(product.line),
+        model: clean(product.model),
+        generation: clean(product.generation),
+        version: clean(product.version),
+        color: clean(product.color),
+        condition: clean(product.condition || "used"),
+        seller_observation: clean(product.seller_observation || product.observacao_vendedor || "")
+    };
+
+    const response = await client.responses.create({
+        model: "gpt-5.5",
+        input: [
+            {
+                role: "system",
+                content: `Você é o copywriter especialista em Mercado Livre do TratoCore.
+
+REGRA CENTRAL: VERDADE ACIMA DA PERSUASÃO.
+
+Melhore o título e a descrição do produto fornecido, mas NÃO invente absolutamente nenhuma característica.
+
+Use diretamente as informações já declaradas no cadastro.
+Não escreva "segundo o vendedor", "o vendedor informa" ou equivalentes.
+Não transforme hipótese em fato.
+Não invente marca, modelo, geração, versão, voltagem, medidas, potência, capacidade, acessórios, funcionamento, defeitos ou estado.
+Não mencione poeira.
+Não use emojis.
+
+O título deve ser objetivo, comercial e adequado ao Mercado Livre.
+A descrição deve ser clara, convincente e factual, destacando somente os pontos reais disponíveis.
+
+Retorne SOMENTE JSON válido no formato:
+{
+  "title": "",
+  "description": ""
+}`
+            },
+            {
+                role: "user",
+                content: JSON.stringify(input)
+            }
+        ]
+    });
+
+    const parsed = JSON.parse(stripJson(response.output_text));
+
+    const suggestedPrice = Number(parsed.suggested_price);
+
+    return {
+        title: clean(parsed.title) || input.title,
+        description: clean(parsed.description) || input.description,
+        suggested_price: Number.isFinite(suggestedPrice) && suggestedPrice > 0
+            ? suggestedPrice
+            : 0
+    };
+}
+
+module.exports = { improveListing };

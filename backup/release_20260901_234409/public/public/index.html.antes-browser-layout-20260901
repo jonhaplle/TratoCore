@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0">
+
+    <title>Trato Core</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<header class="topo">
+
+    <div>
+        <h1>TRATO CORE</h1>
+        <p>Cadastro Inteligente de Produtos</p>
+    </div>
+
+    <nav>
+        <a href="index.html" class="ativo">Novo Produto</a>
+        <a href="produtos.html">Produtos</a>
+    </nav>
+
+</header>
+
+<main class="content">
+
+    <section class="photo-panel">
+
+        <div
+            id="preview"
+            class="preview">
+
+            <span>Sem imagem</span>
+
+        </div>
+
+        <input
+            type="file"
+            id="photo"
+            accept="image/jpeg,image/jpg,image/png,image/webp"
+            multiple>
+
+        <p class="photo-help">
+            Você pode selecionar até 10 fotos.
+            A primeira será usada como imagem principal.
+        </p>
+
+        <button id="btnAnalyze">
+            Analisar com IA
+        </button>
+
+        <button id="btnImproveAI" type="button" style="display:none;width:100%;padding:14px;background:#4f46e5;color:#fff;margin-bottom:20px;border-radius:8px;">
+            Corrigir com IA
+        </button>
+
+    </section>
+
+    <section class="browser-panel" id="browserPanel">
+
+        <div class="browser-panel-head">
+            <div>
+                <h2>Browser Engine</h2>
+                <p>O TratoCore pode abrir um navegador, capturar a tela e ler os campos visíveis.</p>
+            </div>
+            <span id="browserStatus" class="browser-status">Desconectado</span>
+        </div>
+
+        <div class="browser-controls">
+            <input id="browserUrl" type="url" placeholder="https://www.mercadolivre.com.br/">
+            <button id="btnBrowserOpen" type="button">Abrir navegador</button>
+        </div>
+
+        <div class="browser-actions">
+            <button id="btnBrowserInspect" type="button">Ler página</button>
+            <button id="btnBrowserScreenshot" type="button">Capturar tela</button>
+            <button id="btnBrowserClose" type="button">Fechar navegador</button>
+        </div>
+
+        <pre id="browserResult" class="browser-result">Aguardando ação...</pre>
+
+    </section>
+
+    <section class="form-panel">
+
+        <div class="row">
+
+            <div class="field">
+
+                <label>SKU</label>
+
+                <input
+                    id="sku"
+                    type="text">
+
+            </div>
+
+            <div class="field">
+
+                <label>Código de Barras</label>
+
+                <input
+                    id="barcode"
+                    type="text">
+
+            </div>
+
+        </div>
+
+        <div class="field">
+
+            <label>Título</label>
+
+            <input
+                id="title"
+                type="text">
+
+        </div>
+
+        <div class="row">
+
+            <div class="field">
+
+                <label>Marca</label>
+
+                <input
+                    id="brand"
+                    type="text">
+
+            </div>
+
+            <div class="field">
+
+                <label>Modelo</label>
+
+                <input
+                    id="model"
+                    type="text">
+
+            </div>
+
+        </div>
+
+        <div class="field">
+
+            <label>Categoria</label>
+
+            <input
+                id="category"
+                type="text">
+
+        </div>
+
+        <div class="row">
+
+            <div class="field">
+
+                <label>Preço</label>
+
+                <input
+                    id="sale_price"
+                    type="number"
+                    step="0.01">
+
+            </div>
+
+            <div class="field">
+
+                <label>Quantidade</label>
+
+                <input
+                    id="quantity"
+                    type="number"
+                    value="1">
+
+            </div>
+
+        </div>
+
+        <div class="field">
+
+            <label>Descrição</label>
+
+            <textarea
+                id="description"
+                rows="8"></textarea>
+
+        </div>
+
+        <div class="buttons">
+
+            <button id="btnSave">
+                Salvar Produto
+            </button>
+
+            <button id="btnNew">
+                Novo Produto
+            </button>
+
+        </div>
+
+    </section>
+
+</main>
+
+<script src="app.js?v=20260819-fotos-fix"></script>
+
+</body>
+
+</html>

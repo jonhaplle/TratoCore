@@ -1,0 +1,349 @@
+const fs = require('fs');
+const path = require('path');
+const axios = require('axios');
+
+// ============================================================
+// GEMINI AI - TratoCore
+// Mantemos o mesmo módulo/exports usados pelo frontend e pelas
+// rotas para não quebrar o restante do TratoCore.
+// ============================================================
+
+function getGeminiApiKey() { return String(process.env.GEMINI_API_KEY || '').trim(); }
+function getGeminiModel() {
+  const configured = String(process.env.GEMINI_MODEL || '').trim();
+  if (!configured || configured === 'gemini-2.5-flash-lite') return 'gemini-3.5-flash-lite';
+  return configured;
+}
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+const MODEL_CANDIDATES = [
+  'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite',
+  'gemini-3.5-flash',
+  'gemini-3.6-flash',
+  'gemini-2.5-flash-lite'
+];
+let resolvedModelCache = null;
+
+const REGRAS_COMERCIAIS = `
+REGRAS COMERCIAIS DO TRATOCORE — VERDADE ACIMA DA PERSUASÃO.
+
+A observação do vendedor é uma fonte válida de dados declarados.
+Quando o vendedor informar explicitamente condição, teste, funcionamento, característica, acessório, defeito, marca, modelo ou outro dado, incorpore diretamente essa informação.
+NUNCA escreva "segundo o vendedor", "o vendedor informa" ou equivalentes.
+
+Nunca invente marca, modelo, geração, versão, especificação, medida, potência, voltagem, capacidade, acessório, defeito, reparo ou funcionamento.
+"Testado" não significa que todas as funções foram testadas.
+"Funcionando" não significa que todas as funções foram testadas.
+
+A fotografia é a fonte visual primária. A pesquisa visual é fonte auxiliar.
+Não transforme hipótese em fato.
+Se houver conflito, registre a dúvida e reduza a confiança.
+Não mencione IA, vendedor, proprietário, fotografia ou processo de análise no anúncio.
+`;
+
+function cleanJson(text) {
+  return String(text || '')
+    .replace(/```json/gi, '')
+    .replace(/```/g, '')
+    .trim();
+}
+
+function requireKey() {
+  if (!getGeminiApiKey()) {
+    throw new Error('GEMINI_API_KEY não configurada. Crie uma chave no Google AI Studio e coloque GEMINI_API_KEY=... no arquivo .env do TratoCore.');
+  }
+}
+
+async function listAvailableModels() {
+  requireKey();
+  const response = await axios.get(
+    `${GEMINI_URL}?key=${encodeURIComponent(getGeminiApiKey())}`,
+    { timeout: 30000 }
+  );
+  const models = Array.isArray(response.data?.models) ? response.data.models : [];
+  return models
+    .filter(m => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+    .map(m => String(m.name || '').replace(/^models\//, '').trim())
+    .filter(Boolean);
+}
+
+async function resolveGeminiModel() {
+  if (resolvedModelCache) return resolvedModelCache;
+  const configured = getGeminiModel();
+  try {
+    const available = await listAvailableModels();
+    const ordered = [configured, ...MODEL_CANDIDATES].filter((v, i, a) => v && a.indexOf(v) === i);
+    const selected = ordered.find(model => available.includes(model));
+    if (selected) {
+      resolvedModelCache = selected;
+      return selected;
+    }
+  } catch (_) {
+    // Se a listagem de modelos falhar, usamos o modelo configurado.
+  }
+  return configured;
+}
+
+async function gemini(prompt, imageBase64 = null, mime = 'image/jpeg') {
+  requireKey();
+
+  const parts = [{ text: prompt }];
+  if (imageBase64) {
+    parts.push({
+      inline_data: {
+        mime_type: mime,
+        data: imageBase64
+      }
+    });
+  }
+
+  let model = await resolveGeminiModel();
+
+  try {
+    const response = await axios.post(
+      `${GEMINI_URL}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(getGeminiApiKey())}`,
+      {
+        contents: [{ role: 'user', parts }],
+        generationConfig: {
+          responseMimeType: 'application/json'
+        }
+      },
+      { timeout: 180000 }
+    );
+
+    const candidates = response.data?.candidates || [];
+    const text = candidates
+      .flatMap(c => c.content?.parts || [])
+      .map(p => p.text || '')
+      .join('')
+      .trim();
+
+    if (!text) {
+      throw new Error('O Gemini não retornou conteúdo.');
+    }
+
+    return text;
+  } catch (e) {
+    const apiMessage = e.response?.data?.error?.message;
+    const status = e.response?.status;
+
+    if (status === 400) {
+      throw new Error(`Gemini recusou a solicitação: ${apiMessage || e.message}`);
+    }
+    if (status === 401 || status === 403) {
+      throw new Error(`Chave do Gemini inválida ou sem permissão: ${apiMessage || e.message}`);
+    }
+    if (status === 429) {
+      throw new Error(`Limite gratuito do Gemini atingido. Aguarde a renovação da cota. ${apiMessage || ''}`.trim());
+    }
+    if (status === 404) {
+      resolvedModelCache = null;
+      throw new Error(`Modelo Gemini não disponível (${model}). O TratoCore tentou selecionar automaticamente um modelo compatível, mas não encontrou um endpoint utilizável. ${apiMessage || e.message}`);
+    }
+    throw new Error(`Erro na API Gemini (${model}): ${apiMessage || e.message}`);
+  }
+}
+
+function normalizeResult(resultado) {
+  const id = resultado.identification || {};
+  const conf = resultado.confidence || {};
+  const draft = resultado.listing_draft || {};
+  const parts = [id.brand, id.line, id.model, id.generation, id.product_type, id.color]
+    .map(v => String(v || '').trim()).filter(Boolean);
+
+  let title = String(draft.title || resultado.title || parts.join(' ') || '').trim();
+  if (!title && Array.isArray(resultado.facts) && resultado.facts.length) {
+    title = String(id.product_type || 'Produto identificado').trim();
+  }
+
+  const description = String(
+    draft.description || resultado.description ||
+    (Array.isArray(resultado.facts) ? resultado.facts.slice(0, 6).join(' ') : '')
+  ).trim();
+
+  const price = Number(draft.suggested_price ?? resultado.suggested_price ?? 0);
+
+  return {
+    ...resultado,
+    product_type: id.product_type || '',
+    brand: id.brand || '',
+    line: id.line || '',
+    model: id.model || '',
+    generation: id.generation || '',
+    version: id.version || '',
+    color: id.color || '',
+    condition: id.condition || '',
+    confidence: Number(conf.score || 0),
+    confidence_details: conf,
+    title,
+    description,
+    suggested_price: Number.isFinite(price) ? price : 0,
+    category: String(draft.category || resultado.category || '').trim()
+  };
+}
+
+async function analisarImagem(imagePath, pesquisaVisual = null, observacaoVendedor = '') {
+  const full = path.resolve(imagePath);
+  if (!fs.existsSync(full)) throw new Error('Imagem não encontrada.');
+
+  const ext = path.extname(full).toLowerCase();
+  const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+  const base64 = fs.readFileSync(full, 'base64');
+
+  const pesquisa = pesquisaVisual
+    ? JSON.stringify({
+        provider: pesquisaVisual.provider,
+        search_url: pesquisaVisual.search_url,
+        text: pesquisaVisual.text,
+        links: pesquisaVisual.links
+      })
+    : 'Nenhuma pesquisa visual disponível.';
+
+  const prompt = `Você é o cérebro de identificação e preparação de anúncios do TratoCore.
+
+${REGRAS_COMERCIAIS}
+
+A fotografia é a fonte visual primária. Cruze-a com a pesquisa visual auxiliar.
+Se a observação do vendedor declarar explicitamente marca/modelo/linha/geração/versão ou condição, preserve como informação declarada.
+
+REGRAS OBRIGATÓRIAS:
+1. Nunca transforme hipótese em fato.
+2. Não invente código, GTIN ou especificação.
+3. Se houver conflito entre fontes, registre em contradictions/unresolved.
+4. A categoria é apenas sugestão textual; a categoria oficial será resolvida pelo Publication Engine.
+5. O preço sugerido é estimativa comercial; use 0 quando não houver base.
+6. O título deve ser objetivo e adequado ao Mercado Livre.
+7. Se marca/modelo não forem confirmados nem declarados, use o tipo de produto e características confirmadas.
+8. Retorne SOMENTE JSON válido, sem markdown.
+
+ESTRUTURA EXATA:
+{
+  "identification": {"product_type":"","brand":"","line":"","model":"","generation":"","version":"","color":"","condition":""},
+  "facts": [],
+  "hypotheses": [],
+  "evidence": [],
+  "cross_check": {"confirmed":[],"contradictions":[],"unresolved":[]},
+  "confidence": {"score":0,"level":"LOW","reasons":[]},
+  "catalog_input": {"search_terms":[],"product_type":"","brand":"","line":"","model":"","generation":""},
+  "decision": {"status":"PROVISIONAL","reason":""},
+  "listing_draft": {"title":"","description":"","suggested_price":0,"category":""}
+}
+
+OBSERVAÇÃO DO VENDEDOR:
+${observacaoVendedor || 'nenhuma'}
+
+PESQUISA VISUAL:
+${pesquisa}`;
+
+  const text = await gemini(prompt, base64, mime);
+
+  try {
+    return normalizeResult(JSON.parse(cleanJson(text)));
+  } catch (e) {
+    throw new Error('O Gemini retornou um JSON inválido.');
+  }
+}
+
+async function buildListing({ identification, facts, cross_check, catalogMatch, sellerObservation = '' }) {
+  const prompt = `Você é o COPYWRITER DO TRATOCORE para Mercado Livre.
+
+${REGRAS_COMERCIAIS}
+
+Escreva como um vendedor experiente de produtos usados, eletrônicos, videogames, antiguidades e peças de coleção. Seja comercial e convincente, porém factual.
+
+O anúncio deve:
+- destacar o que realmente torna a peça interessante;
+- usar marca/modelo quando sustentados;
+- informar condição e funcionamento somente quando sustentados;
+- tratar marcas de uso de forma objetiva, sem dramatizar;
+- não esconder defeitos ou limitações relevantes;
+- nunca inventar acessórios ou características;
+- nunca mencionar IA, análise visual ou processo de identificação;
+- incorporar diretamente a observação do vendedor.
+
+RETORNE SOMENTE JSON VÁLIDO:
+{"title":"","description":"","suggested_price":0,"category":""}
+
+IDENTIFICAÇÃO:
+${JSON.stringify(identification || {})}
+
+FATOS:
+${JSON.stringify(facts || [])}
+
+CRUZAMENTO:
+${JSON.stringify(cross_check || {})}
+
+CATÁLOGO:
+${JSON.stringify(catalogMatch || null)}
+
+OBSERVAÇÃO DO VENDEDOR:
+${sellerObservation || 'nenhuma'}`;
+
+  const text = await gemini(prompt);
+  try {
+    const r = JSON.parse(cleanJson(text));
+    return {
+      title: String(r.title || '').trim(),
+      description: String(r.description || '').trim(),
+      suggested_price: Number(r.suggested_price || 0),
+      category: String(r.category || '').trim()
+    };
+  } catch {
+    throw new Error('O Gemini retornou um rascunho inválido.');
+  }
+}
+
+async function improveListing(data) {
+  const prompt = `Melhore o anúncio abaixo para Mercado Livre.
+${REGRAS_COMERCIAIS}
+Mantenha estritamente os fatos fornecidos. Não invente nada.
+Retorne SOMENTE JSON válido: {"title":"","description":"","suggested_price":0,"category":""}
+DADOS: ${JSON.stringify(data || {})}`;
+
+  const text = await gemini(prompt);
+  try {
+    return JSON.parse(cleanJson(text));
+  } catch {
+    throw new Error('O Gemini retornou uma correção inválida.');
+  }
+}
+
+async function status() {
+  const key = getGeminiApiKey();
+  if (!key) {
+    return {
+      online: false,
+      provider: 'Gemini API',
+      model: getGeminiModel(),
+      vision_model: getGeminiModel(),
+      copywriter_model: getGeminiModel(),
+      vision_ready: false,
+      configured: false
+    };
+  }
+
+  let model = getGeminiModel();
+  let modelsCount = null;
+  try {
+    const available = await listAvailableModels();
+    modelsCount = available.length;
+    const selected = [model, ...MODEL_CANDIDATES].find(m => available.includes(m));
+    if (selected) {
+      model = selected;
+      resolvedModelCache = selected;
+    }
+  } catch (_) {}
+
+  return {
+    online: true,
+    provider: 'Gemini API',
+    model,
+    vision_model: model,
+    copywriter_model: model,
+    vision_ready: true,
+    configured: true,
+    models_available: modelsCount
+  };
+}
+
+module.exports = { analisarImagem, buildListing, improveListing, status };

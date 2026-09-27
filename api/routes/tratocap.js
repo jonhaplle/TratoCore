@@ -1,0 +1,259 @@
+const express = require("express");
+const multer = require("multer");
+const sharp = require("sharp");
+const fs = require("fs");
+const path = require("path");
+const { v4: uuidv4 } = require("uuid");
+const ProductService = require("../services/productService");
+const ProductImageService = require("../services/productImageService");
+
+const router = express.Router();
+
+// Importação automática: aguarda o álbum ficar alguns segundos sem novas fotos.
+// Assim o TratoCap pode enviar várias imagens sem criar um produto parcial.
+const AUTO_IMPORT_DELAY_MS = Number(process.env.TRATOCAP_AUTO_IMPORT_DELAY_MS || 5000);
+const importTimers = new Map();
+const storageRoot = path.join(__dirname, "../../storage");
+const albumsRoot = path.join(storageRoot, "tratocap", "albums");
+const tempRoot = path.join(storageRoot, "tratocap", "temp");
+const originalsRoot = path.join(storageRoot, "originals");
+const thumbsRoot = path.join(storageRoot, "thumbs");
+const galleryRoot = path.join(storageRoot, "gallery", "albums");
+
+[albumsRoot, tempRoot, originalsRoot, thumbsRoot, galleryRoot].forEach(dir => fs.mkdirSync(dir, { recursive: true }));
+
+function safeAlbumName(value) {
+    const cleaned = String(value || "Sem_Album")
+        .trim()
+        .replace(/[\\/:*?"<>|]/g, "_")
+        .replace(/\.+$/g, "")
+        .slice(0, 120);
+    return cleaned || "Sem_Album";
+}
+
+function imageFiles(albumDir) {
+    return fs.readdirSync(albumDir)
+        .filter(name => /\.(jpe?g|png|webp)$/i.test(name))
+        .map(name => path.join(albumDir, name))
+        .filter(file => fs.statSync(file).isFile())
+        .sort((a, b) => fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs || a.localeCompare(b));
+}
+
+const disk = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, tempRoot),
+    filename: (req, file, cb) => cb(null, uuidv4() + path.extname(file.originalname || ".jpg").toLowerCase())
+});
+const upload = multer({
+    storage: disk,
+    limits: { fileSize: 25 * 1024 * 1024, files: 1 },
+    fileFilter: (req, file, cb) => /^image\/(jpeg|jpg|png|webp)$/i.test(file.mimetype || "")
+        ? cb(null, true)
+        : cb(new Error("Formato de imagem não permitido."))
+});
+
+router.get("/status", (req, res) => {
+    res.json({
+        success: true,
+        sistema: "TratoCore",
+        modulo: "TratoCap Sync + Album Importer",
+        status: "online",
+        versao: "2.2",
+        auto_import: true,
+        auto_import_delay_ms: AUTO_IMPORT_DELAY_MS,
+        albums_path: albumsRoot,
+        gallery_path: galleryRoot,
+        destinations: ["product", "gallery"]
+    });
+});
+
+router.post("/upload", upload.single("image"), (req, res, next) => {
+    try {
+        if (!req.file) return res.status(400).json({ success: false, erro: "Nenhuma imagem enviada no campo image." });
+        const album = safeAlbumName(req.body.album);
+        const destination = String(req.body.destination || "product").trim().toLowerCase() === "gallery" ? "gallery" : "product";
+        const root = destination === "gallery" ? galleryRoot : albumsRoot;
+        const albumDir = path.join(root, album);
+        fs.mkdirSync(albumDir, { recursive: true });
+        const ext = path.extname(req.file.originalname || req.file.filename).toLowerCase() || ".jpg";
+        const fileName = `${Date.now()}_${uuidv4()}${ext}`;
+        const target = path.join(albumDir, fileName);
+        fs.renameSync(req.file.path, target);
+        const meta = {
+            album,
+            destination,
+            note: req.body.note || "",
+            client_uuid: req.body.client_uuid || "",
+            sha256: req.body.sha256 || "",
+            received_at: new Date().toISOString(),
+            original_name: req.file.originalname || "",
+            file_name: fileName,
+            file_size: fs.statSync(target).size
+        };
+        fs.writeFileSync(target + ".json", JSON.stringify(meta, null, 2), "utf8");
+
+        if (destination === "product") scheduleAutoImport(album);
+
+        res.status(201).json({
+            success: true,
+            message: destination === "gallery" ? "Imagem salva na Galeria TratoCore." : "Imagem recebida pelo TratoCore.",
+            album,
+            destination,
+            file_name: fileName,
+            auto_import: destination === "product" ? "agendado" : "desativado",
+            auto_import_delay_ms: destination === "product" ? AUTO_IMPORT_DELAY_MS : null
+        });
+    } catch (err) { next(err); }
+});
+
+router.get("/gallery", (req, res, next) => {
+    try {
+        const albums = fs.readdirSync(galleryRoot, { withFileTypes: true })
+            .filter(e => e.isDirectory())
+            .map(e => {
+                const dir = path.join(galleryRoot, e.name);
+                const files = imageFiles(dir);
+                let note = "";
+                if (files.length) {
+                    try { note = JSON.parse(fs.readFileSync(files[0] + ".json", "utf8")).note || ""; } catch (_) {}
+                }
+                return { album: e.name, images: files.length, note, destination: "gallery" };
+            });
+        res.json({ success: true, gallery: albums });
+    } catch (err) { next(err); }
+});
+
+router.post("/gallery/:album/import", async (req, res, next) => {
+    try {
+        const album = safeAlbumName(req.params.album);
+        const sourceDir = path.join(galleryRoot, album);
+        if (!fs.existsSync(sourceDir)) return res.status(404).json({ success: false, erro: "Álbum não encontrado na Galeria." });
+        const targetDir = path.join(albumsRoot, album);
+        fs.mkdirSync(targetDir, { recursive: true });
+        for (const file of fs.readdirSync(sourceDir)) {
+            if (file === ".tratocore-import.json") continue;
+            fs.copyFileSync(path.join(sourceDir, file), path.join(targetDir, file));
+        }
+        const result = await importAlbums(album);
+        res.json({ ...result, source: "gallery", imported_from_gallery: album });
+    } catch (err) { next(err); }
+});
+
+router.get("/albums", (req, res, next) => {
+    try {
+        const albums = fs.readdirSync(albumsRoot, { withFileTypes: true })
+            .filter(e => e.isDirectory())
+            .map(e => {
+                const dir = path.join(albumsRoot, e.name);
+                const marker = path.join(dir, ".tratocore-import.json");
+                return { album: e.name, images: imageFiles(dir).length, imported: fs.existsSync(marker) };
+            });
+        res.json({ success: true, albums });
+    } catch (err) { next(err); }
+});
+
+async function importAlbums(requestedAlbum = null) {
+    const names = requestedAlbum
+        ? [safeAlbumName(requestedAlbum)]
+        : fs.readdirSync(albumsRoot, { withFileTypes: true })
+            .filter(e => e.isDirectory())
+            .map(e => e.name);
+
+    const imported = [], skipped = [];
+
+    for (const album of names) {
+        const albumDir = path.join(albumsRoot, album);
+        if (!fs.existsSync(albumDir) || !fs.statSync(albumDir).isDirectory()) continue;
+        const markerPath = path.join(albumDir, ".tratocore-import.json");
+        if (fs.existsSync(markerPath)) {
+            skipped.push({ album, reason: "Já importado", data: JSON.parse(fs.readFileSync(markerPath, "utf8")) });
+            continue;
+        }
+
+        const files = imageFiles(albumDir);
+        if (!files.length) { skipped.push({ album, reason: "Nenhuma imagem" }); continue; }
+
+        let note = "";
+        try {
+            const firstMeta = JSON.parse(fs.readFileSync(files[0] + ".json", "utf8"));
+            note = firstMeta.note || "";
+        } catch (_) {}
+
+        const product = await ProductService.create({
+            title: album.replace(/[_-]+/g, " ").trim() || "Produto importado do TratoCap",
+            description: note,
+            quantity: 1,
+            condition: "used",
+            status: "NEW",
+            product_type: "",
+            ai_confidence: 0
+        });
+
+        const savedImages = [];
+        for (let i = 0; i < files.length; i++) {
+            const source = files[i];
+            const ext = path.extname(source).toLowerCase() || ".jpg";
+            const base = `${uuidv4()}`;
+            const originalName = base + ext;
+            const thumbName = base + ".webp";
+            const originalPath = path.join(originalsRoot, originalName);
+            const thumbPath = path.join(thumbsRoot, thumbName);
+            const metadata = await sharp(source).metadata();
+            fs.copyFileSync(source, originalPath);
+            await sharp(source).rotate().resize(250, 250, { fit: "inside", withoutEnlargement: true }).webp({ quality: 75 }).toFile(thumbPath);
+            const image = await ProductImageService.create({
+                product_id: product.id,
+                file_name: originalName,
+                original_url: "/storage/originals/" + originalName,
+                thumb_url: "/storage/thumbs/" + thumbName,
+                mime_type: metadata.format ? `image/${metadata.format === "jpg" ? "jpeg" : metadata.format}` : null,
+                width: metadata.width || null,
+                height: metadata.height || null,
+                file_size: fs.statSync(source).size,
+                is_main: i === 0,
+                sort_order: i + 1
+            });
+            savedImages.push(image);
+        }
+
+        const result = { album, product_id: product.id, images: savedImages.length, imported_at: new Date().toISOString() };
+        fs.writeFileSync(markerPath, JSON.stringify(result, null, 2), "utf8");
+        imported.push(result);
+    }
+    return { success: true, imported, skipped, total_imported: imported.length };
+}
+
+function scheduleAutoImport(album) {
+    if (importTimers.has(album)) clearTimeout(importTimers.get(album));
+    const timer = setTimeout(async () => {
+        importTimers.delete(album);
+        try {
+            const result = await importAlbums(album);
+            console.log(`[TratoCap] Auto-import concluído para "${album}":`, JSON.stringify(result.imported));
+        } catch (err) {
+            console.error(`[TratoCap] Erro no auto-import de "${album}":`, err);
+        }
+    }, AUTO_IMPORT_DELAY_MS);
+    importTimers.set(album, timer);
+}
+
+router.post("/finalize", async (req, res, next) => {
+    try {
+        const album = safeAlbumName(req.body && req.body.album);
+        if (importTimers.has(album)) {
+            clearTimeout(importTimers.get(album));
+            importTimers.delete(album);
+        }
+        const result = await importAlbums(album);
+        res.json({ ...result, finalized: album });
+    } catch (err) { next(err); }
+});
+
+router.post("/import", async (req, res, next) => {
+    try {
+        const requestedAlbum = req.body && req.body.album ? req.body.album : null;
+        const result = await importAlbums(requestedAlbum);
+        res.json(result);
+    } catch (err) { next(err); }
+});
+
+module.exports = router;

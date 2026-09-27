@@ -1,0 +1,284 @@
+﻿const fs = require("fs");
+const path = require("path");
+const OpenAI = require("openai");
+
+const client = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY
+});
+
+function limparJson(texto) {
+    return String(texto || "")
+        .replace(/```json/gi, "")
+        .replace(/```/g, "")
+        .trim();
+}
+
+async function analisarImagem(imagePath, pesquisaVisual = null, observacaoVendedor = "") {
+
+    const caminhoCompleto = path.resolve(imagePath);
+
+    if (!fs.existsSync(caminhoCompleto)) {
+        throw new Error("Imagem nÃ£o encontrada.");
+    }
+
+    const extensao = path.extname(caminhoCompleto).toLowerCase();
+
+    let mime = "image/jpeg";
+
+    if (extensao === ".png") mime = "image/png";
+    if (extensao === ".webp") mime = "image/webp";
+
+    const imagemBase64 = fs.readFileSync(caminhoCompleto, {
+        encoding: "base64"
+    });
+
+    const pesquisaTexto = pesquisaVisual
+        ? JSON.stringify({
+            provider: pesquisaVisual.provider,
+            search_url: pesquisaVisual.search_url,
+            text: pesquisaVisual.text,
+            links: pesquisaVisual.links
+        })
+        : "Nenhuma pesquisa visual disponÃ­vel.";
+
+    const resposta = await client.responses.create({
+
+        model: "gpt-5.5",
+
+        input: [
+
+            {
+                role: "system",
+                content: `Você é o cérebro de identificação e preparação de anúncios do TratoCore.
+
+A fotografia é a fonte visual primária.
+A pesquisa visual é fonte auxiliar de identificação.
+A observação do vendedor é DADO FORNECIDO PELO RESPONSÁVEL PELO PRODUTO e pode ser incorporada diretamente ao anúncio.
+
+REGRAS OBRIGATÓRIAS:
+
+1. Nunca transforme hipótese em fato sem evidência suficiente.
+2. Cruze fotografia, pesquisa visual e observação do vendedor.
+3. Se houver conflito entre fontes, registre a divergência em cross_check e reduza a confiança.
+4. Nunca invente marca, modelo, geração, versão, código, GTIN ou especificação.
+5. Nunca invente acessórios, medidas, potência, voltagem, capacidade, defeitos, reparos ou funcionalidades.
+6. Se o vendedor informar explicitamente uma condição do produto, essa informação pode ser usada diretamente no anúncio.
+7. NUNCA escreva "o vendedor informa", "segundo o vendedor", "de acordo com o vendedor" ou qualquer expressão semelhante.
+8. A informação fornecida pelo vendedor deve ser incorporada naturalmente à descrição.
+
+EXEMPLO:
+
+Observação do vendedor:
+"Aparelho testado e funcionando."
+
+CORRETO:
+"Aparelho testado e funcionando."
+
+ERRADO:
+"O vendedor informa que o aparelho foi testado e está funcionando."
+
+REGRA DE NÃO AMPLIAÇÃO:
+
+Se o vendedor disser:
+"Testado."
+
+Não escreva:
+"Imagem e som funcionando."
+
+Se disser:
+"Funcionando."
+
+Não escreva:
+"Todos os recursos foram testados."
+
+Assuma os dados fornecidos, mas nunca acrescente detalhes além do que foi informado.
+
+A descrição deve ser comercial, natural, objetiva e convincente, mas sempre factual.
+
+Não use clichês como:
+"alta qualidade"
+"excelente produto"
+"melhor preço"
+"ótima oportunidade"
+"produto incrível"
+
+a menos que exista evidência concreta que sustente a afirmação.
+
+O título deve ser objetivo, comercial e adequado ao Mercado Livre.
+
+Priorize:
+PRODUTO + MARCA + MODELO + CARACTERÍSTICA RELEVANTE
+
+somente quando esses dados estiverem confirmados ou explicitamente fornecidos.
+
+A descrição deve falar diretamente sobre o produto e nunca sobre o processo de análise.
+
+Não mencione IA, vendedor, fotografia, pesquisa visual ou fontes utilizadas.
+
+Se houver limitação conhecida, informe-a claramente.
+Não crie limitações que não foram informadas.
+
+suggested_price é apenas uma sugestão comercial e deve ser 0 quando não houver base suficiente.
+
+category é somente uma sugestão textual; a categoria oficial será resolvida posteriormente pelo sistema.
+
+RETORNE SOMENTE JSON VÁLIDO:
+{
+  "identification": {
+    "product_type": "",
+    "brand": "",
+    "line": "",
+    "model": "",
+    "generation": "",
+    "version": "",
+    "color": "",
+    "condition": ""
+  },
+  "facts": [],
+  "hypotheses": [],
+  "evidence": [],
+  "cross_check": {
+    "confirmed": [],
+    "contradictions": [],
+    "unresolved": []
+  },
+  "confidence": {
+    "score": 0,
+    "level": "LOW",
+    "reasons": []
+  },
+  "catalog_input": {
+    "search_terms": [],
+    "product_type": "",
+    "brand": "",
+    "line": "",
+    "model": "",
+    "generation": ""
+  },
+  "decision": {
+    "status": "PROVISIONAL",
+    "reason": ""
+  },
+  "listing_draft": {
+    "title": "",
+    "description": "",
+    "suggested_price": 0,
+    "category": ""
+  }
+}`
+            },
+
+            {
+                role: "user",
+                content: [
+                    {
+                        type: "input_text",
+                        text:
+                            "REGRAS DO COPYWRITER:
+
+- Crie título comercial otimizado para Mercado Livre.
+- Crie descrição persuasiva, clara e objetiva.
+- Use somente fotografia, pesquisa visual e dados fornecidos na observação.
+- Incorpore a observação do vendedor diretamente ao texto.
+- Nunca mencione \"vendedor\", \"proprietário\" ou \"segundo informado\".
+- Não transforme hipótese em fato.
+- Não invente características.
+- Não invente acessórios.
+- Não invente especificações.
+- Preserve exatamente o alcance das informações fornecidas.
+- Se a observação disser \"aparelho testado e funcionando\", escreva \"Aparelho testado e funcionando.\"
+- Não transforme \"testado\" em \"imagem e som testados\".
+- Não transforme \"funcionando\" em \"todas as funções funcionando\".
+- Use marca e modelo quando houver evidência suficiente ou declaração explícita.
+- Destaque características concretas e reais.
+- Evite linguagem robótica.
+- Evite exageros.
+- A descrição deve parecer escrita por um vendedor profissional.
+- Nunca revele as fontes usadas para construir o anúncio.
+- suggested_price deve ser 0 quando não houver base suficiente.
+- category deve ser preenchida somente quando houver evidência suficiente." +
+                            "ObservaÃ§Ã£o do vendedor: " +
+                            (observacaoVendedor || "nenhuma") +
+                            "\\n\\nPESQUISA VISUAL:\\n" +
+                            pesquisaTexto
+                    },
+                    {
+                        type: "input_image",
+                        image_url: `data:${mime};base64,${imagemBase64}`
+                    }
+                ]
+            }
+        ]
+    });
+
+    const texto = limparJson(resposta.output_text);
+
+    try {
+        const resultado = JSON.parse(texto);
+
+        // Compatibilidade com o frontend atual sem misturar
+        // a identificaÃ§Ã£o com a etapa posterior de geraÃ§Ã£o do anÃºncio.
+        const id = resultado.identification || {};
+        const conf = resultado.confidence || {};
+        const draft = resultado.listing_draft || {};
+
+        // Fallback seguro: se o modelo nÃ£o gerar o tÃ­tulo, o TratoCore
+        // ainda entrega um tÃ­tulo mÃ­nimo baseado exclusivamente nos fatos
+        // identificados, sem inventar marca/modelo.
+        const partesTitulo = [
+            id.brand,
+            id.line,
+            id.model,
+            id.generation,
+            id.product_type,
+            id.color
+        ].map(v => String(v || "").trim()).filter(Boolean);
+
+        let tituloFallback = partesTitulo.join(" ");
+
+        if (!tituloFallback && Array.isArray(resultado.facts) && resultado.facts.length) {
+            tituloFallback = String(id.product_type || "Produto identificado").trim();
+        }
+
+        const title = String(draft.title || resultado.title || tituloFallback || "").trim();
+        const description = String(
+            draft.description || resultado.description ||
+            (Array.isArray(resultado.facts) ? resultado.facts.slice(0, 6).join(" ") : "")
+        ).trim();
+
+        const suggestedPrice = Number(
+            draft.suggested_price ?? resultado.suggested_price ?? 0
+        );
+
+        return {
+            ...resultado,
+            product_type: id.product_type || "",
+            brand: id.brand || "",
+            line: id.line || "",
+            model: id.model || "",
+            generation: id.generation || "",
+            version: id.version || "",
+            color: id.color || "",
+            condition: id.condition || "",
+            confidence: Number(conf.score || 0),
+            confidence_details: conf,
+            title,
+            description,
+            suggested_price: Number.isFinite(suggestedPrice) ? suggestedPrice : 0,
+            category: String(draft.category || resultado.category || "").trim()
+        };
+    } catch (erro) {
+        console.log("====================================");
+        console.log("RESPOSTA DA IA");
+        console.log("====================================");
+        console.log(texto);
+        console.log("====================================");
+        throw new Error("A OpenAI retornou um JSON invÃ¡lido.");
+    }
+}
+
+module.exports = {
+    analisarImagem
+};
+
+

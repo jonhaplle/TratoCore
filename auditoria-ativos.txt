@@ -1,0 +1,246 @@
+◇ injected env (13) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+==============================================
+TRATOCORE — AUDITORIA DE CATEGORIAS / USADOS
+==============================================
+Modo: AUDITORIA
+Limite: 1000
+✅ PostgreSQL conectado
+
+Conta: AURELIOMARCOS20220705132316
+User ID: 1155087423
+Shipping modes: ["custom","not_specified","me2"]
+ME2 ativo: true
+
+Anúncios ativos encontrados: 215
+.......................................................................................................................................................................................................................
+
+
+==============================================
+AUDITORIA CONCLUÍDA
+==============================================
+Categorias: 112
+Arquivo: logs\ml-audit\used-categories-2026-08-19T02-47-16-544Z.json
+
+MLB1002 | Televisores | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL, VOLTAGE, DISPLAY_SIZE
+MLB1003 | Vídeo Cassetes | ativos=4 | usados=4 | semGTIN=4 | ITEM_CONDITION=4
+  required: BRAND, MODEL
+MLB1004 | DVD Players | ativos=2 | usados=2 | semGTIN=2 | ITEM_CONDITION=2
+  required: BRAND, MODEL, POWER_SUPPLY_TYPE
+MLB10177 | Reprodutores de Bluray | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB1042 | Câmeras Digitais | ativos=12 | usados=12 | semGTIN=12 | ITEM_CONDITION=12
+  required: BRAND, MODEL, POWER_SUPPLY_TYPE
+MLB1053 | Telefones | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL, IS_WIRELESS, ANATEL_HOMOLOGATION_NUMBER
+MLB105304 | Carimbos | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB1055 | Celulares e Smartphones | ativos=2 | usados=2 | semGTIN=2 | ITEM_CONDITION=2
+  required: BRAND, MODEL, IS_DUAL_SIM, COLOR, CARRIER, MANUFACTURER, CELLPHONES_ANATEL_HOMOLOGATION_NUMBER, ALPHANUMERIC_MODELS
+MLB107564 | Jogo de Panelas | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL, PIECES_NUMBER, IS_FACTORY_KIT, IS_SUITABLE_FOR_INDUCTION_COOKER
+MLB11172 | Consoles | ativos=2 | usados=1 | semGTIN=2 | ITEM_CONDITION=2
+  required: BRAND, MODEL, VOLTAGE
+MLB11507 | Caixas Acústicas  | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB11509 | Receivers | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB1174 | Música | ativos=5 | usados=4 | semGTIN=5 | ITEM_CONDITION=5
+  required: MUSIC_ARTIST_NAME, ALBUM_NAME
+MLB118028 | De Parede | ativos=2 | usados=2 | semGTIN=2 | ITEM_CONDITION=2
+  required: BRAND
+MLB118031 | De Parede | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND
+MLB118039 | Caixas | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB120248 | Facas Elétricas | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB1228 | Outros | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: TITLE
+MLB123919 | Lastros | ativos=1 | usados=0 | semGTIN=0 | ITEM_CONDITION=1
+MLB12443 | Blocos e Formas de Montar | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB135679 | Com Tela | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB135967 | Equalizadores | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL, POWER_SUPPLY_TYPE, EQUALIZER_TYPE
+MLB135981 | Cartuchos Videoke | ativos=1 | usados=1 | semGTIN=0 | ITEM_CONDITION=1
+  required: BRAND, IS_FACTORY_KIT
+MLB1649 | Computadores | ativos=3 | usados=3 | semGTIN=3 | ITEM_CONDITION=3
+  required: IS_FACTORY_KIT, BRAND, MODEL, PROCESSOR_BRAND, PROCESSOR_MODEL, DRIVE_CAPACITY, RAM_MEMORY_MODULE_TOTAL_CAPACITY, GRAPHIC_CARD
+MLB1652 | Notebooks | ativos=2 | usados=2 | semGTIN=2 | ITEM_CONDITION=2
+  required: BRAND, MODEL, PROCESSOR_BRAND, PROCESSOR_LINE, PROCESSOR_MODEL, DISPLAY_SIZE
+MLB1672 | HDs e SSDs | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL, CAPACITY
+MLB1839 | Figuras de Ação | ativos=2 | usados=2 | semGTIN=2 | ITEM_CONDITION=2
+  required: BRAND, COLLECTION
+MLB186456 | Video Games | ativos=4 | usados=4 | semGTIN=4 | ITEM_CONDITION=4
+  required: COLLECTION, VIDEO_GAME_TITLE, FORMAT, VIDEO_GAME_PLATFORM, REGION, US_GAME_CLASSIFICATION
+MLB186818 | Outros | ativos=11 | usados=11 | semGTIN=11 | ITEM_CONDITION=11
+  required: MANUFACTURER, BRAND
+MLB188546 | Serrotes | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL, HAND_SAW_TYPE
+MLB1910 | Outros | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND
+MLB191837 | Aparelhos de Jantar | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL, IS_FACTORY_KIT
+MLB191838 | Pratos | ativos=8 | usados=8 | semGTIN=8 | ITEM_CONDITION=8
+  required: BRAND
+MLB192369 | Taças e Copos | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL, DRINKING_GLASS_PRODUCT_TYPE
+MLB193518 | Colheres Medidoras | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+  conditional: UNITS_PER_PACK
+MLB193634 | Baldes de Gelo | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB193813 | Cortadores e Trituradores | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB1985 | Câmeras Analógicas | ativos=9 | usados=9 | semGTIN=9 | ITEM_CONDITION=9
+  required: BRAND, MODEL, POWER_SUPPLY_TYPE
+MLB212692 | Moldes | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB2297 | Outros | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+MLB2317 | Latas | ativos=1 | usados=0 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, COLLECTIBLE_CAN_BOTTLE_AND_SIPHON_TYPE
+MLB242204 | Cilindros | ativos=1 | usados=0 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, PART_NUMBER, VEHICLE_TYPE
+MLB244658 | Potes para Alimentos | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, VOLUME_CAPACITY
+MLB2457 | Outros | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: MANUFACTURER, BRAND, MODEL
+MLB26426 | De Pulso | ativos=7 | usados=7 | semGTIN=7 | ITEM_CONDITION=7
+  required: BRAND, MODEL
+MLB270104 | Jogos de Boliche | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB270122 | Guitarras e Violões | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB270196 | Fontes | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB270284 | Grabadores e Programadores | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB270516 | Álbuns de Música | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: ARTIST, RECORD_NAME
+MLB270925 | Rádio Relógio Despertador | ativos=2 | usados=2 | semGTIN=2 | ITEM_CONDITION=2
+  required: BRAND, MODEL
+MLB271298 | Controles | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB272188 | Outros | ativos=1 | usados=0 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB272202 | Botas | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL, GENDER, COLOR, SIZE
+MLB2907 | Walkie-talkies | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB29333 | Cajones | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB2968 | Bonecas, Bonecos e Bebês | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND
+MLB30195 | Balanças de Cozinha | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL, SCALE_TYPE
+MLB31036 | Kit para Churrasco | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL, IS_FACTORY_KIT
+MLB31548 | Outros | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: MANUFACTURER, BRAND
+MLB33410 | Pratos Decorativos | ativos=3 | usados=3 | semGTIN=3 | ITEM_CONDITION=3
+  required: BRAND, MATERIAL
+MLB33423 | Travessas | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, PRODUCT_TYPE
+MLB3378 | Caixas de Som e Subwoofer | ativos=1 | usados=0 | semGTIN=0 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+  conditional: GTIN
+MLB3839 | Home Theaters | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB3840 | CD Players | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL, POWER_SUPPLY_TYPE
+MLB3841 | Tape Decks | ativos=2 | usados=2 | semGTIN=2 | ITEM_CONDITION=2
+  required: BRAND, MODEL, TAPE_DECK_TYPE
+MLB3847 | Boomboxes | ativos=2 | usados=2 | semGTIN=2 | ITEM_CONDITION=2
+  required: BRAND, MODEL
+MLB3849 | Toca-fitas Portátil | ativos=5 | usados=5 | semGTIN=5 | ITEM_CONDITION=5
+  required: BRAND, MODEL
+MLB3850 | Rádios AM/FM | ativos=6 | usados=6 | semGTIN=6 | ITEM_CONDITION=6
+  required: BRAND, MODEL, RADIO_TYPE
+MLB3905 | Alto-Falantes | ativos=3 | usados=3 | semGTIN=3 | ITEM_CONDITION=3
+  required: BRAND, MODEL, VEHICLE_SPEAKER_WIDTH, SPEAKERS_NUMBER, VEHICLE_TYPE, COILS_NUMBER, RMS_POWER
+MLB3929 | Capacetes | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL, COLOR, HELMET_SIZE
+MLB40206 | Televisores | ativos=2 | usados=2 | semGTIN=2 | ITEM_CONDITION=2
+  required: BRAND, MODEL
+MLB40208 | Outros | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: MANUFACTURER, BRAND, MODEL
+MLB40280 | Quadros Decorativos | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND
+MLB40287 | Ferros de Passar Roupas | ativos=2 | usados=2 | semGTIN=2 | ITEM_CONDITION=2
+  required: MANUFACTURER, BRAND, MODEL
+MLB40337 | Gravadores | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB417500 | Conversores de Fibra Óptica | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+MLB430132 | Sem Tela | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB431813 | Cabos de Áudio e Vídeo | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, CABLE_AND_ADAPTER_TYPE
+MLB431815 | Cabos de Rede | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, NETWORK_CABLE_TYPE
+MLB432206 | Tênis | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL, GENDER, COLOR, SIZE
+MLB432678 | Lâminas para Plainas | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL, RECOMMENDED_USE
+MLB432712 | Quadros de Autor | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+MLB438454 | Gamepads | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB439075 | Outros | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND
+MLB439384 | Gravadores de Fita | ativos=4 | usados=4 | semGTIN=3 | ITEM_CONDITION=4
+  required: BRAND, MODEL
+MLB439433 | Outros | ativos=3 | usados=3 | semGTIN=3 | ITEM_CONDITION=3
+  required: MANUFACTURER, BRAND, MODEL
+MLB439665 | Pratos | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MATERIAL
+  conditional: UNITS_PER_PACK
+MLB445788 | Máscaras de Boca Reutilizáveis | ativos=1 | usados=0 | semGTIN=0 | ITEM_CONDITION=1
+  required: BRAND, MODEL, GENDER
+MLB455430 | Sets de Bonecos | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: CHARACTER
+MLB455701 | Reprodutores Portáteis | ativos=2 | usados=2 | semGTIN=2 | ITEM_CONDITION=2
+  required: BRAND, MODEL
+MLB457033 | Níveis Ópticos | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL, OPTICAL_LEVEL_TYPE
+MLB457530 | Ventiladores Portáteis | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL, VOLTAGE
+MLB47113 | Turbinas | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, PART_NUMBER, VEHICLE_TYPE
+MLB47581 | Telefones Antigos | ativos=3 | usados=3 | semGTIN=3 | ITEM_CONDITION=3
+  required: BRAND
+MLB49108 | Fragmentadoras de Papéis | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB5148 | Despertadores e de Mesa | ativos=4 | usados=3 | semGTIN=4 | ITEM_CONDITION=4
+  required: BRAND, MODEL
+MLB5412 | Secadores de Cabelo | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB5457 | Outras Antiguidades | ativos=2 | usados=2 | semGTIN=2 | ITEM_CONDITION=2
+  required: MANUFACTURER, BRAND, MODEL
+MLB5463 | Vitrolas e Gramofones | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB5867 | Roteadores | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB61637 | Outros | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, PART_NUMBER, VEHICLE_TYPE
+MLB63455 | Carregadores de Baterías | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL, VEHICLE_TYPE
+MLB6893 | Trens  | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB6989 | Filmadoras | ativos=4 | usados=4 | semGTIN=4 | ITEM_CONDITION=4
+  required: BRAND, MODEL
+MLB7075 | Porteiros Elétricos | ativos=1 | usados=0 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB73052 | Dispensadores de Água | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL, POWER_SUPPLY_TYPE, INSTALLATION_PLACEMENT
+MLB7458 | DVD Players Portáteis | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB9164 | Rádios | ativos=8 | usados=8 | semGTIN=8 | ITEM_CONDITION=8
+  required: MANUFACTURER, BRAND, MODEL
+MLB9188 | Cafeteiras | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL, POWER_SUPPLY_TYPE
+MLB99949 | Controles Remotos | ativos=1 | usados=1 | semGTIN=1 | ITEM_CONDITION=1
+  required: BRAND, MODEL
+MLB99957 | Calculadoras | ativos=4 | usados=3 | semGTIN=4 | ITEM_CONDITION=4
+  required: BRAND, MODEL, CALCULATOR_TYPE

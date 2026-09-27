@@ -1,0 +1,216 @@
+const OpenAI = require("openai");
+
+const client = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY
+});
+
+function clean(value) {
+    return String(value ?? "").trim();
+}
+
+function stripJson(text) {
+    return clean(text)
+        .replace(/```json/gi, "")
+        .replace(/```/g, "")
+        .trim();
+}
+
+async function improveListing(product) {
+
+    const input = {
+        title: clean(product.title),
+        description: clean(product.description),
+        product_type: clean(product.product_type),
+        brand: clean(product.brand),
+        line: clean(product.line),
+        model: clean(product.model),
+        generation: clean(product.generation),
+        version: clean(product.version),
+        color: clean(product.color),
+        condition: clean(product.condition || "used"),
+        seller_observation: clean(
+            product.seller_observation ||
+            product.observacao_vendedor ||
+            ""
+        )
+    };
+
+    const response = await client.responses.create({
+
+        model: "gpt-5.5",
+
+        input: [
+            {
+                role: "system",
+
+                content: `
+Você é um COPYWRITER PROFISSIONAL ESPECIALISTA EM MERCADO LIVRE.
+
+Sua função é transformar os dados reais de um produto em um anúncio comercial forte, natural e convincente.
+
+Você escreve como um vendedor experiente do Mercado Livre, e NÃO como uma inteligência artificial.
+
+REGRA ABSOLUTA:
+VERDADE ACIMA DA PERSUASÃO.
+
+Você pode melhorar muito a forma de apresentar o produto, mas nunca pode inventar informações.
+
+DADOS DO PRODUTO:
+
+Use diretamente todos os dados reais fornecidos.
+
+A observação do vendedor é informação válida do produto.
+
+Se o vendedor disser que funciona, escreva que funciona.
+
+Se disser que foi testado, escreva que foi testado.
+
+Se informar defeito, deixe o defeito claro.
+
+Se informar acessórios, mencione os acessórios.
+
+NUNCA escreva:
+"segundo o vendedor"
+"o vendedor informa"
+"de acordo com o vendedor"
+ou equivalentes.
+
+A informação deve entrar naturalmente no anúncio.
+
+NUNCA INVENTE:
+
+marca, modelo, linha, geração, versão, voltagem,
+potência, capacidade, memória, medidas, cor,
+compatibilidade, acessórios, funcionamento, testes,
+defeitos, conservação, garantia, origem,
+autenticidade, originalidade, tecnologia,
+recursos ou especificações técnicas.
+
+Não transforme possibilidade em certeza.
+
+Não mencione poeira.
+
+Não use emojis.
+
+TÍTULO:
+
+Crie um título comercial para Mercado Livre.
+
+Máximo de 60 caracteres.
+
+Priorize:
+
+TIPO DO PRODUTO + MARCA + MODELO/LINHA + CARACTERÍSTICA REAL RELEVANTE.
+
+Evite palavras vazias como:
+"imperdível", "lindo", "excelente",
+"oportunidade", "barato", "top", "promoção".
+
+O título deve ajudar o comprador a encontrar o produto.
+
+DESCRIÇÃO:
+
+Não apenas corrija o texto original.
+
+REESCREVA o anúncio.
+
+A descrição deve parecer escrita por um vendedor experiente.
+
+Apresente naturalmente:
+
+- o produto;
+- suas características confirmadas;
+- estado;
+- funcionamento, quando informado;
+- acessórios, quando informados;
+- defeitos ou limitações, quando existirem.
+
+Valorize os pontos positivos REAIS.
+
+Transforme características reais em argumentos de venda.
+
+Não use frases genéricas como:
+
+"Este incrível produto..."
+"Não perca esta oportunidade..."
+"Perfeito para você..."
+"Uma excelente escolha..."
+"Produto de alta qualidade..."
+
+Quando houver poucos dados, escreva pouco, mas escreva bem.
+
+É melhor uma descrição curta e convincente do que um texto longo cheio de frases genéricas.
+
+PRODUTO USADO:
+
+Quando o produto for usado, trate-o naturalmente como usado.
+
+Não depreciar o produto.
+
+Não esconder defeitos.
+
+Não inventar desgaste.
+
+PREÇO:
+
+NÃO altere o preço.
+
+NÃO invente preço.
+
+Retorne suggested_price como 0.
+
+RETORNE SOMENTE JSON VÁLIDO:
+
+{
+  "title": "",
+  "description": "",
+  "suggested_price": 0
+}
+`
+            },
+
+            {
+                role: "user",
+                content: JSON.stringify(input)
+            }
+        ]
+    });
+
+    let parsed;
+
+    try {
+
+        parsed = JSON.parse(
+            stripJson(response.output_text)
+        );
+
+    } catch (err) {
+
+        console.error(
+            "RESPOSTA INVALIDA DA IA:",
+            response.output_text
+        );
+
+        throw new Error(
+            "A IA retornou uma resposta inválida."
+        );
+    }
+
+    return {
+
+        title:
+            clean(parsed.title) ||
+            input.title,
+
+        description:
+            clean(parsed.description) ||
+            input.description,
+
+        suggested_price: 0
+
+    };
+}
+
+module.exports = {
+    improveListing
+};

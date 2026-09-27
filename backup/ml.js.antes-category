@@ -1,0 +1,30 @@
+﻿const express = require("express");
+const router = express.Router();
+
+const controller = require("../controllers/mlController");
+
+// ======================================================
+// MERCADO LIVRE
+// ======================================================
+
+// OAuth
+router.get("/login", controller.login);
+router.get("/callback", controller.callback);
+
+// Conta autenticada
+router.get("/me", controller.me);
+
+// Publicação
+router.post("/publish/:id", controller.publish);
+
+// Health Check
+router.get("/health", (req, res) => {
+    res.json({
+        success: true,
+        service: "Mercado Livre",
+        status: "online",
+        timestamp: new Date().toISOString()
+    });
+});
+
+module.exports = router;

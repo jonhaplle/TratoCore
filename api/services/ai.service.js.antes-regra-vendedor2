@@ -1,0 +1,209 @@
+﻿const fs = require("fs");
+const path = require("path");
+const OpenAI = require("openai");
+
+const client = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY
+});
+
+function limparJson(texto) {
+    return String(texto || "")
+        .replace(/```json/gi, "")
+        .replace(/```/g, "")
+        .trim();
+}
+
+async function analisarImagem(imagePath, pesquisaVisual = null, observacaoVendedor = "") {
+
+    const caminhoCompleto = path.resolve(imagePath);
+
+    if (!fs.existsSync(caminhoCompleto)) {
+        throw new Error("Imagem nÃ£o encontrada.");
+    }
+
+    const extensao = path.extname(caminhoCompleto).toLowerCase();
+
+    let mime = "image/jpeg";
+
+    if (extensao === ".png") mime = "image/png";
+    if (extensao === ".webp") mime = "image/webp";
+
+    const imagemBase64 = fs.readFileSync(caminhoCompleto, {
+        encoding: "base64"
+    });
+
+    const pesquisaTexto = pesquisaVisual
+        ? JSON.stringify({
+            provider: pesquisaVisual.provider,
+            search_url: pesquisaVisual.search_url,
+            text: pesquisaVisual.text,
+            links: pesquisaVisual.links
+        })
+        : "Nenhuma pesquisa visual disponÃ­vel.";
+
+    const resposta = await client.responses.create({
+
+        model: "gpt-5.5",
+
+        input: [
+
+            {
+                role: "system",
+                content: `
+VocÃª Ã© o cÃ©rebro de identificaÃ§Ã£o e preparaÃ§Ã£o de anÃºncios do TratoCore.
+
+A fotografia Ã© a fonte visual primÃ¡ria.
+A pesquisa do Google Lens Ã© uma FONTE AUXILIAR de evidÃªncia.
+
+REGRAS OBRIGATÃ“RIAS:
+1. Nunca transforme uma hipÃ³tese em fato sem evidÃªncia suficiente.
+2. Cruze o que aparece na fotografia com os resultados da pesquisa visual.
+3. Se houver conflito entre fontes, registre a dÃºvida e reduza a confianÃ§a.
+4. NÃ£o invente modelo, geraÃ§Ã£o, versÃ£o, cÃ³digo, GTIN ou especificaÃ§Ã£o.
+5. SÃ³ considere a identificaÃ§Ã£o consolidada quando houver evidÃªncia compatÃ­vel.
+6. A descriÃ§Ã£o do anÃºncio deve usar apenas informaÃ§Ãµes sustentadas pela identificaÃ§Ã£o.
+7. O preÃ§o sugerido Ã© estimativa comercial e nÃ£o deve ser apresentado como fato de mercado.
+8. Gere tambÃ©m um rascunho de anÃºncio usando SOMENTE os fatos sustentados pela anÃ¡lise.
+9. O tÃ­tulo deve ser objetivo, comercial e adequado ao Mercado Livre, sem inventar marca, modelo ou acessÃ³rios.
+10. Se marca/modelo nÃ£o forem confirmados, nÃ£o invente. Use o tipo de produto e as caracterÃ­sticas confirmadas.
+11. Se houver ambiguidade sobre qual peÃ§a Ã© o item principal, o tÃ­tulo deve refletir a interpretaÃ§Ã£o mais segura (por exemplo, "Base Carregadora para Controle Xbox Preta"), sem afirmar que o controle estÃ¡ incluÃ­do.
+12. A categoria retornada pela IA Ã© apenas sugestÃ£o textual; a categoria oficial do Mercado Livre serÃ¡ resolvida posteriormente pelo serviÃ§o de publicaÃ§Ã£o.
+
+RETORNE SOMENTE JSON VÃLIDO:
+{
+  "identification": {
+    "product_type": "",
+    "brand": "",
+    "line": "",
+    "model": "",
+    "generation": "",
+    "version": "",
+    "color": "",
+    "condition": ""
+  },
+  "facts": [],
+  "hypotheses": [],
+  "evidence": [],
+  "cross_check": {
+    "confirmed": [],
+    "contradictions": [],
+    "unresolved": []
+  },
+  "confidence": {
+    "score": 0,
+    "level": "LOW",
+    "reasons": []
+  },
+  "catalog_input": {
+    "search_terms": [],
+    "product_type": "",
+    "brand": "",
+    "line": "",
+    "model": "",
+    "generation": ""
+  },
+  "decision": {
+    "status": "PROVISIONAL",
+    "reason": ""
+  },
+  "listing_draft": {
+    "title": "",
+    "description": "",
+    "suggested_price": 0,
+    "category": ""
+  }
+}
+`
+            },
+
+            {
+                role: "user",
+                content: [
+                    {
+                        type: "input_text",
+                        text:
+                            "REGRAS DO COPYWRITER:`n- Preencha listing_draft com um titulo comercial otimizado para Mercado Livre.`n- Gere uma descricao persuasiva, clara e objetiva, baseada somente nos fatos confirmados, na foto e na observacao do vendedor.`n- Nunca transforme hipotese em fato.`n- Nunca invente marca, modelo, geracao, acessorios, quantidade, estado, especificacoes ou funcionalidades.`n- Se uma informacao nao estiver confirmada, nao a apresente como verdadeira.`n- O titulo deve priorizar produto, marca/modelo quando confirmados e caracteristicas relevantes.`n- A descricao deve destacar os pontos de venda reais e informar claramente as limitacoes ou incertezas relevantes.`n- suggested_price deve ser 0 quando nao houver base suficiente para sugerir um preco.`n- category deve conter a categoria somente quando houver evidencia suficiente.`n`nAnalise esta foto. Cruze-a com a pesquisa visual abaixo. " +
+                            "ObservaÃ§Ã£o do vendedor: " +
+                            (observacaoVendedor || "nenhuma") +
+                            "\\n\\nPESQUISA VISUAL:\\n" +
+                            pesquisaTexto
+                    },
+                    {
+                        type: "input_image",
+                        image_url: `data:${mime};base64,${imagemBase64}`
+                    }
+                ]
+            }
+        ]
+    });
+
+    const texto = limparJson(resposta.output_text);
+
+    try {
+        const resultado = JSON.parse(texto);
+
+        // Compatibilidade com o frontend atual sem misturar
+        // a identificaÃ§Ã£o com a etapa posterior de geraÃ§Ã£o do anÃºncio.
+        const id = resultado.identification || {};
+        const conf = resultado.confidence || {};
+        const draft = resultado.listing_draft || {};
+
+        // Fallback seguro: se o modelo nÃ£o gerar o tÃ­tulo, o TratoCore
+        // ainda entrega um tÃ­tulo mÃ­nimo baseado exclusivamente nos fatos
+        // identificados, sem inventar marca/modelo.
+        const partesTitulo = [
+            id.brand,
+            id.line,
+            id.model,
+            id.generation,
+            id.product_type,
+            id.color
+        ].map(v => String(v || "").trim()).filter(Boolean);
+
+        let tituloFallback = partesTitulo.join(" ");
+
+        if (!tituloFallback && Array.isArray(resultado.facts) && resultado.facts.length) {
+            tituloFallback = String(id.product_type || "Produto identificado").trim();
+        }
+
+        const title = String(draft.title || resultado.title || tituloFallback || "").trim();
+        const description = String(
+            draft.description || resultado.description ||
+            (Array.isArray(resultado.facts) ? resultado.facts.slice(0, 6).join(" ") : "")
+        ).trim();
+
+        const suggestedPrice = Number(
+            draft.suggested_price ?? resultado.suggested_price ?? 0
+        );
+
+        return {
+            ...resultado,
+            product_type: id.product_type || "",
+            brand: id.brand || "",
+            line: id.line || "",
+            model: id.model || "",
+            generation: id.generation || "",
+            version: id.version || "",
+            color: id.color || "",
+            condition: id.condition || "",
+            confidence: Number(conf.score || 0),
+            confidence_details: conf,
+            title,
+            description,
+            suggested_price: Number.isFinite(suggestedPrice) ? suggestedPrice : 0,
+            category: String(draft.category || resultado.category || "").trim()
+        };
+    } catch (erro) {
+        console.log("====================================");
+        console.log("RESPOSTA DA IA");
+        console.log("====================================");
+        console.log(texto);
+        console.log("====================================");
+        throw new Error("A OpenAI retornou um JSON invÃ¡lido.");
+    }
+}
+
+module.exports = {
+    analisarImagem
+};
+

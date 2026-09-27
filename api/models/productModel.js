@@ -1,4 +1,40 @@
-const db = require("../db");
+﻿const db = require("../db");
+
+function normalizeImageUrl(value) {
+    if (!value) return null;
+    const v = String(value).trim();
+    if (!v) return null;
+    if (/^https?:\/\//i.test(v)) return v;
+    return v.startsWith("/") ? v : "/" + v;
+}
+
+function fallbackThumb(fileName) {
+    if (!fileName) return null;
+    const name = String(fileName).trim();
+    if (!name) return null;
+    return "/storage/thumbs/" + name.replace(/\.[^.]+$/, ".webp");
+}
+
+function fallbackOriginal(fileName) {
+    if (!fileName) return null;
+    const name = String(fileName).trim();
+    if (!name) return null;
+    return "/storage/originals/" + name;
+}
+
+function normalizeImageFields(product) {
+    if (!product) return product;
+    product.thumb_url = normalizeImageUrl(product.thumb_url) || fallbackThumb(product.file_name);
+    product.original_url = normalizeImageUrl(product.original_url) || fallbackOriginal(product.file_name);
+    if (Array.isArray(product.images)) {
+        product.images = product.images.map(img => ({
+            ...img,
+            thumb_url: normalizeImageUrl(img.thumb_url) || fallbackThumb(img.file_name),
+            original_url: normalizeImageUrl(img.original_url) || fallbackOriginal(img.file_name)
+        }));
+    }
+    return product;
+}
 
 // ======================================================
 // LISTAR TODOS
@@ -12,20 +48,44 @@ async function getAll() {
             p.*,
 
             pi.thumb_url,
-            pi.original_url
+            pi.original_url,
+            pi.file_name,
+
+            COALESCE((
+                SELECT json_agg(
+                    json_build_object(
+                        'id', img.id,
+                        'file_name', img.file_name,
+                        'original_url', img.original_url,
+                        'thumb_url', img.thumb_url,
+                        'is_main', img.is_main,
+                        'sort_order', img.sort_order
+                    )
+                    ORDER BY img.is_main DESC, img.sort_order ASC, img.id ASC
+                )
+                FROM product_images img
+                WHERE img.product_id = p.id
+            ), '[]'::json) AS images
 
         FROM products p
 
-        LEFT JOIN product_images pi
-            ON pi.product_id = p.id
-            AND pi.is_main = TRUE
+        LEFT JOIN LATERAL (
+            SELECT
+                pi.thumb_url,
+                pi.original_url,
+                pi.file_name
+            FROM product_images pi
+            WHERE pi.product_id = p.id
+            ORDER BY pi.is_main DESC, pi.sort_order ASC, pi.id ASC
+            LIMIT 1
+        ) pi ON TRUE
 
         ORDER BY p.id DESC
     `;
 
     const result = await db.query(sql);
 
-    return result.rows;
+    return result.rows.map(normalizeImageFields);
 
 }
 
@@ -41,13 +101,37 @@ async function getById(id) {
             p.*,
 
             pi.thumb_url,
-            pi.original_url
+            pi.original_url,
+            pi.file_name,
+
+            COALESCE((
+                SELECT json_agg(
+                    json_build_object(
+                        'id', img.id,
+                        'file_name', img.file_name,
+                        'original_url', img.original_url,
+                        'thumb_url', img.thumb_url,
+                        'is_main', img.is_main,
+                        'sort_order', img.sort_order
+                    )
+                    ORDER BY img.is_main DESC, img.sort_order ASC, img.id ASC
+                )
+                FROM product_images img
+                WHERE img.product_id = p.id
+            ), '[]'::json) AS images
 
         FROM products p
 
-        LEFT JOIN product_images pi
-            ON pi.product_id = p.id
-            AND pi.is_main = TRUE
+        LEFT JOIN LATERAL (
+            SELECT
+                pi.thumb_url,
+                pi.original_url,
+                pi.file_name
+            FROM product_images pi
+            WHERE pi.product_id = p.id
+            ORDER BY pi.is_main DESC, pi.sort_order ASC, pi.id ASC
+            LIMIT 1
+        ) pi ON TRUE
 
         WHERE p.id = $1
 
@@ -60,7 +144,7 @@ async function getById(id) {
         return null;
     }
 
-    const product = result.rows[0];
+    const product = normalizeImageFields(result.rows[0]);
 
     product.sale_price = Number(product.sale_price || 0);
     product.quantity = Math.max(1, Number(product.quantity || 1));
@@ -166,8 +250,9 @@ async function update(id, product) {
             version=$13,
             color=$14,
             condition=$15,
-            ai_confidence=$16
-        WHERE id=$17
+            ai_confidence=$16,
+            ml_attributes=$17
+        WHERE id=$18
         RETURNING *
     `;
 
@@ -188,6 +273,7 @@ async function update(id, product) {
         product.color || "",
         product.condition || "used",
         Number(product.ai_confidence || 0),
+        product.ml_attributes || product.attributes || null,
         id
     ];
 
@@ -225,3 +311,5 @@ module.exports = {
     remove
 
 };
+
+

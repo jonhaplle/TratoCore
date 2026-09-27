@@ -1,0 +1,64 @@
+require("dotenv").config();
+
+const pool = require("./api/db");
+const axios = require("axios");
+
+(async () => {
+    try {
+        const result = await pool.query(`
+            SELECT access_token
+            FROM ml_tokens
+            ORDER BY created_at DESC
+            LIMIT 1
+        `);
+
+        if (!result.rows.length) {
+            throw new Error("Token não encontrado.");
+        }
+
+        const token = result.rows[0].access_token;
+
+        const titulo =
+            "Console Microsoft Xbox Clássico Original Preto Usado";
+
+        const url =
+            "https://api.mercadolibre.com/sites/MLB/domain_discovery/search";
+
+        const response = await axios.get(url, {
+            params: {
+                limit: 3,
+                q: titulo
+            },
+            headers: {
+                Authorization: `Bearer ${token}`
+            }
+        });
+
+        console.log("");
+        console.log("==========================================");
+        console.log("CATEGORIAS ENCONTRADAS PELO MERCADO LIVRE");
+        console.log("==========================================");
+
+        console.dir(response.data, {
+            depth: null
+        });
+
+        console.log("");
+        console.log("==========================================");
+
+    } catch (err) {
+        console.error("");
+        console.error("ERRO:");
+
+        if (err.response) {
+            console.dir(err.response.data, {
+                depth: null
+            });
+        } else {
+            console.error(err.message);
+        }
+
+    } finally {
+        await pool.end();
+    }
+})();

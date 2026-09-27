@@ -1,0 +1,206 @@
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, "../.env") });
+
+const express = require("express");
+const cors = require("cors");
+const fs = require("fs");
+
+const db = require("./db");
+
+const productsRoutes = require("./routes/products");
+const uploadRoutes = require("./routes/upload");
+const aiRoutes = require("./routes/ai");
+const productImagesRoutes = require("./routes/productImages");
+const mlRoutes = require("./routes/ml");
+const browserRoutes = require("./routes/browser");
+
+const app = express();
+
+// ======================================================
+// CONFIGURAÇÕES
+// ======================================================
+
+app.use(cors());
+
+app.use(express.json({ limit: "50mb" }));
+
+app.use(express.urlencoded({
+    extended: true,
+    limit: "50mb"
+}));
+
+// ======================================================
+// PASTAS
+// ======================================================
+
+const storagePath = path.join(__dirname, "../storage");
+const productsPath = path.join(storagePath, "products");
+
+if (!fs.existsSync(storagePath)) {
+    fs.mkdirSync(storagePath, { recursive: true });
+}
+
+if (!fs.existsSync(productsPath)) {
+    fs.mkdirSync(productsPath, { recursive: true });
+}
+
+// ======================================================
+// ARQUIVOS ESTÁTICOS
+// ======================================================
+
+app.use(express.static(path.join(__dirname, "../public")));
+
+app.use("/storage", express.static(storagePath));
+
+// ======================================================
+// ROTAS API
+// ======================================================
+
+app.use("/api/products", productsRoutes);
+
+app.use("/api/upload", uploadRoutes);
+
+app.use("/api/ai", aiRoutes);
+
+app.use("/api/product-images", productImagesRoutes);
+app.use("/api/ml", mlRoutes);
+app.use("/api/browser", browserRoutes);
+
+// ======================================================
+// HOME
+// ======================================================
+
+app.get("/", (req, res) => {
+
+    res.sendFile(path.join(__dirname, "../public/index.html"));
+
+});
+
+// ======================================================
+// STATUS
+// ======================================================
+
+app.get("/api", (req, res) => {
+
+    res.json({
+
+        sistema: "Trato Core",
+
+        versao: "0.6.0",
+
+        status: "online",
+
+        banco: "PostgreSQL",
+
+        upload: "ativo",
+
+        ia: "Google Gemini",
+
+        storage: "/storage",
+
+        imagens: "product_images"
+
+    });
+
+});
+
+// ======================================================
+// HEALTH CHECK — BANCO / CONFIGURAÇÃO
+// ======================================================
+
+app.get("/api/health", async (req, res) => {
+    try {
+        await db.query("SELECT 1");
+        return res.json({
+            status: "ok",
+            postgres: "connected",
+            gemini: process.env.GEMINI_API_KEY ? "configured" : "missing",
+            port: PORT
+        });
+    } catch (err) {
+        return res.status(503).json({
+            status: "error",
+            postgres: "disconnected",
+            gemini: process.env.GEMINI_API_KEY ? "configured" : "missing",
+            error: err.message
+        });
+    }
+});
+
+// ======================================================
+// 404
+// ======================================================
+
+app.use((req, res) => {
+
+    res.status(404).json({
+
+        erro: "Rota não encontrada."
+
+    });
+
+});
+
+// ======================================================
+// ERROS
+// ======================================================
+
+app.use((err, req, res, next) => {
+
+    console.error("======================================");
+    console.error("ERRO");
+    console.error("======================================");
+    console.error(err);
+
+    res.status(500).json({
+
+        sucesso: false,
+
+        erro: err.message || "Erro interno do servidor."
+
+    });
+
+});
+
+// ======================================================
+// START
+// ======================================================
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+
+    console.log("======================================");
+    console.log("        TRATO CORE 0.6.0");
+    console.log("======================================");
+    console.log("");
+    console.log("Servidor:");
+    console.log(`http://localhost:${PORT}`);
+    console.log("");
+    console.log("API:");
+    console.log(`http://localhost:${PORT}/api`);
+    console.log("");
+    console.log("Produtos:");
+    console.log(`http://localhost:${PORT}/api/products`);
+    console.log("");
+    console.log("Upload:");
+    console.log(`http://localhost:${PORT}/api/upload`);
+    console.log("");
+    console.log("Imagens:");
+    console.log(`http://localhost:${PORT}/api/product-images`);
+    console.log("");
+    console.log("IA:");
+    console.log(`http://localhost:${PORT}/api/ai/analyze`);
+    console.log("");
+    console.log("Browser Engine:");
+    console.log(`http://localhost:${PORT}/api/browser/status`);
+    console.log("");
+    console.log("Storage:");
+    console.log(storagePath);
+    console.log("");
+    console.log("Gemini:");
+    console.log(process.env.GEMINI_API_KEY ? "✅ Chave carregada" : "❌ Chave não encontrada");
+    console.log("");
+    console.log("======================================");
+
+});

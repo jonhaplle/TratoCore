@@ -1,0 +1,231 @@
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const sharp = require('sharp');
+
+const ProductService = require('./productService');
+const ProductImageService = require('./productImageService');
+const { analisarImagem } = require('./ai.service');
+const { pesquisarImagem } = require('./lens.service');
+const { findCatalogMatch } = require('./catalog.service');
+const { buildListing } = require('./listing.service');
+
+const STORAGE = path.join(__dirname, '../../storage');
+const TRATOCAP_ROOT = path.join(STORAGE, 'tratocap');
+const ORIGINALS = path.join(STORAGE, 'originals');
+const THUMBS = path.join(STORAGE, 'thumbs');
+
+for (const dir of [STORAGE, TRATOCAP_ROOT, ORIGINALS, THUMBS]) {
+  fs.mkdirSync(dir, { recursive: true });
+}
+
+function safeAlbumName(value) {
+  return String(value || '').trim().replace(/[^a-zA-Z0-9._ -]+/g, '_').slice(0, 100);
+}
+
+function albumDir(album) {
+  const safe = safeAlbumName(album);
+  if (!safe) throw new Error('Álbum inválido.');
+  const dir = path.join(TRATOCAP_ROOT, safe);
+  if (!fs.existsSync(dir)) throw new Error(`Álbum não encontrado: ${safe}`);
+  return { safe, dir };
+}
+
+function imageFiles(dir) {
+  const nested = path.join(dir, 'images');
+  const source = fs.existsSync(nested) && fs.statSync(nested).isDirectory() ? nested : dir;
+  return fs.readdirSync(source, { withFileTypes: true })
+    .filter(x => x.isFile() && /\.(jpe?g|png|webp)$/i.test(x.name))
+    .map(x => ({ name: x.name, full: path.join(source, x.name) }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+}
+
+function markerPath(dir) {
+  return path.join(dir, '.tratocore-import.json');
+}
+
+function readJson(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+}
+
+function writeJson(file, value) {
+  fs.writeFileSync(file, JSON.stringify(value, null, 2), 'utf8');
+}
+
+function cleanTitle(album) {
+  return String(album)
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() || 'Produto importado do TratoCap';
+}
+
+async function listAlbums() {
+  if (!fs.existsSync(TRATOCAP_ROOT)) return [];
+  return fs.readdirSync(TRATOCAP_ROOT, { withFileTypes: true })
+    .filter(x => x.isDirectory())
+    .map(x => {
+      const dir = path.join(TRATOCAP_ROOT, x.name);
+      const files = imageFiles(dir);
+      const marker = readJson(markerPath(dir));
+      return {
+        album: x.name,
+        total: files.length,
+        imported: !!marker?.product_id,
+        product_id: marker?.product_id || null,
+        imported_at: marker?.imported_at || null
+      };
+    })
+    .sort((a, b) => a.album.localeCompare(b.album, undefined, { numeric: true }));
+}
+
+async function importAlbum(album, { force = false } = {}) {
+  const { safe, dir } = albumDir(album);
+  const marker = readJson(markerPath(dir));
+
+  if (marker?.product_id && !force) {
+    const existing = await ProductService.getById(marker.product_id);
+    if (existing) {
+      return {
+        imported: false,
+        already_imported: true,
+        product: existing,
+        product_id: existing.id,
+        image_count: marker.image_count || 0
+      };
+    }
+  }
+
+  const files = imageFiles(dir);
+  if (!files.length) throw new Error('O álbum não possui imagens válidas.');
+
+  const product = await ProductService.create({
+    title: cleanTitle(safe),
+    description: '',
+    sale_price: 0,
+    quantity: 1,
+    status: 'CAPTURED',
+    condition: 'used'
+  });
+
+  const savedImages = [];
+
+  try {
+    for (let index = 0; index < files.length; index++) {
+      const source = files[index];
+      const ext = path.extname(source.name).toLowerCase() || '.jpg';
+      const id = crypto.randomUUID();
+      const fileName = `${id}${ext}`;
+      const originalTarget = path.join(ORIGINALS, fileName);
+      const thumbName = `${id}.webp`;
+      const thumbTarget = path.join(THUMBS, thumbName);
+
+      fs.copyFileSync(source.full, originalTarget);
+      const meta = await sharp(source.full).metadata();
+      await sharp(source.full)
+        .rotate()
+        .resize(500, 500, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 82 })
+        .toFile(thumbTarget);
+
+      const image = await ProductImageService.create({
+        product_id: product.id,
+        file_name: fileName,
+        original_url: `/storage/originals/${fileName}`,
+        thumb_url: `/storage/thumbs/${thumbName}`,
+        mime_type: meta.format ? `image/${meta.format === 'jpeg' ? 'jpeg' : meta.format}` : null,
+        width: meta.width || null,
+        height: meta.height || null,
+        file_size: fs.statSync(originalTarget).size,
+        is_main: index === 0,
+        sort_order: index + 1
+      });
+      savedImages.push(image);
+    }
+  } catch (err) {
+    throw new Error(`Falha ao importar imagens: ${err.message}`);
+  }
+
+  writeJson(markerPath(dir), {
+    product_id: product.id,
+    imported_at: new Date().toISOString(),
+    image_count: savedImages.length,
+    source: 'TratoCap'
+  });
+
+  return {
+    imported: true,
+    already_imported: false,
+    product_id: product.id,
+    product: await ProductService.getById(product.id),
+    images: savedImages
+  };
+}
+
+async function analyzeProduct(productId) {
+  const product = await ProductService.getById(productId);
+  if (!product) throw new Error('Produto não encontrado para análise.');
+  const main = Array.isArray(product.images) ? product.images.find(x => x.is_main) || product.images[0] : null;
+  if (!main?.original_url) throw new Error('Produto não possui imagem principal.');
+
+  const relative = String(main.original_url).replace(/^\/+/, '');
+  const imagePath = path.join(__dirname, '../../', relative);
+
+  let visual = { provider: 'none', search_url: '', links: [] };
+  try { visual = await pesquisarImagem(imagePath); } catch (err) { console.warn('Lens indisponível, seguindo com IA:', err.message); }
+
+  const result = await analisarImagem(imagePath, visual, '');
+  const identification = result.identification || {};
+
+  let catalogMatch = null;
+  try {
+    catalogMatch = await findCatalogMatch({
+      ...(result.catalog_input || {}),
+      product_type: result.product_type || identification.product_type || '',
+      brand: result.brand || identification.brand || '',
+      line: result.line || identification.line || '',
+      model: result.model || identification.model || '',
+      generation: result.generation || identification.generation || ''
+    });
+  } catch (err) {
+    console.warn('Catalog matcher indisponível:', err.message);
+  }
+
+  let listing = {};
+  try {
+    listing = await buildListing({
+      identification,
+      facts: result.facts || [],
+      cross_check: result.cross_check || {},
+      catalogMatch,
+      sellerObservation: ''
+    }) || {};
+  } catch (err) {
+    console.warn('Copywriter indisponível:', err.message);
+  }
+
+  const updated = await ProductService.update(product.id, {
+    ...product,
+    title: String(listing.title || result.title || product.title || '').trim() || product.title,
+    description: String(listing.description || result.description || product.description || ''),
+    sale_price: Number(listing.suggested_price || result.suggested_price || product.sale_price || 0),
+    product_type: result.product_type || identification.product_type || product.product_type || '',
+    brand: result.brand || identification.brand || product.brand || '',
+    line: result.line || identification.line || product.line || '',
+    model: result.model || identification.model || product.model || '',
+    generation: result.generation || identification.generation || product.generation || '',
+    version: result.version || identification.version || product.version || '',
+    color: result.color || identification.color || product.color || '',
+    ai_confidence: Number(result.ai_confidence || identification.confidence || product.ai_confidence || 0),
+    status: 'ANALYZED'
+  });
+
+  return { product: updated, ai: result, listing, catalogMatch };
+}
+
+async function importAndAnalyze(album, options = {}) {
+  const imported = await importAlbum(album, options);
+  const analyzed = await analyzeProduct(imported.product_id);
+  return { ...imported, analyzed };
+}
+
+module.exports = { listAlbums, importAlbum, analyzeProduct, importAndAnalyze };

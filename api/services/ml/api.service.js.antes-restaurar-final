@@ -1,0 +1,111 @@
+const axios = require("axios");
+const pool = require("../../db");
+const tokenService = require("./token.service");
+const API = "https://api.mercadolibre.com";
+
+let accessToken = null;
+exports.setAccessToken = (token) => {
+    accessToken = token;
+};
+exports.getAccessToken = async () => {
+    if (accessToken) {
+        return accessToken;
+    }
+    const result = await pool.query(`
+        SELECT access_token
+        FROM ml_tokens
+        ORDER BY created_at DESC
+        LIMIT 1
+    `);
+    if (result.rows.length === 0) {
+        throw new Error("Access Token nÃ£o configurado.");
+    accessToken = result.rows[0].access_token;
+    return accessToken;
+async function request(config, retry = true) {
+    try {
+        const token = await exports.getAccessToken();
+        config.headers = {
+            ...(config.headers || {}),
+            Authorization: `Bearer ${token}`,
+            "User-Agent": "TratoCore/1.0"
+        };
+        return await axios(config);
+    } catch (err) {
+        if (
+            retry &&
+            err.response &&
+            err.response.status === 401
+        ) {
+            console.log("====================================");
+            console.log("ACCESS TOKEN EXPIRADO");
+            console.log("RENOVANDO TOKEN...");
+            accessToken = await tokenService.refresh();
+            return request(config, false);
+        }
+        throw err;
+}
+exports.publishItem = async (item) => {
+        console.log("====================================");
+        console.log("PUBLICANDO ANÃšNCIO MERCADO LIVRE");
+        const response = await request({
+            method: "post",
+            url: `${API}/items`,
+            data: item,
+            headers: {
+                "Content-Type": "application/json"
+            },
+            timeout: 30000
+        });
+        console.log("ANÃšNCIO PUBLICADO");
+        console.log("ID:", response.data.id);
+        console.log("STATUS:", response.data.status);
+        return response.data;
+        console.log("ERRO API MERCADO LIVRE");
+        if (err.response) {
+            console.log("HTTP:", err.response.status);
+            console.dir(err.response.data, {
+                depth: null
+            });
+        } else {
+            console.error(err.message);
+exports.createDescription = async (itemId, description) => {
+    const response = await request({
+        method: "post",
+        url: `${API}/items/${itemId}/description`,
+        data: {
+            plain_text: description
+        },
+        headers: {
+            "Content-Type": "application/json"
+        timeout: 30000
+    });
+    return response.data;
+exports.getItem = async (itemId) => {
+        method: "get",
+        url: `${API}/items/${itemId}`,
+exports.getMe = async () => {
+        url: `${API}/users/me`,
+exports.updateItem = async (itemId, body) => {
+        method: "put",
+        data: body,
+// ======================================================
+// PREDITOR DE CATEGORIA MERCADO LIVRE
+exports.predictCategory = async (title) => {
+    if (!title || !String(title).trim()) {
+        throw new Error("TÃ­tulo nÃ£o informado para previsÃ£o de categoria.");
+        url: `${API}/sites/MLB/domain_discovery/search`,
+        params: {
+            limit: 3,
+            q: String(title).trim()
+    if (!Array.isArray(response.data) || response.data.length === 0) {
+        throw new Error("Mercado Livre nÃ£o encontrou categoria para este produto.");
+// BUSCADOR DE PRODUTOS DE CATÃLOGO
+exports.searchProducts = async (params = {}) => {
+        url: `${API}/products/search`,
+            site_id: "MLB",
+            status: "active",
+            ...params
+exports.getProduct = async (productId) => {
+    if (!productId) {
+        throw new Error("Product ID nÃ£o informado.");
+        url: `${API}/products/${encodeURIComponent(productId)}`,

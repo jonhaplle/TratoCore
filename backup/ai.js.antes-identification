@@ -1,0 +1,200 @@
+const express = require("express");
+const path = require("path");
+
+const router = express.Router();
+
+const { analisarImagem } = require("../services/ai.service");
+const identificationService = require("../services/identification.service");
+
+router.post("/analyze", async (req, res) => {
+
+    try {
+
+        const {
+            imageUrl,
+            observacaoVendedor = ""
+        } = req.body;
+
+        if (!imageUrl) {
+
+            return res.status(400).json({
+                sucesso: false,
+                erro: "imageUrl não informado."
+            });
+
+        }
+
+        let caminhoImagem = imageUrl;
+
+        caminhoImagem = caminhoImagem.replace(
+            /^https?:\/\/[^/]+/i,
+            ""
+        );
+
+        caminhoImagem = caminhoImagem.replace(/^\/+/, "");
+
+        caminhoImagem = path.join(
+            __dirname,
+            "../../",
+            caminhoImagem
+        );
+
+        /*
+         * =====================================================
+         * ML-007
+         * IDENTIFICAÇÃO INTELIGENTE
+         * =====================================================
+         *
+         * Primeiro obtemos a identificação visual existente.
+         * Depois transformamos o resultado em:
+         *
+         * fatos
+         * hipóteses
+         * evidências
+         * confiança
+         *
+         * A observação do vendedor é preservada como informação
+         * explícita da origem "seller".
+         */
+
+        const resultadoIA = await analisarImagem(
+            caminhoImagem,
+            observacaoVendedor
+        );
+
+        const identificacao =
+            identificationService.createIdentificationResult({
+                input: {
+                    product_id: null,
+                    image_ids: [imageUrl],
+                    image_count: 1
+                },
+
+                observations: resultadoIA,
+
+                facts: [
+                    {
+                        field: "seller_observation",
+                        value: observacaoVendedor,
+                        source: "seller",
+                        confidence: observacaoVendedor ? 1 : 0
+                    }
+                ],
+
+                hypotheses: [],
+
+                evidence: [
+                    {
+                        type: "visual",
+                        source: "ai_vision",
+                        url: imageUrl,
+                        title: "Imagem analisada pela IA",
+                        supports: [
+                            resultadoIA.product_type,
+                            resultadoIA.brand,
+                            resultadoIA.model
+                        ].filter(Boolean),
+                        confidence: resultadoIA.confidence || 0
+                    }
+                ],
+
+                research: {
+                    queries: [],
+                    visual_results: [],
+                    web_results: []
+                },
+
+                cross_check: {
+                    confirmed: [],
+                    contradictions: [],
+                    unresolved: []
+                },
+
+                identification: {
+                    product_type: resultadoIA.product_type || "",
+                    brand: resultadoIA.brand || "",
+                    line: resultadoIA.line || "",
+                    model: resultadoIA.model || "",
+                    generation: resultadoIA.generation || "",
+                    version: resultadoIA.version || "",
+                    color: resultadoIA.color || "",
+                    condition: resultadoIA.condition || ""
+                },
+
+                confidence: {
+                    score: Math.round(
+                        (resultadoIA.confidence || 0) * 100
+                    ),
+                    level:
+                        (resultadoIA.confidence || 0) >= 0.90
+                            ? "HIGH"
+                            : (resultadoIA.confidence || 0) >= 0.70
+                                ? "MEDIUM"
+                                : "LOW",
+
+                    reasons: [
+                        "Identificação inicial produzida pela IA.",
+                        observacaoVendedor
+                            ? "Existe observação explícita do vendedor."
+                            : "Não existe observação explícita do vendedor."
+                    ]
+                },
+
+                catalog_input: {
+                    search_terms: [
+                        resultadoIA.brand,
+                        resultadoIA.line,
+                        resultadoIA.model,
+                        resultadoIA.product_type
+                    ].filter(Boolean),
+
+                    product_type: resultadoIA.product_type || "",
+                    brand: resultadoIA.brand || "",
+                    line: resultadoIA.line || "",
+                    model: resultadoIA.model || "",
+                    generation: resultadoIA.generation || ""
+                },
+
+                decision: {
+                    status: "PROVISIONAL",
+                    reason:
+                        "Identificação inicial aguardando pesquisa e cruzamento de evidências."
+                }
+            });
+
+        res.json({
+
+            sucesso: true,
+
+            resultado: {
+
+                ...resultadoIA,
+
+                identification: identificacao
+
+            }
+
+        });
+
+    }
+
+    catch (err) {
+
+        console.error("======================================");
+        console.error("ERRO IA / ML-007");
+        console.error("======================================");
+        console.error(err);
+        console.error("======================================");
+
+        res.status(500).json({
+
+            sucesso: false,
+            erro: err.message
+
+        });
+
+    }
+
+});
+
+module.exports = router;

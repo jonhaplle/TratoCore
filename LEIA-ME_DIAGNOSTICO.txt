@@ -1,0 +1,6 @@
+1. Feche o TratoCore antes do diagnóstico.
+2. Execute INSTALAR_DIAGNOSTICO_PUBLICACAO_ML.bat como administrador.
+3. Depois execute C:\TratoCore\DIAGNOSTICAR_PUBLICACAO_ML.bat.
+4. Envie a tela do CMD.
+
+O diagnóstico não altera o Gemini nem o layout. Ele apenas verifica PostgreSQL e a conexão/token do Mercado Livre.

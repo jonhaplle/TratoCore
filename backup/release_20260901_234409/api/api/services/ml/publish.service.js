@@ -1,0 +1,456 @@
+const fs = require("fs");
+const path = require("path");
+console.log("### PUBLISH SERVICE — FLUXO OFICIAL ML ###");
+
+const productService = require("../productService");
+const productImageService = require("../productImageService");
+const itemService = require("./item.service");
+const apiService = require("./api.service");
+const mlProductService = require("./mlProduct.service");
+const publicationSpecService = require("./publicationSpec.service");
+const attributeResolver = require("./attributeResolver.service");
+const localAI = require("../local-ai.service");
+
+function clean(value) {
+    if (value === undefined || value === null) return "";
+    return String(value).trim();
+}
+
+function findDefinition(publicationSpec, id) {
+    return (publicationSpec.attributes || []).find(item => item.id === id) || {
+        id,
+        name: id,
+        value_type: "string",
+        values: []
+    };
+}
+
+function buildMissing(publicationSpec, ids) {
+    const unique = [];
+    for (const id of ids || []) {
+        if (!id || unique.some(item => item.id === id)) continue;
+        const definition = findDefinition(publicationSpec, id);
+        unique.push({
+            id: definition.id,
+            name: definition.name || definition.id,
+            value_type: definition.value_type || "string",
+            value_max_length: definition.value_max_length,
+            values: Array.isArray(definition.values) ? definition.values : []
+        });
+    }
+    return unique;
+}
+
+function getConditionalRequired(publicationSpec) {
+    return Array.isArray(publicationSpec?.conditionalAttributes?.required_attributes)
+        ? publicationSpec.conditionalAttributes.required_attributes
+        : [];
+}
+
+function extractValidationCauses(error) {
+    const data = error?.response?.data || error?.data || error;
+    return Array.isArray(data?.cause) ? data.cause : [];
+}
+
+function extractMissingFromValidation(error, publicationSpec) {
+    const ids = [];
+    for (const cause of extractValidationCauses(error)) {
+        const code = clean(cause?.code);
+        const message = clean(cause?.message);
+        if (!code.includes("missing_required") && !code.includes("missing_conditional_required")) {
+            continue;
+        }
+
+        const matches = message.match(/attributes?\s*\[([^\]]+)\]/i);
+        if (matches) {
+            for (const id of matches[1].split(",")) {
+                const cleanId = id.trim();
+                if (cleanId) ids.push(cleanId);
+            }
+        }
+    }
+    return buildMissing(publicationSpec, ids);
+}
+
+function missingError(missing, message = "Informações obrigatórias pendentes para publicar.") {
+    const error = new Error(message);
+    error.code = "ML_MISSING_ATTRIBUTES";
+    error.status = 422;
+    error.missing = missing;
+    return error;
+}
+
+function validationMessage(error) {
+    return extractValidationCauses(error).map(c => `${clean(c?.code)} ${clean(c?.message)}`).join(" | ");
+}
+
+function hasValidationText(error, pattern) {
+    return new RegExp(pattern, "i").test(validationMessage(error));
+}
+
+function ensureUnitsPerPackOne(item) {
+    if (!Array.isArray(item?.attributes)) return;
+    const existing = item.attributes.find(a => clean(a?.id).toUpperCase() === "UNITS_PER_PACK");
+    if (existing) {
+        if (!existing.value_id && !clean(existing.value_name)) existing.value_name = "1";
+        return;
+    }
+    item.attributes.push({ id: "UNITS_PER_PACK", value_name: "1" });
+}
+
+function stripShipping(item) {
+    if (item && item.shipping) delete item.shipping;
+}
+
+
+function isOnlyWarnings(error) {
+    const causes = extractValidationCauses(error);
+    return causes.length > 0 && causes.every(cause =>
+        String(cause?.type || "").toLowerCase() === "warning"
+    );
+}
+
+function chooseShippingMode(userPreferences, categoryPreferences) {
+    const userModes = Array.isArray(userPreferences?.modes)
+        ? userPreferences.modes.map(String)
+        : [];
+
+    const categoryModes = Array.isArray(categoryPreferences?.logistics)
+        ? categoryPreferences.logistics
+            .map(item => String(item?.mode || "").trim())
+            .filter(Boolean)
+        : [];
+
+    const allowed = new Set(categoryModes);
+
+    // Prioridade operacional: usar ME2 quando conta e categoria permitem.
+    // Não forçar ME1: a conta pode não ter ME1 habilitado.
+    if (userModes.includes("me2") && allowed.has("me2")) return "me2";
+    if (userModes.includes("not_specified") && allowed.has("not_specified")) return "not_specified";
+    if (userModes.includes("custom") && allowed.has("custom")) return "custom";
+
+    // Quando a categoria não retorna logística explícita, use apenas modos
+    // conhecidos e seguros da própria conta.
+    if (!categoryModes.length) {
+        if (userModes.includes("me2")) return "me2";
+        if (userModes.includes("not_specified")) return "not_specified";
+        if (userModes.includes("custom")) return "custom";
+    }
+
+    return null;
+}
+
+async function resolveShipping(categoryId) {
+    try {
+        const me = await apiService.getMe();
+        const userId = me?.id;
+        if (!userId) return null;
+
+        const [userPreferences, categoryPreferences] = await Promise.all([
+            apiService.getShippingPreferences(userId),
+            apiService.getCategoryShippingPreferences(categoryId)
+        ]);
+
+        console.log("SHIPPING CONTA:", {
+            modes: userPreferences?.modes || [],
+            option: userPreferences?.option || null,
+            tags: userPreferences?.tags || []
+        });
+        console.log("SHIPPING CATEGORIA:", {
+            logistics: categoryPreferences?.logistics || []
+        });
+
+        const mode = chooseShippingMode(userPreferences, categoryPreferences);
+        if (!mode) {
+            console.log("SHIPPING: nenhum modo comum conta/categoria; publicação seguirá sem shipping explícito.");
+            return null;
+        }
+
+        console.log("SHIPPING RESOLVIDO:", mode);
+        return {
+            mode,
+            local_pick_up: false,
+            free_shipping: false
+        };
+    } catch (error) {
+        console.log("SHIPPING: não foi possível consultar preferências; publicação seguirá sem shipping explícito.");
+        console.log(error.response?.data || error.message || error);
+        return null;
+    }
+}
+
+module.exports.publish = async (productId, attributeOverrides = {}) => {
+    console.log("========================================");
+    console.log("PUBLICANDO PRODUTO NO MERCADO LIVRE");
+    console.log("Produto ID:", productId);
+    console.log("========================================");
+
+    let publishStage = "carregando_produto";
+
+    const product = await productService.getById(productId);
+    if (!product) throw new Error("Produto não encontrado.");
+
+    publishStage = "carregando_imagens";
+    const pictures = await productImageService.getByProductId(productId);
+    if (!pictures || pictures.length === 0) throw new Error("O produto não possui imagens.");
+
+    // ======================================================
+    // PRÉ-PREENCHIMENTO INTELIGENTE DE MARCA / MODELO
+    // Se a análise original não gravou esses campos, tentamos
+    // recuperá-los pela mesma IA visual antes de abrir a pendência.
+    // A pergunta ao usuário fica como último recurso.
+    // ======================================================
+    const needsBrandModel = !clean(product.brand) || !clean(product.model);
+    if (needsBrandModel && process.env.GEMINI_API_KEY) {
+        try {
+            publishStage = "auto_identificando_marca_modelo";
+            const mainPicture = pictures.find(p => p.is_main) || pictures[0];
+            const rawSource = mainPicture?.path || mainPicture?.original_url || mainPicture?.source || "";
+            let imagePath = "";
+
+            // As imagens do TratoCore normalmente são salvas como URLs locais
+            // do tipo /storage/originals/arquivo.ext. O publish.service.js fica
+            // em api/services/ml, então precisamos resolver a partir da raiz
+            // real do projeto, e não de api/services/.
+            if (!/^https?:\/\//i.test(String(rawSource || ""))) {
+                const normalizedSource = String(rawSource || "")
+                    .replace(/\\/g, "/")
+                    .replace(/^\/+/, "");
+
+                const projectRoot = path.resolve(__dirname, "../../../");
+                imagePath = path.resolve(projectRoot, normalizedSource);
+                if (!fs.existsSync(imagePath)) {
+                    const alt = path.resolve(projectRoot, "storage", normalizedSource.replace(/^storage\//i, ""));
+                    if (fs.existsSync(alt)) imagePath = alt;
+                }
+
+                // Segurança: nunca sair da raiz do TratoCore ao resolver o arquivo.
+                const rootWithSep = projectRoot.endsWith(path.sep)
+                    ? projectRoot
+                    : projectRoot + path.sep;
+                if (imagePath !== projectRoot && !imagePath.startsWith(rootWithSep)) {
+                    imagePath = "";
+                }
+            }
+
+            console.log("AUTO IA IMAGEM:", {
+                source: rawSource,
+                resolvedPath: imagePath,
+                exists: Boolean(imagePath && fs.existsSync(imagePath))
+            });
+
+            if (imagePath && fs.existsSync(imagePath)) {
+                const inferred = await localAI.inferBrandModel(imagePath, {
+                    title: product.title,
+                    description: product.description,
+                    seller_observation: product.seller_observation || "",
+                    brand: product.brand,
+                    model: product.model
+                });
+
+                const nextBrand = clean(product.brand) || clean(inferred.brand);
+                const nextModel = clean(product.model) || clean(inferred.model);
+
+                if (nextBrand || nextModel) {
+                    product.brand = nextBrand;
+                    product.model = nextModel;
+                    if (!clean(product.line) && clean(inferred.line)) product.line = inferred.line;
+                    if (!clean(product.generation) && clean(inferred.generation)) product.generation = inferred.generation;
+
+                    try {
+                        await productService.update(productId, {
+                            brand: product.brand,
+                            model: product.model,
+                            line: product.line,
+                            generation: product.generation
+                        });
+                    } catch (saveError) {
+                        console.log("AUTO IA: não foi possível persistir marca/modelo; seguindo com os dados em memória.");
+                    }
+
+                    console.log("AUTO IA MARCA/MODELO:", {
+                        brand: product.brand,
+                        model: product.model,
+                        confidence: inferred.confidence
+                    });
+                }
+            }
+        } catch (autoError) {
+            console.log("AUTO IA MARCA/MODELO: tentativa sem sucesso; se necessário, o modal continuará funcionando.");
+            console.log(autoError.message || autoError);
+        }
+    }
+
+    publishStage = "carregando_token_ml";
+    await apiService.getAccessToken();
+
+    // ======================================================
+    // ETAPA 1 — CATEGORIA + REGRAS OFICIAIS DO ML
+    // ======================================================
+    publishStage = "resolvendo_categoria_e_regras";
+    let publicationSpec;
+    try {
+        publicationSpec = await publicationSpecService.resolve(product);
+    } catch (error) {
+        error.publishStage = publishStage;
+        throw error;
+    }
+
+    console.log("========== CATEGORIA RESOLVIDA ==========");
+    console.log("Categoria:", publicationSpec.category_id);
+    console.log("Nome:", publicationSpec.category.name);
+    console.log("Listing type:", publicationSpec.listing_type.id);
+    console.log("==========================================");
+
+    // ======================================================
+    // ETAPA 2 — RESOLVER ATRIBUTOS ANTES DE FAZER UPLOAD
+    // ======================================================
+    publishStage = "resolvendo_atributos";
+    let resolved;
+    try {
+        resolved = attributeResolver.build({
+            product,
+            categoryAttributes: publicationSpec.attributes,
+            prediction: publicationSpec.prediction,
+            overrides: attributeOverrides
+        });
+    } catch (error) {
+        error.publishStage = publishStage;
+        throw error;
+    }
+
+    if (resolved.missing.length) {
+        throw missingError(resolved.missing);
+    }
+
+    // ======================================================
+    // ETAPA 3 — CONDICIONAIS REAIS DO ML
+    // ======================================================
+    const conditionalRequired = getConditionalRequired(publicationSpec);
+    const present = new Set(resolved.attributes.map(attribute => attribute.id));
+    const conditionalMissing = conditionalRequired
+        .map(attribute => attribute.id)
+        .filter(id => !present.has(id));
+
+    if (conditionalMissing.length) {
+        throw missingError(
+            buildMissing(publicationSpec, conditionalMissing),
+            "O Mercado Livre exige informações adicionais para esta publicação."
+        );
+    }
+
+    // ======================================================
+    // ETAPA 4 — SHIPPING + PAYLOAD + FOTOS
+    // ======================================================
+    publishStage = "resolvendo_envio";
+    const shipping = await resolveShipping(publicationSpec.category_id);
+
+    publishStage = "montando_payload";
+    let item;
+    try {
+        item = await itemService.build(
+            product,
+            pictures,
+            publicationSpec,
+            attributeOverrides,
+            shipping
+        );
+    } catch (error) {
+        error.publishStage = publishStage;
+        throw error;
+    }
+
+    console.log("========== PAYLOAD MERCADO LIVRE ==========");
+    console.log(JSON.stringify(item, null, 2));
+    console.log("===========================================");
+
+    // ======================================================
+    // ETAPA 5 — VALIDADOR OFICIAL
+    // ======================================================
+    console.log("VALIDANDO PAYLOAD NO MERCADO LIVRE...");
+
+    publishStage = "validando_payload_ml";
+    let validation;
+    try {
+        validation = await apiService.validateItem(item);
+    } catch (error) {
+        const missing = extractMissingFromValidation(error, publicationSpec);
+        if (missing.length) {
+            throw missingError(missing, "O Mercado Livre ainda exige estas informações.");
+        }
+
+        const canRetryUnits = hasValidationText(error, "UNITS_PER_PACK");
+        const canRetryShipping = hasValidationText(error, "User has not mode me1|Free shipping costs exceeds sale|shipping");
+
+        if (canRetryUnits || canRetryShipping) {
+            if (canRetryUnits) {
+                console.log("VALIDAÇÃO: ajustando UNITS_PER_PACK=1 e tentando novamente...");
+                ensureUnitsPerPackOne(item);
+            }
+            if (canRetryShipping) {
+                console.log("VALIDAÇÃO: removendo shipping explícito e tentando novamente...");
+                stripShipping(item);
+            }
+            try {
+                validation = await apiService.validateItem(item);
+            } catch (retryError) {
+                const retryMissing = extractMissingFromValidation(retryError, publicationSpec);
+                if (retryMissing.length) {
+                    throw missingError(retryMissing, "O Mercado Livre ainda exige estas informações.");
+                }
+                if (isOnlyWarnings(retryError)) {
+                    validation = { warnings: extractValidationCauses(retryError) };
+                } else {
+                    retryError.publishStage = publishStage;
+                    throw retryError;
+                }
+            }
+        } else if (isOnlyWarnings(error)) {
+            console.log("VALIDAÇÃO MERCADO LIVRE: somente WARNINGS — não bloqueia publicação.");
+            console.dir(extractValidationCauses(error), { depth: null });
+            validation = { warnings: extractValidationCauses(error) };
+        } else {
+            error.publishStage = publishStage;
+            throw error;
+        }
+    }
+    console.log("VALIDAÇÃO MERCADO LIVRE: OK / WARNINGS NÃO BLOQUEANTES");
+    console.dir(validation, { depth: null });
+
+    // ======================================================
+    // ETAPA 6 — PUBLICAÇÃO REAL
+    // ======================================================
+    publishStage = "publicando_item_ml";
+    let mlResponse;
+    try {
+        mlResponse = await apiService.publishItem(item);
+    } catch (error) {
+        error.publishStage = publishStage;
+        throw error;
+    }
+
+    publishStage = "criando_descricao_ml";
+    if (product.description && product.description.trim().length > 0) {
+        await apiService.createDescription(mlResponse.id, product.description);
+    }
+
+    publishStage = "salvando_publicacao_local";
+    await mlProductService.savePublication(productId, mlResponse);
+
+    console.log("========================================");
+    console.log("ANÚNCIO PUBLICADO COM SUCESSO");
+    console.log("ID:", mlResponse.id);
+    console.log("STATUS:", mlResponse.status);
+    console.log("========================================");
+
+    return {
+        success: true,
+        ml: mlResponse,
+        item,
+        publication: {
+            category_id: publicationSpec.category_id,
+            category_name: publicationSpec.category.name,
+            listing_type_id: publicationSpec.listing_type.id
+        }
+    };
+};

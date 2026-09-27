@@ -1,0 +1,83 @@
+const apiService = require("./ml/api.service");
+const catalogMatcher = require("./ml/catalogMatcher.service");
+
+function clean(value) {
+    if (value === undefined || value === null) return "";
+    return String(value).trim();
+}
+
+function normalizeCandidates(data) {
+    const raw = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.results)
+            ? data.results
+            : [];
+
+    return raw.map(item => ({
+        ...item,
+        name: clean(item.name || item.title),
+        attributes: Array.isArray(item.attributes) ? item.attributes : []
+    })).filter(item => item.name);
+}
+
+async function findCatalogMatch(identification) {
+    const id = identification || {};
+    const terms = Array.isArray(id.search_terms)
+        ? id.search_terms.filter(Boolean)
+        : [
+            id.brand,
+            id.line,
+            id.model,
+            id.generation,
+            id.product_type
+        ].filter(Boolean);
+
+    const queries = [...new Set(terms.map(clean).filter(Boolean))].slice(0, 3);
+    const all = new Map();
+
+    for (const q of queries) {
+        try {
+            const data = await apiService.searchProducts({
+                q,
+                limit: 20
+            });
+
+            for (const candidate of normalizeCandidates(data)) {
+                const key = candidate.id || candidate.name;
+                if (!all.has(key)) all.set(key, candidate);
+            }
+        } catch (err) {
+            console.warn("Catalog search failed for:", q, err.message);
+        }
+    }
+
+    const candidates = Array.from(all.values());
+
+    if (!candidates.length) {
+        return {
+            found: false,
+            confidence: "LOW",
+            best: null,
+            ranked: [],
+            candidates_received: 0
+        };
+    }
+
+    const result = catalogMatcher.findBestCatalogProduct({
+        candidates,
+        identified: id
+    });
+
+    return {
+        found: Boolean(result.best),
+        confidence: result.confidence,
+        best: result.best,
+        ranked: result.ranked.slice(0, 10),
+        candidates_received: result.candidates_received,
+        candidates_removed_as_incompatible: result.candidates_removed_as_incompatible
+    };
+}
+
+module.exports = {
+    findCatalogMatch
+};

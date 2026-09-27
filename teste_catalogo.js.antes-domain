@@ -1,0 +1,61 @@
+require("dotenv").config();
+
+const pool = require("./api/db");
+const apiService = require("./api/services/ml/api.service");
+
+const consultas = [
+    "Xbox clássico Microsoft",
+    "Xbox original Microsoft",
+    "Microsoft Xbox primeira geração",
+    "Microsoft Xbox clássico preto"
+];
+
+(async () => {
+    try {
+        console.log("==========================================");
+        console.log("BUSCADOR DE PRODUTOS - CATÁLOGO MERCADO LIVRE");
+        console.log("==========================================");
+
+        for (const q of consultas) {
+            console.log("\n------------------------------------------");
+            console.log("CONSULTA:", q);
+            console.log("------------------------------------------");
+
+            const data = await apiService.searchProducts({
+                q,
+                limit: 10
+            });
+
+            console.dir({
+                keywords: data.keywords,
+                paging: data.paging,
+                results: (data.results || []).map((p) => ({
+                    id: p.id,
+                    status: p.status,
+                    domain_id: p.domain_id,
+                    name: p.name,
+                    settings: p.settings,
+                    attributes: p.attributes
+                }))
+            }, { depth: null });
+        }
+
+        console.log("\n==========================================");
+        console.log("FIM DO TESTE DE CATÁLOGO");
+        console.log("==========================================");
+
+    } catch (err) {
+        console.error("\nERRO:");
+        if (err.response) {
+            console.dir({
+                status: err.response.status,
+                data: err.response.data
+            }, { depth: null });
+        } else {
+            console.error(err.message);
+        }
+        process.exitCode = 1;
+    } finally {
+        await pool.end();
+    }
+})();

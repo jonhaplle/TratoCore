@@ -1,0 +1,82 @@
+const OpenAI = require("openai");
+
+const client = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY
+});
+
+function clean(value) {
+    if (value === undefined || value === null) return "";
+    return String(value).trim();
+}
+
+function stripJson(text) {
+    return String(text || "")
+        .replace(/```json/gi, "")
+        .replace(/```/g, "")
+        .trim();
+}
+
+async function buildListing({ identification, facts, cross_check, catalogMatch, sellerObservation = "" }) {
+    const id = identification || {};
+
+    const evidence = {
+        identification: id,
+        facts: Array.isArray(facts) ? facts : [],
+        cross_check: cross_check || {},
+        catalog_match: catalogMatch || null,
+        seller_observation: clean(sellerObservation)
+    };
+
+    const response = await client.responses.create({
+        model: "gpt-5.5",
+        input: [
+            {
+                role: "system",
+                content: `
+Você é o gerador de rascunho comercial do TratoCore.
+
+Sua função é transformar uma identificação visual já analisada em um rascunho de anúncio para o Mercado Livre.
+
+REGRAS:
+- Nunca invente modelo, código, especificação ou acessório.
+- Use somente fatos sustentados pela identificação/evidências.
+- Se o modelo não estiver confirmado, NÃO invente um número de modelo.
+- O título deve ser objetivo e comercial, em português do Brasil, sem emojis.
+- Não use "original", "novo", "perfeito", "100%" ou afirmações semelhantes sem evidência.
+- A condição deve respeitar a observação do vendedor; se não houver, use "usado" como padrão.
+- A descrição deve deixar claro o que foi efetivamente identificado e não deve prometer funcionamento se isso não foi informado.
+- suggested_price é somente uma estimativa inicial; se não houver base suficiente, retorne 0.
+- category deve ser apenas uma descrição humana da categoria, NÃO um category_id do Mercado Livre.
+- Retorne SOMENTE JSON válido.
+
+FORMATO:
+{
+  "title": "",
+  "description": "",
+  "suggested_price": 0,
+  "category": ""
+}
+`
+            },
+            {
+                role: "user",
+                content: JSON.stringify(evidence)
+            }
+        ]
+    });
+
+    const parsed = JSON.parse(stripJson(response.output_text));
+
+    return {
+        title: clean(parsed.title),
+        description: clean(parsed.description),
+        suggested_price: Number.isFinite(Number(parsed.suggested_price))
+            ? Number(parsed.suggested_price)
+            : 0,
+        category: clean(parsed.category)
+    };
+}
+
+module.exports = {
+    buildListing
+};

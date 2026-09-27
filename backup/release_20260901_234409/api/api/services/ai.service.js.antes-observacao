@@ -1,0 +1,171 @@
+const fs = require("fs");
+const path = require("path");
+const OpenAI = require("openai");
+
+const client = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY
+});
+
+async function analisarImagem(imagePath) {
+
+    const caminhoCompleto = path.resolve(imagePath);
+
+    if (!fs.existsSync(caminhoCompleto)) {
+        throw new Error("Imagem não encontrada.");
+    }
+
+    const extensao = path.extname(caminhoCompleto).toLowerCase();
+
+    let mime = "image/jpeg";
+
+    if (extensao === ".png") mime = "image/png";
+    if (extensao === ".webp") mime = "image/webp";
+
+    const imagemBase64 = fs.readFileSync(caminhoCompleto, {
+        encoding: "base64"
+    });
+
+    const resposta = await client.responses.create({
+
+        model: "gpt-5.5",
+
+        input: [
+
+            {
+                role: "system",
+                content: `
+Você é especialista em identificação de produtos usados e criação de anúncios para Mercado Livre.
+
+Analise cuidadosamente a fotografia enviada.
+
+Sua prioridade é identificar CORRETAMENTE o produto antes de gerar qualquer informação para anúncio.
+
+Identifique:
+
+- tipo do produto
+- marca
+- linha
+- modelo
+- geração
+- versão
+- cor
+- estado de conservação
+- categoria
+- título
+- descrição
+- preço sugerido em reais
+- confiança da análise
+
+REGRAS IMPORTANTES:
+
+1. NÃO confunda modelos ou gerações diferentes.
+
+2. Para consoles, identifique explicitamente a geração quando possível.
+
+3. No caso de Xbox, diferencie obrigatoriamente:
+   - Xbox Classic / Xbox original / primeira geração
+   - Xbox One
+   - Xbox One S
+   - Xbox One X
+   - Xbox Series S
+   - Xbox Series X
+
+4. "Xbox Classic" NÃO é Xbox One, Xbox One S, Xbox One X, Xbox Series S ou Xbox Series X.
+
+5. Se a fotografia não permitir determinar com segurança uma informação, deixe o campo vazio em vez de inventar.
+
+6. Não use uma categoria genérica quando for possível identificar uma categoria mais específica.
+
+7. A confiança deve representar a confiança REAL da identificação.
+
+8. Retorne SOMENTE JSON válido.
+9. Não use markdown.
+10. Não coloque comentários fora do JSON.
+
+Formato obrigatório:
+
+{
+    "product_type": "",
+    "brand": "",
+    "line": "",
+    "model": "",
+    "generation": "",
+    "version": "",
+    "color": "",
+    "condition": "",
+    "title": "",
+    "description": "",
+    "category": "",
+    "suggested_price": 0,
+    "confidence": 0
+}
+`
+            },
+
+            {
+                role: "user",
+                content: [
+
+                    {
+                        type: "input_text",
+                        text: "Analise esta imagem e identifique o produto com o máximo de precisão possível."
+                    },
+
+                    {
+                        type: "input_image",
+                        image_url: `data:${mime};base64,${imagemBase64}`
+                    }
+
+                ]
+            }
+
+        ]
+
+    });
+
+    let texto = resposta.output_text || "";
+
+    texto = texto
+        .replace(/```json/gi, "")
+        .replace(/```/g, "")
+        .trim();
+
+    try {
+
+        const resultado = JSON.parse(texto);
+
+        return {
+
+            product_type: resultado.product_type || "",
+            brand: resultado.brand || "",
+            line: resultado.line || "",
+            model: resultado.model || "",
+            generation: resultado.generation || "",
+            version: resultado.version || "",
+            color: resultado.color || "",
+            condition: resultado.condition || "",
+            title: resultado.title || "",
+            description: resultado.description || "",
+            category: resultado.category || "",
+            suggested_price: Number(resultado.suggested_price || 0),
+            confidence: Number(resultado.confidence || 0)
+
+        };
+
+    } catch (erro) {
+
+        console.log("====================================");
+        console.log("RESPOSTA DA IA");
+        console.log("====================================");
+        console.log(texto);
+        console.log("====================================");
+
+        throw new Error("A OpenAI retornou um JSON inválido.");
+
+    }
+
+}
+
+module.exports = {
+    analisarImagem
+};

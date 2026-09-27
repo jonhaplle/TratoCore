@@ -1,20 +1,9 @@
 const pictureService = require("./picture.service");
 const attributeResolver = require("./attributeResolver.service");
 
-exports.build = async (product, pictures, publicationSpec) => {
+exports.build = async (product, pictures, publicationSpec, attributeOverrides = {}, shipping = null) => {
     if (!publicationSpec?.category_id) {
         throw new Error("Ficha de publicação do Mercado Livre não informada.");
-    }
-
-    const uploadedPictures = await pictureService.upload(
-        pictures.map(p => ({
-            source: p.original_url || p.source || p.path,
-            path: p.path
-        }))
-    );
-
-    if (!uploadedPictures.length) {
-        throw new Error("Nenhuma imagem válida foi enviada.");
     }
 
     if (!product.title || !product.title.trim()) {
@@ -30,25 +19,46 @@ exports.build = async (product, pictures, publicationSpec) => {
             ? "new"
             : "used";
 
+    // Resolve todos os atributos ANTES de enviar fotos ao ML.
     const resolved = attributeResolver.build({
         product,
         categoryAttributes: publicationSpec.attributes,
-        prediction: publicationSpec.prediction
+        conditionalAttributes: Array.isArray(publicationSpec.conditionalAttributes?.required_attributes)
+            ? publicationSpec.conditionalAttributes.required_attributes
+            : [],
+        prediction: publicationSpec.prediction,
+        overrides: attributeOverrides
     });
 
     if (resolved.missing.length) {
-        const missing = resolved.missing.map(item => item.id).join(", ");
-        throw new Error(
-            `A categoria ${publicationSpec.category_id} exige atributos que o produto ainda não possui: ${missing}. ` +
-            "Preencha os atributos antes de publicar."
-        );
+        const error = new Error("Informações obrigatórias pendentes para publicar.");
+        error.code = "ML_MISSING_ATTRIBUTES";
+        error.status = 422;
+        error.missing = resolved.missing;
+        error.attributes = resolved.attributes;
+        throw error;
+    }
+
+    if (!pictures?.length) {
+        throw new Error("O produto não possui imagens.");
+    }
+
+    const uploadedPictures = await pictureService.upload(
+        pictures.map(p => ({
+            source: p.original_url || p.source || p.path,
+            path: p.path
+        }))
+    );
+
+    if (!uploadedPictures.length) {
+        throw new Error("Nenhuma imagem válida foi enviada.");
     }
 
     const familyName = String(product.title || "")
         .trim()
         .substring(0, Number(publicationSpec.category.settings?.max_title_length || 60));
 
-    return {
+    const item = {
         family_name: familyName,
         category_id: publicationSpec.category_id,
         price,
@@ -58,12 +68,16 @@ exports.build = async (product, pictures, publicationSpec) => {
         listing_type_id: publicationSpec.listing_type.id,
         condition,
         pictures: uploadedPictures,
-        shipping: {
-            mode: "me2",
-            local_pick_up: false,
-            free_shipping: false,
-            free_methods: []
-        },
         attributes: resolved.attributes
     };
+
+    if (shipping && shipping.mode) {
+        item.shipping = {
+            mode: shipping.mode,
+            local_pick_up: Boolean(shipping.local_pick_up),
+            free_shipping: Boolean(shipping.free_shipping)
+        };
+    }
+
+    return item;
 };

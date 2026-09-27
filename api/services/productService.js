@@ -1,4 +1,4 @@
-const Product = require("../models/productModel");
+﻿const Product = require("../models/productModel");
 
 // ======================================================
 // LISTAR TODOS
@@ -17,7 +17,7 @@ async function getAll() {
 async function getById(id) {
 
     if (!id) {
-        throw new Error("ID do produto não informado.");
+        throw new Error("ID do produto nÃ£o informado.");
     }
 
     const product = await Product.getById(id);
@@ -26,7 +26,7 @@ async function getById(id) {
         return null;
     }
 
-    // Valores padrão para publicação ML
+    // Valores padrÃ£o para publicaÃ§Ã£o ML
     product.sale_price = Number(product.sale_price || 0);
     product.quantity = Math.max(1, Number(product.quantity || 1));
 
@@ -56,7 +56,7 @@ async function getById(id) {
 async function create(data) {
 
     if (!data.title || data.title.trim() === "") {
-        throw new Error("Título obrigatório.");
+        throw new Error("TÃ­tulo obrigatÃ³rio.");
     }
 
     const product = {
@@ -101,13 +101,13 @@ async function create(data) {
 async function update(id, data) {
 
     if (!id) {
-        throw new Error("ID inválido.");
+        throw new Error("ID invÃ¡lido.");
     }
 
     const atual = await Product.getById(id);
 
     if (!atual) {
-        throw new Error("Produto não encontrado.");
+        throw new Error("Produto nÃ£o encontrado.");
     }
 
     const product = {
@@ -123,6 +123,7 @@ async function update(id, data) {
         sale_price: Number(
             data.sale_price ?? atual.sale_price
         ),
+        ml_attributes: data.ml_attributes ?? atual.ml_attributes ?? null,
 
         quantity: Math.max(
             1,
@@ -156,7 +157,7 @@ async function update(id, data) {
 async function remove(id) {
 
     if (!id) {
-        throw new Error("ID inválido.");
+        throw new Error("ID invÃ¡lido.");
     }
 
     return await Product.remove(id);

@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Trato Core - Produtos</title>
+
+    <link rel="stylesheet" href="produtos.css">
+</head>
+
+<body>
+
+<header class="topo">
+
+    <h1>TRATO CORE</h1>
+
+    <nav>
+        <a href="index.html">Novo Produto</a>
+        <a href="produtos.html" class="ativo">Produtos</a>
+    </nav>
+
+</header>
+
+
+<main class="container">
+
+    <section class="barra">
+
+        <input
+            type="text"
+            id="pesquisa"
+            placeholder="Pesquisar produto..."
+        >
+
+        <div class="acoes-publicacao">
+            <label class="selecionar-todos">
+                <input type="checkbox" id="selecionarTodos">
+                <span>Selecionar todos</span>
+            </label>
+
+            <span id="contadorSelecionados" class="contador-selecionados">0 selecionados</span>
+
+            <button type="button" id="btnPublicarSelecionados" class="btn-publicar-massa" disabled>
+                PUBLICAR SELECIONADOS
+            </button>
+        </div>
+
+    </section>
+
+
+    <section>
+
+        <table id="tabelaProdutos">
+
+            <thead>
+
+                <tr>
+
+                    <th class="col-selecao">Seleção</th>\n                    <th>Foto</th>
+                    <th>ID</th>
+                    <th>SKU</th>
+                    <th>Título</th>
+                    <th>Preço</th>
+                    <th>Quantidade</th>
+                    <th>Status</th>
+                    <th>Ações</th>
+
+                </tr>
+
+            </thead>
+
+            <tbody></tbody>
+
+        </table>
+
+    </section>
+
+</main>
+
+
+<!-- MODAL DE EDIÇÃO -->
+
+<div
+    id="modalEditar"
+    style="display:none;"
+>
+
+    <div class="modal-conteudo">
+
+        <h2>Editar Produto</h2>
+
+        <input
+            type="hidden"
+            id="editId"
+        >
+
+        <label>
+            SKU
+            <input
+                type="text"
+                id="editSku"
+            >
+        </label>
+
+        <label>
+            Título
+            <input
+                type="text"
+                id="editTitulo"
+            >
+        </label>
+
+        <label>
+            Preço
+            <input
+                type="number"
+                id="editPreco"
+                step="0.01"
+            >
+        </label>
+
+        <label>
+            Quantidade
+            <input
+                type="number"
+                id="editQuantidade"
+                min="0"
+            >
+        </label>
+
+        <label>
+            Status
+            <select id="editStatus">
+                <option value="NEW">NEW</option>
+                <option value="ACTIVE">ACTIVE</option>
+                <option value="PAUSED">PAUSED</option>
+                <option value="SOLD">SOLD</option>
+                <option value="INACTIVE">INACTIVE</option>
+            </select>
+        </label>
+
+        <div class="modal-acoes">
+
+            <button
+                type="button"
+                id="btnSalvar"
+            >
+                Salvar
+            </button>
+
+            <button
+                type="button"
+                id="btnCancelar"
+            >
+                Cancelar
+            </button>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- PENDÊNCIAS DE PUBLICAÇÃO ML -->
+<div id="modalPublicacaoML" style="display:none;">
+    <div class="publicacao-ml-conteudo">
+        <h2>Falta só uma informação</h2>
+        <p id="publicacaoMLMensagem">O TratoCore resolveu o restante automaticamente.</p>
+        <div id="publicacaoMLCampos"></div>
+        <div class="publicacao-ml-acoes">
+            <button type="button" id="btnContinuarPublicacaoML">Continuar publicação</button>
+            <button type="button" id="btnCancelarPublicacaoML">Cancelar</button>
+        </div>
+    </div>
+</div>
+
+<!-- VISUALIZADOR DE IMAGEM -->
+
+<div
+    id="modalImagem"
+    style="display:none;"
+>
+
+    <div class="imagem-conteudo">
+
+        <button
+            type="button"
+            id="fecharImagem"
+        >
+            ×
+        </button>
+
+        <img
+            id="imagemProduto"
+            src=""
+            alt="Imagem do produto"
+        >
+
+    </div>
+
+</div>
+
+
+<script src="js/core/api.js"></script>
+<script src="js/services/productService.js"></script>
+<script src="js/services/imageService.js"></script>
+<script src="produtos.js"></script>
+
+</body>
+
+</html>

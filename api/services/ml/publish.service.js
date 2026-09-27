@@ -6,51 +6,163 @@ const itemService = require("./item.service");
 const apiService = require("./api.service");
 const mlProductService = require("./mlProduct.service");
 const publicationSpecService = require("./publicationSpec.service");
+const attributeResolver = require("./attributeResolver.service");
 
-function assertConditionalAttributes(item, conditional) {
-    const required = Array.isArray(conditional?.required_attributes)
-        ? conditional.required_attributes
+function clean(value) {
+    if (value === undefined || value === null) return "";
+    return String(value).trim();
+}
+
+function findDefinition(publicationSpec, id) {
+    return (publicationSpec.attributes || []).find(item => item.id === id) || {
+        id,
+        name: id,
+        value_type: "string",
+        values: []
+    };
+}
+
+function buildMissing(publicationSpec, ids) {
+    const unique = [];
+    for (const id of ids || []) {
+        if (!id || unique.some(item => item.id === id)) continue;
+        const definition = findDefinition(publicationSpec, id);
+        unique.push({
+            id: definition.id,
+            name: definition.name || definition.id,
+            value_type: definition.value_type || "string",
+            value_max_length: definition.value_max_length,
+            values: Array.isArray(definition.values) ? definition.values : []
+        });
+    }
+    return unique;
+}
+
+function getConditionalRequired(publicationSpec) {
+    return Array.isArray(publicationSpec?.conditionalAttributes?.required_attributes)
+        ? publicationSpec.conditionalAttributes.required_attributes
+        : [];
+}
+
+function extractValidationCauses(error) {
+    const data = error?.response?.data || error?.data || error;
+    return Array.isArray(data?.cause) ? data.cause : [];
+}
+
+function extractMissingFromValidation(error, publicationSpec) {
+    const ids = [];
+    for (const cause of extractValidationCauses(error)) {
+        const code = clean(cause?.code);
+        const message = clean(cause?.message);
+        if (!code.includes("missing_required") && !code.includes("missing_conditional_required")) {
+            continue;
+        }
+
+        const matches = message.match(/attributes?\s*\[([^\]]+)\]/i);
+        if (matches) {
+            for (const id of matches[1].split(",")) {
+                const cleanId = id.trim();
+                if (cleanId) ids.push(cleanId);
+            }
+        }
+    }
+    return buildMissing(publicationSpec, ids);
+}
+
+function missingError(missing, message = "Informações obrigatórias pendentes para publicar.") {
+    const error = new Error(message);
+    error.code = "ML_MISSING_ATTRIBUTES";
+    error.status = 422;
+    error.missing = missing;
+    return error;
+}
+
+
+function isOnlyWarnings(error) {
+    const causes = extractValidationCauses(error);
+    return causes.length > 0 && causes.every(cause =>
+        String(cause?.type || "").toLowerCase() === "warning"
+    );
+}
+
+function chooseShippingMode(userPreferences, categoryPreferences) {
+    const userModes = Array.isArray(userPreferences?.modes)
+        ? userPreferences.modes.map(String)
         : [];
 
-    if (!required.length) return;
+    const categoryModes = Array.isArray(categoryPreferences?.logistics)
+        ? categoryPreferences.logistics
+            .map(item => String(item?.mode || "").trim())
+            .filter(Boolean)
+        : [];
 
-    const present = new Set((item.attributes || []).map(attribute => attribute.id));
-    const missing = required.filter(attribute => !present.has(attribute.id));
+    const allowed = new Set(categoryModes);
+    const candidates = ["me2", "me1", "not_specified", "custom"];
 
-    if (missing.length) {
-        throw new Error(
-            "Mercado Livre marcou atributos condicionais como obrigatórios e eles não foram preenchidos: " +
-            missing.map(attribute => `${attribute.id} (${attribute.name || "sem nome"})`).join(", ")
-        );
+    for (const mode of candidates) {
+        if (userModes.includes(mode) && allowed.has(mode)) {
+            return mode;
+        }
+    }
+
+    // Se a categoria não retornar logistics, a preferência da conta ainda
+    // permite uma escolha segura entre os modos que o vendedor possui.
+    if (!categoryModes.length) {
+        for (const mode of candidates) {
+            if (userModes.includes(mode)) return mode;
+        }
+    }
+
+    return null;
+}
+
+async function resolveShipping(categoryId) {
+    try {
+        const me = await apiService.getMe();
+        const userId = me?.id;
+        if (!userId) return null;
+
+        const [userPreferences, categoryPreferences] = await Promise.all([
+            apiService.getShippingPreferences(userId),
+            apiService.getCategoryShippingPreferences(categoryId)
+        ]);
+
+        const mode = chooseShippingMode(userPreferences, categoryPreferences);
+        if (!mode) {
+            console.log("SHIPPING: nenhum modo comum conta/categoria; publicação seguirá sem shipping explícito.");
+            return null;
+        }
+
+        console.log("SHIPPING RESOLVIDO:", mode);
+        return {
+            mode,
+            local_pick_up: false,
+            free_shipping: false
+        };
+    } catch (error) {
+        console.log("SHIPPING: não foi possível consultar preferências; publicação seguirá sem shipping explícito.");
+        console.log(error.response?.data || error.message || error);
+        return null;
     }
 }
 
-module.exports.publish = async (productId) => {
-
+module.exports.publish = async (productId, attributeOverrides = {}) => {
     console.log("========================================");
     console.log("PUBLICANDO PRODUTO NO MERCADO LIVRE");
     console.log("Produto ID:", productId);
     console.log("========================================");
 
     const product = await productService.getById(productId);
-
     if (!product) throw new Error("Produto não encontrado.");
 
     const pictures = await productImageService.getByProductId(productId);
-
-    if (!pictures || pictures.length === 0) {
-        throw new Error("O produto não possui imagens.");
-    }
-
-    console.log(`Produto: ${product.title}`);
-    console.log(`Fotos encontradas: ${pictures.length}`);
+    if (!pictures || pictures.length === 0) throw new Error("O produto não possui imagens.");
 
     await apiService.getAccessToken();
 
     // ======================================================
-    // ETAPA 1 — CATEGORIZAÇÃO OFICIAL
+    // ETAPA 1 — CATEGORIA + REGRAS OFICIAIS DO ML
     // ======================================================
-
     const publicationSpec = await publicationSpecService.resolve(product);
 
     console.log("========== CATEGORIA RESOLVIDA ==========");
@@ -60,13 +172,31 @@ module.exports.publish = async (productId) => {
     console.log("==========================================");
 
     // ======================================================
-    // ETAPA 2 — PAYLOAD BASE + ATRIBUTOS DINÂMICOS
+    // ETAPA 2 — RESOLVER ATRIBUTOS ANTES DE FAZER UPLOAD
     // ======================================================
+    const resolved = attributeResolver.build({
+        product,
+        categoryAttributes: publicationSpec.attributes,
+        conditionalAttributes: getConditionalRequired(publicationSpec),
+        prediction: publicationSpec.prediction,
+        overrides: attributeOverrides
+    });
+
+    if (resolved.missing.length) {
+        throw missingError(resolved.missing);
+    }
+
+    // ======================================================
+    // ETAPA 4 — SHIPPING + PAYLOAD + FOTOS
+    // ======================================================
+    const shipping = await resolveShipping(publicationSpec.category_id);
 
     const item = await itemService.build(
         product,
         pictures,
-        publicationSpec
+        publicationSpec,
+        attributeOverrides,
+        shipping
     );
 
     console.log("========== PAYLOAD MERCADO LIVRE ==========");
@@ -74,47 +204,41 @@ module.exports.publish = async (productId) => {
     console.log("===========================================");
 
     // ======================================================
-    // ETAPA 3 — ATRIBUTOS CONDICIONAIS
+    // ETAPA 5 — VALIDADOR OFICIAL
     // ======================================================
-
-    const conditional = await apiService.getConditionalAttributes(
-        publicationSpec.category_id,
-        item
-    );
-
-    assertConditionalAttributes(item, conditional);
-
-    // ======================================================
-    // ETAPA 4 — VALIDADOR OFICIAL
-    // ======================================================
-
     console.log("VALIDANDO PAYLOAD NO MERCADO LIVRE...");
 
-    const validation = await apiService.validateItem(item);
+    let validation;
+    try {
+        validation = await apiService.validateItem(item);
+    } catch (error) {
+        const missing = extractMissingFromValidation(error, publicationSpec);
+        if (missing.length) {
+            throw missingError(missing, "O Mercado Livre ainda exige estas informações.");
+        }
 
-    console.log("VALIDAÇÃO MERCADO LIVRE: OK");
+        if (isOnlyWarnings(error)) {
+            console.log("VALIDAÇÃO MERCADO LIVRE: somente WARNINGS — não bloqueia publicação.");
+            console.dir(extractValidationCauses(error), { depth: null });
+            validation = { warnings: extractValidationCauses(error) };
+        } else {
+            throw error;
+        }
+    }
+
+    console.log("VALIDAÇÃO MERCADO LIVRE: OK / WARNINGS NÃO BLOQUEANTES");
     console.dir(validation, { depth: null });
 
     // ======================================================
-    // ETAPA 5 — PUBLICAÇÃO REAL
+    // ETAPA 6 — PUBLICAÇÃO REAL
     // ======================================================
-
     const mlResponse = await apiService.publishItem(item);
 
-    if (
-        product.description &&
-        product.description.trim().length > 0
-    ) {
-        await apiService.createDescription(
-            mlResponse.id,
-            product.description
-        );
+    if (product.description && product.description.trim().length > 0) {
+        await apiService.createDescription(mlResponse.id, product.description);
     }
 
-    await mlProductService.savePublication(
-        productId,
-        mlResponse
-    );
+    await mlProductService.savePublication(productId, mlResponse);
 
     console.log("========================================");
     console.log("ANÚNCIO PUBLICADO COM SUCESSO");

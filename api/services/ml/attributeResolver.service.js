@@ -1,4 +1,4 @@
-function clean(value) {
+﻿function clean(value) {
     if (value === undefined || value === null) return "";
     return String(value).trim();
 }
@@ -28,7 +28,7 @@ function predictorMap(prediction) {
 }
 
 function productAttributeMap(product) {
-    const raw = product.ml_attributes || product.attributes || {};
+    const raw = product?.ml_attributes || product?.attributes || {};
     const map = {};
 
     if (Array.isArray(raw)) {
@@ -49,26 +49,57 @@ function productAttributeMap(product) {
 }
 
 function knownProductValue(product, id) {
+    const ai = product?.attributes || product?.ml_attributes || {};
+    const aiMap = { MUSIC_ARTIST_NAME: ai.artist, ALBUM_NAME: ai.album, MANUFACTURER: ai.manufacturer, MATERIAL: ai.material, SALE_FORMAT: ai.sale_format, UNITS_PER_PACK: ai.units_per_pack };
+    if (aiMap[id] !== undefined && aiMap[id] !== null && String(aiMap[id]).trim()) return aiMap[id];
     const map = {
-        BRAND: product.brand,
-        MODEL: product.model,
-        LINE: product.line,
-        COLOR: product.color,
-        GTIN: product.gtin,
-        SALE_FORMAT: product.sale_format,
-        UNITS_PER_PACK: product.units_per_pack,
-        MATERIAL: product.material,
-        DISH_PLATE_TYPE: product.dish_plate_type
+        BRAND: product?.brand,
+        MODEL: product?.model,
+        LINE: product?.line,
+        COLOR: product?.color,
+        GTIN: product?.gtin,
+        SALE_FORMAT: product?.sale_format,
+        UNITS_PER_PACK: product?.units_per_pack,
+        MATERIAL: product?.material,
+        DISH_PLATE_TYPE: product?.dish_plate_type,
+        VOLTAGE: product?.voltage || product?.voltagem || product?.tensao,
+        POWER: product?.power || product?.potencia,
+        CAPACITY: product?.capacity || product?.capacidade,
+        HEIGHT: product?.height || product?.altura,
+        WIDTH: product?.width || product?.largura,
+        DEPTH: product?.depth || product?.profundidade,
+        SIZE: product?.size || product?.tamanho
     };
 
     return map[id];
+}
+
+function overrideMap(overrides) {
+    const map = {};
+    if (!overrides) return map;
+
+    if (Array.isArray(overrides)) {
+        for (const item of overrides) {
+            if (item?.id) map[item.id] = item;
+        }
+    } else if (typeof overrides === "object") {
+        for (const [id, value] of Object.entries(overrides)) {
+            if (value && typeof value === "object" && !Array.isArray(value)) {
+                map[id] = { id, ...value };
+            } else {
+                map[id] = { id, value_name: value };
+            }
+        }
+    }
+
+    return map;
 }
 
 function valueFromAllowedList(definition, rawValue) {
     const raw = clean(rawValue);
     if (!raw) return null;
 
-    if (!Array.isArray(definition.values) || !definition.values.length) {
+    if (!Array.isArray(definition?.values) || !definition.values.length) {
         return { value_name: raw };
     }
 
@@ -77,60 +108,192 @@ function valueFromAllowedList(definition, rawValue) {
     const exact = definition.values.find(v =>
         normalize(v.name) === wanted || String(v.id) === raw
     );
-
-    if (exact) return { value_id: exact.id };
+    if (exact) return { value_id: String(exact.id) };
 
     const partial = definition.values.find(v => {
         const candidate = normalize(v.name);
         return candidate.includes(wanted) || wanted.includes(candidate);
     });
+    if (partial) return { value_id: String(partial.id) };
 
-    if (partial) return { value_id: partial.id };
+    const valueType = normalize(definition?.value_type);
+    if (["string", "number", "number_unit"].includes(valueType)) {
+        return { value_name: raw };
+    }
 
     return null;
 }
 
-function resolveOne(definition, product, prediction, predictorValues) {
-    const id = definition.id;
+function descriptionText(product) {
+    return clean(product?.description || product?.description_plain_text || "");
+}
 
-    if (id === "EMPTY_GTIN_REASON" && !clean(product.gtin)) {
-        const value = valueFromAllowedList(definition, "17055160");
-        return value ? { id, ...value } : { id, value_id: "17055160" };
+function titleText(product) {
+    return clean(product?.title || "");
+}
+
+function extractLabeledValue(text, labels) {
+    if (!text) return "";
+    const escaped = labels.map(label => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+    const re = new RegExp(`(?:^|[\\n\\r.;|])\\s*(?:${escaped})\\s*[:=-]\\s*([^\\n\\r.;|]+)`, "i");
+    const match = text.match(re);
+    return match ? clean(match[1]) : "";
+}
+
+function extractDescriptionValue(product, definition) {
+    const text = descriptionText(product);
+    if (!text) return "";
+
+    const id = normalize(definition?.id);
+    const name = normalize(definition?.name);
+    const key = `${id} ${name}`;
+
+    if (id === 'units_per_pack') {
+        const quantity = text.match(/(?:inclui|cont[eé]m|contendo|com|possui|composto por|formado por)\s+(\d+|um|uma|dois|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez)\s+(?:garrafas?|unidades?|pe[cç]as?|itens?)/i);
+        if (quantity) {
+            const numbers = {um:1, uma:1, dois:2, duas:2, 'três':3, quatro:4, cinco:5, seis:6, sete:7, oito:8, nove:9, dez:10};
+            const raw = quantity[1].toLowerCase();
+            return numbers[raw] || raw;
+        }
     }
+    const groups = [
+        { labels: ["album", "Ã¡lbum"], keys: /album|Ã¡lbum/ },
+        { labels: ["artista", "artist", "intÃ©rprete", "interprete"], keys: /artist|artista|interprete|intÃ©rprete/ },
+        { labels: ["marca", "brand"], keys: /brand|marca/ },
+        { labels: ["modelo", "model"], keys: /model|modelo/ },
+        { labels: ["linha", "line"], keys: /line|linha/ },
+        { labels: ["cor", "color"], keys: /color|cor/ },
+        { labels: ["material"], keys: /material/ },
+        { labels: ["voltagem", "voltage", "tensÃ£o", "tensao"], keys: /voltag|tensao|tensÃ£o|voltage/ },
+        { labels: ["potÃªncia", "potencia", "power"], keys: /potenc|power/ },
+        { labels: ["capacidade", "capacity"], keys: /capacid|capacity/ },
+        { labels: ["tamanho", "size"], keys: /tamanho|size/ }
+    ];
 
-    const productMap = productAttributeMap(product);
-    const explicit = productMap[id];
-
-    if (explicit) {
-        if (explicit.value_id) return { id, value_id: String(explicit.value_id) };
-        if (explicit.value_name !== undefined) {
-            const value = valueFromAllowedList(definition, explicit.value_name);
-            return value ? { id, ...value } : { id, value_name: clean(explicit.value_name) };
+    for (const group of groups) {
+        if (group.keys.test(key)) {
+            const value = extractLabeledValue(text, group.labels);
+            if (value) return value;
         }
     }
 
-    const predicted = predictorValues[id];
-    if (predicted?.value_id || predicted?.value_name) {
-        if (predicted.value_id) return { id, value_id: String(predicted.value_id) };
-        const value = valueFromAllowedList(definition, predicted.value_name);
-        return value ? { id, ...value } : { id, value_name: clean(predicted.value_name) };
+    return "";
+}
+
+function resolveOne(definition, product, predictorValues, overrides, options = {}) {
+    const id = definition.id;
+    const productMap = productAttributeMap(product);
+    const explicit = productMap[id];
+    const override = overrides[id];
+    const required = options.required === true;
+
+    if (id === "EMPTY_GTIN_REASON" && !clean(product?.gtin)) {
+        const value = valueFromAllowedList(definition, "17055160");
+        return value ? { id, ...value } : null;
     }
 
+    // Fonte 1: valor explicitamente informado pelo usuÃ¡rio/produto.
+    const directSources = [override, explicit];
+    for (const source of directSources) {
+        if (!source) continue;
+        if (source.value_id) return { id, value_id: String(source.value_id) };
+        if (source.value_name !== undefined) {
+            const value = valueFromAllowedList(definition, source.value_name);
+            if (value) return { id, ...value };
+        }
+    }
+
+    // Fonte 2: campos estruturados conhecidos do produto.
     const known = knownProductValue(product, id);
     if (known !== undefined && clean(known)) {
         const value = valueFromAllowedList(definition, known);
-        return value ? { id, ...value } : { id, value_name: clean(known) };
+        if (value) return { id, ...value };
     }
+
+    // Fonte 3: informaÃ§Ã£o explicitamente rotulada na descriÃ§Ã£o.
+    const fromDescription = extractDescriptionValue(product, definition);
+    if (fromDescription) {
+        const value = valueFromAllowedList(definition, fromDescription);
+        if (value) return { id, ...value };
+    }
+
+    // O predictor Ã© uma fonte auxiliar e sÃ³ pode completar atributo obrigatÃ³rio
+    // (ou explicitamente solicitado pelo chamador). Isso evita que uma previsÃ£o
+    // de categoria polua anÃºncios com BRAND/MODEL/ALBUM/ARTIST/etc. sem evidÃªncia.
+    if (required) {
+        const predicted = predictorValues[id];
+        if (predicted) {
+            if (predicted.value_id) return { id, value_id: String(predicted.value_id) };
+            if (predicted.value_name !== undefined) {
+                const value = valueFromAllowedList(definition, predicted.value_name);
+                if (value) return { id, ...value };
+            }
+        }
+    }
+    if (id === 'BRAND') return { id, value_name: 'Genérica' };
+    if (id === 'MANUFACTURER') return { id, value_name: 'Genérico' };
+    if (id === 'MODEL') return { id, value_name: 'Genérico' };
 
     return null;
 }
 
-exports.build = ({ product, categoryAttributes, prediction }) => {
+function normalizeDefinition(definition) {
+    if (!definition?.id) return null;
+    return {
+        ...definition,
+        tags: definition.tags || {},
+        values: Array.isArray(definition.values) ? definition.values : []
+    };
+}
+
+function mergeDefinitions(categoryAttributes, conditionalAttributes) {
+    const map = new Map();
+
+    for (const raw of categoryAttributes || []) {
+        const definition = normalizeDefinition(raw);
+        if (definition) map.set(definition.id, definition);
+    }
+
+    const required = Array.isArray(conditionalAttributes)
+        ? conditionalAttributes
+        : [];
+
+    for (const raw of required) {
+        const definition = normalizeDefinition(raw);
+        if (!definition) continue;
+
+        const current = map.get(definition.id);
+        if (current) {
+            map.set(definition.id, {
+                ...current,
+                ...definition,
+                tags: { ...(current.tags || {}), ...(definition.tags || {}), required: true }
+            });
+        } else {
+            map.set(definition.id, {
+                ...definition,
+                tags: { ...(definition.tags || {}), required: true }
+            });
+        }
+    }
+
+    return [...map.values()];
+}
+
+exports.build = ({
+    product,
+    categoryAttributes,
+    conditionalAttributes = [],
+    prediction,
+    overrides = {}
+}) => {
     const attributes = [];
     const predictorValues = predictorMap(prediction);
+    const overrideValues = overrideMap(overrides);
     const missing = [];
+    const definitions = mergeDefinitions(categoryAttributes, conditionalAttributes);
 
-    for (const definition of categoryAttributes || []) {
+    for (const definition of definitions) {
         const tags = definition.tags || {};
 
         if (tags.hidden || tags.read_only || tags.fixed) continue;
@@ -139,8 +302,9 @@ exports.build = ({ product, categoryAttributes, prediction }) => {
         const resolved = resolveOne(
             definition,
             product,
-            prediction,
-            predictorValues
+            predictorValues,
+            overrideValues,
+            { required }
         );
 
         if (resolved) {
@@ -150,17 +314,25 @@ exports.build = ({ product, categoryAttributes, prediction }) => {
                 id: definition.id,
                 name: definition.name,
                 value_type: definition.value_type,
+                value_max_length: definition.value_max_length,
                 values: definition.values || []
             });
         }
     }
 
-    if (!clean(product.gtin)) {
-        const gtinDefinition = (categoryAttributes || []).find(a => a.id === "EMPTY_GTIN_REASON");
+    if (String(product?.condition || "used").toLowerCase() === "used" &&
+        !attributes.some(a => a.id === "ITEM_CONDITION")) {
+        attributes.push({ id: "ITEM_CONDITION", value_id: "2230581" });
+    }
+
+    if (!clean(product?.gtin)) {
+        const gtinDefinition = definitions.find(a => a.id === "EMPTY_GTIN_REASON");
         if (gtinDefinition && !attributes.some(a => a.id === "EMPTY_GTIN_REASON")) {
-            attributes.push({ id: "EMPTY_GTIN_REASON", value_id: "17055160" });
+            const value = valueFromAllowedList(gtinDefinition, "17055160");
+            if (value) attributes.push({ id: "EMPTY_GTIN_REASON", ...value });
         }
     }
 
     return { attributes, missing };
 };
+
