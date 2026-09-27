@@ -2,10 +2,10 @@
     "name":  "tratocore",
     "version":  "0.6.0",
     "description":  "TratoCore Platform",
-    "main":  "api/server.js",
+    "main":  "index.js",
     "type":  "commonjs",
     "scripts":  {
-                    "start":  "node ./api/server.js",
+                    "start":  "node index.js",
                     "dev":  "nodemon api/server.js",
                     "doctor":  "node tools/doctor.js"
                 },
