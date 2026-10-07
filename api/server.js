@@ -13,6 +13,7 @@ const aiRoutes = require("./routes/ai");
 const productImagesRoutes = require("./routes/productImages");
 const mlRoutes = require("./routes/ml");
 const tratocapRoutes = require("./routes/tratocap");
+const googleDriveService = require("./services/googleDriveService");
 
 const app = express();
 
@@ -63,8 +64,56 @@ app.use("/api/upload", uploadRoutes);
 app.use("/api/ai", aiRoutes);
 
 app.use("/api/product-images", productImagesRoutes);
+
 app.use("/api/ml", mlRoutes);
+
 app.use("/api/tratocap", tratocapRoutes);
+
+// ======================================================
+// GOOGLE DRIVE
+// ======================================================
+
+app.get("/api/drive/status", async (req, res) => {
+
+    try {
+
+        const folder = await googleDriveService.testConnection();
+
+        res.json({
+
+            success: true,
+
+            drive: "online",
+
+            folder: {
+
+                id: folder.id,
+
+                name: folder.name,
+
+                mimeType: folder.mimeType
+
+            }
+
+        });
+
+    } catch (err) {
+
+        console.error("[Google Drive] Erro no teste:", err);
+
+        res.status(500).json({
+
+            success: false,
+
+            drive: "offline",
+
+            erro: err.message
+
+        });
+
+    }
+
+});
 
 // ======================================================
 // HOME
@@ -172,11 +221,14 @@ app.listen(PORT, () => {
     console.log("TratoCap Sync:");
     console.log(`http://localhost:${PORT}/api/tratocap/status`);
     console.log("");
+    console.log("Google Drive:");
+    console.log(`http://localhost:${PORT}/api/drive/status`);
+    console.log("");
     console.log("Storage:");
     console.log(storagePath);
     console.log("");
     console.log("OpenAI:");
-    console.log(process.env.OPENAI_API_KEY ? "✅ Chave carregada" : "❌ Chave não encontrada");
+    console.log(process.env.OPENAI_API_KEY ? "Chave carregada" : "Chave não encontrada");
     console.log("");
     console.log("======================================");
 
