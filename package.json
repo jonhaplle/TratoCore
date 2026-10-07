@@ -1,38 +1,39 @@
 {
-    "name":  "tratocore",
-    "version":  "0.6.0",
-    "description":  "TratoCore Platform",
-    "main":  "index.js",
-    "type":  "commonjs",
-    "scripts":  {
-                    "start":  "node index.js",
-                    "dev":  "nodemon api/server.js",
-                    "doctor":  "node tools/doctor.js"
-                },
-    "keywords":  [
-                     "tratocore",
-                     "mercadolivre",
-                     "ia",
-                     "gemini"
-                 ],
-    "author":  "Marco Aurélio Silva",
-    "license":  "ISC",
-    "dependencies":  {
-                         "axios":  "^1.19.0",
-                         "cloudinary":  "^2.10.0",
-                         "cors":  "^2.8.6",
-                         "dotenv":  "^17.4.2",
-                         "exceljs":  "^4.4.0",
-                         "express":  "^5.2.1",
-                         "form-data":  "^4.0.6",
-                         "mime-types":  "^3.0.2",
-                         "multer":  "^2.2.0",
-                         "pg":  "^8.22.0",
-                         "sharp":  "^0.35.3",
-                         "uuid":  "^14.0.1",
-                         "playwright-core":  "^1.55.0"
-                     },
-    "devDependencies":  {
-                            "nodemon":  "^3.1.14"
-                        }
+    "name": "tratocore",
+    "version": "0.6.0",
+    "description": "TratoCore Platform",
+    "main": "index.js",
+    "type": "commonjs",
+    "scripts": {
+        "start": "node index.js",
+        "dev": "nodemon api/server.js",
+        "doctor": "node tools/doctor.js"
+    },
+    "keywords": [
+        "tratocore",
+        "mercadolivre",
+        "ia",
+        "gemini"
+    ],
+    "author": "Marco Aurélio Silva",
+    "license": "ISC",
+    "dependencies": {
+        "axios": "^1.19.0",
+        "cloudinary": "^2.10.0",
+        "cors": "^2.8.6",
+        "dotenv": "^17.4.2",
+        "exceljs": "^4.4.0",
+        "express": "^5.2.1",
+        "form-data": "^4.0.6",
+        "mime-types": "^3.0.2",
+        "multer": "^2.2.0",
+        "pg": "^8.22.0",
+        "sharp": "^0.35.3",
+        "uuid": "^14.0.1",
+        "playwright-core": "^1.55.0",
+        "googleapis": "^166.0.0"
+    },
+    "devDependencies": {
+        "nodemon": "^3.1.14"
+    }
 }
