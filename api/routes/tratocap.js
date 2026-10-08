@@ -6,6 +6,7 @@ const path = require("path");
 const { v4: uuidv4 } = require("uuid");
 const ProductService = require("../services/productService");
 const ProductImageService = require("../services/productImageService");
+const { uploadFile } = require("../services/googleDriveService");
 
 const router = express.Router();
 
@@ -66,7 +67,7 @@ router.get("/status", (req, res) => {
     });
 });
 
-router.post("/upload", upload.single("image"), (req, res, next) => {
+router.post("/upload", upload.single("image"), async (req, res, next) => {
     try {
         if (!req.file) return res.status(400).json({ success: false, erro: "Nenhuma imagem enviada no campo image." });
         const album = safeAlbumName(req.body.album);
@@ -75,7 +76,15 @@ router.post("/upload", upload.single("image"), (req, res, next) => {
         const albumDir = path.join(root, album);
         fs.mkdirSync(albumDir, { recursive: true });
         const ext = path.extname(req.file.originalname || req.file.filename).toLowerCase() || ".jpg";
-        const fileName = `${Date.now()}_${uuidv4()}${ext}`;
+        // Se o aplicativo enviar client_uuid estável, reutilizamos o mesmo nome em tentativas.
+        // Isso reduz duplicatas quando a conexão cai depois do upload.
+        const clientId = String(req.body.client_uuid || "").trim();
+        const stableName = clientId
+            ? path.basename(clientId).replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120)
+            : "";
+        const fileName = stableName
+            ? (path.extname(stableName) ? stableName : `${stableName}${ext}`)
+            : `${Date.now()}_${uuidv4()}${ext}`;
         const target = path.join(albumDir, fileName);
         fs.renameSync(req.file.path, target);
         const meta = {
@@ -91,14 +100,49 @@ router.post("/upload", upload.single("image"), (req, res, next) => {
         };
         fs.writeFileSync(target + ".json", JSON.stringify(meta, null, 2), "utf8");
 
+        // A importação local continua agendada, mas o Drive passa a ser a cópia persistente.
         if (destination === "product") scheduleAutoImport(album);
+
+        let driveResult;
+        try {
+            const mimeType = req.file.mimetype || "image/jpeg";
+            driveResult = await uploadFile(target, fileName, mimeType, album);
+        } catch (driveError) {
+            console.error(`[TratoCap] Falha ao enviar "${fileName}" para o Google Drive:`, driveError);
+            return res.status(502).json({
+                success: false,
+                local_saved: true,
+                drive_synced: false,
+                erro: "A imagem foi recebida pelo TratoCore, mas não foi possível confirmar o envio ao Google Drive.",
+                detalhe: driveError.message,
+                album,
+                destination,
+                file_name: fileName
+            });
+        }
+
+        meta.drive_file_id = driveResult.id;
+        meta.drive_folder_id = driveResult.folder_id;
+        meta.drive_web_view_link = driveResult.web_view_link || null;
+        meta.drive_synced_at = new Date().toISOString();
+        fs.writeFileSync(target + ".json", JSON.stringify(meta, null, 2), "utf8");
 
         res.status(201).json({
             success: true,
-            message: destination === "gallery" ? "Imagem salva na Galeria TratoCore." : "Imagem recebida pelo TratoCore.",
+            message: destination === "gallery"
+                ? "Imagem salva na Galeria TratoCore e sincronizada com o Google Drive."
+                : "Imagem recebida pelo TratoCore e sincronizada com o Google Drive.",
             album,
             destination,
             file_name: fileName,
+            drive_synced: true,
+            drive: {
+                id: driveResult.id,
+                name: driveResult.name,
+                folder_id: driveResult.folder_id,
+                web_view_link: driveResult.web_view_link || null,
+                reused_existing: Boolean(driveResult.reused_existing)
+            },
             auto_import: destination === "product" ? "agendado" : "desativado",
             auto_import_delay_ms: destination === "product" ? AUTO_IMPORT_DELAY_MS : null
         });
