@@ -19,12 +19,29 @@ if (process.env.DB_PASSWORD) {
 const pool = new Pool(config);
 
 pool.connect()
-    .then(client => {
-        console.log("✅ PostgreSQL conectado");
-        client.release();
+    .then(async client => {
+        try {
+            console.log("PostgreSQL conectado");
+
+            // A migraÃ§Ã£o roda somente no Render; a base local nÃ£o Ã© alterada.
+            if (process.env.RENDER === "true") {
+                await client.query(`
+                    ALTER TABLE product_images
+                        ADD COLUMN IF NOT EXISTS drive_file_id TEXT,
+                        ADD COLUMN IF NOT EXISTS drive_folder_id TEXT,
+                        ADD COLUMN IF NOT EXISTS drive_web_view_link TEXT
+                `);
+                console.log("product_images_drive verificada no Render");
+            }
+        } catch (err) {
+            console.error("Erro na conexÃ£o ou migraÃ§Ã£o inicial do PostgreSQL:");
+            console.error(err);
+        } finally {
+            client.release();
+        }
     })
     .catch(err => {
-        console.error("❌ Erro ao conectar:");
+        console.error("Erro ao conectar PostgreSQL:");
         console.error(err);
     });
 
