@@ -47,7 +47,17 @@ async function getByProductId(req, res) {
             req.params.productId
         );
 
-        return res.status(200).json(images);
+        const withDriveUrls = images.map(image => {
+            if (!image.drive_file_id) return image;
+            const driveUrl = `/api/product-images/drive/${encodeURIComponent(image.drive_file_id)}`;
+            return {
+                ...image,
+                original_url: driveUrl,
+                thumb_url: driveUrl
+            };
+        });
+
+        return res.status(200).json(withDriveUrls);
 
     }
 
