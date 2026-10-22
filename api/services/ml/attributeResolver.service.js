@@ -1,4 +1,4 @@
-﻿function clean(value) {
+function clean(value) {
     if (value === undefined || value === null) return "";
     return String(value).trim();
 }
@@ -186,53 +186,130 @@ function resolveOne(definition, product, predictorValues, overrides, options = {
     const explicit = productMap[id];
     const override = overrides[id];
     const required = options.required === true;
+    const isNumberUnit = normalize(definition.value_type) === "number_unit";
 
     if (id === "EMPTY_GTIN_REASON" && !clean(product?.gtin)) {
         const value = valueFromAllowedList(definition, "17055160");
         return value ? { id, ...value } : null;
     }
 
-    // Fonte 1: valor explicitamente informado pelo usuÃ¡rio/produto.
     const directSources = [override, explicit];
-    for (const source of directSources) {
-        if (!source) continue;
-        if (source.value_id) return { id, value_id: String(source.value_id) };
-        if (source.value_name !== undefined) {
-            const value = valueFromAllowedList(definition, source.value_name);
+
+    // Atributos number_unit não aceitam value_id como valor final.
+    // Primeiro aproveita uma estrutura numérica/unidade já validada.
+    if (isNumberUnit) {
+        for (const source of directSources) {
+            if (source?.value_struct?.number != null && source?.value_struct?.unit) {
+                return {
+                    id,
+                    value_struct: {
+                        number: Number(source.value_struct.number),
+                        unit: String(source.value_struct.unit)
+                    }
+                };
+            }
+
+            if (source?.value_name !== undefined) {
+                const parsed = parseNumberUnit(source.value_name, definition);
+                if (parsed) return { id, ...parsed };
+            }
+        }
+
+        // Busca a capacidade explicitamente informada no campo do produto,
+        // título ou descrição. Não converte IDs de lista em capacidade.
+        const known = knownProductValue(product, id);
+        const fromKnown = parseNumberUnit(known, definition);
+        if (fromKnown) return { id, ...fromKnown };
+
+        const text = `${titleText(product)} ${descriptionText(product)}`;
+        const fromText = parseNumberUnit(text, definition);
+        if (fromText) return { id, ...fromText };
+    } else {
+        for (const source of directSources) {
+            if (!source) continue;
+            if (source.value_id) return { id, value_id: String(source.value_id) };
+            if (source.value_name !== undefined) {
+                const value = valueFromAllowedList(definition, source.value_name);
+                if (value) return { id, ...value };
+            }
+        }
+
+        const known = knownProductValue(product, id);
+        if (known !== undefined && clean(known)) {
+            const value = valueFromAllowedList(definition, known);
+            if (value) return { id, ...value };
+        }
+
+        const fromDescription = extractDescriptionValue(product, definition);
+        if (fromDescription) {
+            const value = valueFromAllowedList(definition, fromDescription);
             if (value) return { id, ...value };
         }
     }
 
-    // Fonte 2: campos estruturados conhecidos do produto.
-    const known = knownProductValue(product, id);
-    if (known !== undefined && clean(known)) {
-        const value = valueFromAllowedList(definition, known);
-        if (value) return { id, ...value };
-    }
-
-    // Fonte 3: informaÃ§Ã£o explicitamente rotulada na descriÃ§Ã£o.
-    const fromDescription = extractDescriptionValue(product, definition);
-    if (fromDescription) {
-        const value = valueFromAllowedList(definition, fromDescription);
-        if (value) return { id, ...value };
-    }
-
-    // O predictor Ã© uma fonte auxiliar e sÃ³ pode completar atributo obrigatÃ³rio
-    // (ou explicitamente solicitado pelo chamador). Isso evita que uma previsÃ£o
-    // de categoria polua anÃºncios com BRAND/MODEL/ALBUM/ARTIST/etc. sem evidÃªncia.
+    // O predictor é auxiliar e só completa atributos obrigatórios.
     if (required) {
         const predicted = predictorValues[id];
         if (predicted) {
-            if (predicted.value_id) return { id, value_id: String(predicted.value_id) };
-            if (predicted.value_name !== undefined) {
-                const value = valueFromAllowedList(definition, predicted.value_name);
-                if (value) return { id, ...value };
+            if (isNumberUnit) {
+                if (predicted.value_struct?.number != null && predicted.value_struct?.unit) {
+                    return {
+                        id,
+                        value_struct: {
+                            number: Number(predicted.value_struct.number),
+                            unit: String(predicted.value_struct.unit)
+                        }
+                    };
+                }
+                const parsed = parseNumberUnit(predicted.value_name, definition);
+                if (parsed) return { id, ...parsed };
+            } else {
+                if (predicted.value_id) return { id, value_id: String(predicted.value_id) };
+                if (predicted.value_name !== undefined) {
+                    const value = valueFromAllowedList(definition, predicted.value_name);
+                    if (value) return { id, ...value };
+                }
             }
         }
     }
-    if (id === 'BRAND') return { id, value_name: 'Genérica' };
-    if (id === 'MANUFACTURER') return { id, value_name: 'Genérico' };
-    if (id === 'MODEL') return { id, value_name: 'Genérico' };
+
+    if (id === "BRAND") return { id, value_name: "Genérica" };
+    if (id === "MANUFACTURER") return { id, value_name: "Genérico" };
+    if (id === "MODEL") return { id, value_name: "Genérico" };
+
+    return null;
+}
+
+function parseNumberUnit(rawValue, definition) {
+    const raw = clean(rawValue);
+    if (!raw) return null;
+
+    const allowedUnits = (definition?.allowed_units || [])
+        .map(unit => clean(unit.id || unit.name).toUpperCase())
+        .filter(Boolean);
+    const defaultUnit = clean(definition?.default_unit).toUpperCase();
+    const units = [...new Set([...allowedUnits, defaultUnit, "TB", "GB", "MB", "CM", "MM", "M", "KG", "G", "W", "V"])]
+        .filter(Boolean)
+        .sort((a, b) => b.length - a.length)
+        .join("|");
+
+    // Aceita formatos como "1 TB", "1TB" ou "1000 GB".
+    const match = raw.match(new RegExp(`(?:^|\\b)(\\d+(?:[.,]\\d+)?)\\s*(${units})(?:\\b|$)`, "i"));
+    if (match) {
+        const number = Number(match[1].replace(",", "."));
+        const unit = match[2].toUpperCase();
+        if (!Number.isFinite(number)) return null;
+        if (allowedUnits.length && !allowedUnits.includes(unit)) return null;
+        return { value_struct: { number, unit } };
+    }
+
+    // Se veio apenas um número, usa a unidade padrão definida pela categoria.
+    if (/^\d+(?:[.,]\d+)?$/.test(raw) && defaultUnit) {
+        const number = Number(raw.replace(",", "."));
+        if (Number.isFinite(number)) {
+            return { value_struct: { number, unit: defaultUnit } };
+        }
+    }
 
     return null;
 }
@@ -335,4 +412,3 @@ exports.build = ({
 
     return { attributes, missing };
 };
-
