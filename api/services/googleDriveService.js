@@ -87,7 +87,7 @@ async function uploadFile(filePath, fileName, mimeType, albumName) {
         .replace(/[\\/:*?"<>|]/g, "_")
         .slice(0, 180);
 
-    // Idempotência: se o mesmo nome já existir no álbum, não cria uma segunda cópia.
+    // Evita criar outra cópia com o mesmo nome dentro do mesmo álbum.
     const escapedName = escapeQueryValue(safeFileName);
     const existing = await drive.files.list({
         q: [
@@ -134,6 +134,22 @@ async function uploadFile(filePath, fileName, mimeType, albumName) {
     };
 }
 
+// Retorna um stream de leitura para a rota /drive/:fileId.
+async function getFileStream(fileId) {
+    const drive = getDriveClient();
+    const response = await drive.files.get(
+        {
+            fileId: String(fileId),
+            alt: "media"
+        },
+        {
+            responseType: "stream"
+        }
+    );
+
+    return response.data;
+}
+
 async function testConnection() {
     const drive = getDriveClient();
     const result = await drive.files.get({
@@ -147,5 +163,6 @@ module.exports = {
     getDriveClient,
     findOrCreateFolder,
     uploadFile,
+    getFileStream,
     testConnection
 };
