@@ -1,3 +1,4 @@
+
 const express = require("express");
 const path = require("path");
 
@@ -7,13 +8,10 @@ const localAI = require("../services/local-ai.service");
 const { analisarImagem } = localAI;
 const { pesquisarImagem } = require("../services/lens.service");
 const { findCatalogMatch } = require("../services/catalog.service");
-const { buildListing } = localAI;
-const { improveListing } = localAI;
+const { buildListing, improveListing } = localAI;
 
 router.post("/analyze", async (req, res) => {
-
     try {
-
         const {
             imageUrl,
             observacaoVendedor = ""
@@ -34,13 +32,42 @@ router.post("/analyze", async (req, res) => {
 
         // ==================================================
         // 1. PESQUISA VISUAL
+        // O Google Lens é opcional: sua falha não deve impedir
+        // a tentativa de análise da imagem.
         // ==================================================
 
-        const pesquisaVisual = await pesquisarImagem(caminhoImagem);
+        let pesquisaVisual = {
+            provider: "unavailable",
+            search_url: "",
+            links: [],
+            erro: null
+        };
+
+        try {
+            const pesquisa = await pesquisarImagem(caminhoImagem);
+
+            if (pesquisa && typeof pesquisa === "object") {
+                pesquisaVisual = {
+                    ...pesquisaVisual,
+                    ...pesquisa,
+                    links: Array.isArray(pesquisa.links)
+                        ? pesquisa.links
+                        : []
+                };
+            }
+        } catch (err) {
+            console.error(
+                "Google Lens indisponível; continuando análise:",
+                err.message
+            );
+
+            pesquisaVisual.erro = err.message || "Pesquisa visual indisponível.";
+        }
 
         // ==================================================
         // 2. IDENTIFICAÇÃO
-        // Foto + Lens + observação do vendedor
+        // Foto + resultados do Lens, quando disponíveis,
+        // + observação do vendedor.
         // ==================================================
 
         const resultado = await analisarImagem(
@@ -49,9 +76,14 @@ router.post("/analyze", async (req, res) => {
             observacaoVendedor
         );
 
+        if (!resultado || typeof resultado !== "object") {
+            throw new Error(
+                "A análise da imagem não retornou uma identificação válida."
+            );
+        }
+
         // ==================================================
         // 3. CATALOG MATCHER
-        // Usa a identificação consolidada pelo passo anterior.
         // ==================================================
 
         const catalogIdentification = {
@@ -66,18 +98,11 @@ router.post("/analyze", async (req, res) => {
         let catalogMatch = null;
 
         try {
-
             catalogMatch = await findCatalogMatch(
                 catalogIdentification
             );
-
         } catch (err) {
-
-            console.error("======================================");
-            console.error("ERRO NO CATALOG MATCHER");
-            console.error("======================================");
-            console.error(err);
-            console.error("======================================");
+            console.error("ERRO NO CATALOG MATCHER:", err);
 
             catalogMatch = {
                 found: false,
@@ -91,13 +116,11 @@ router.post("/analyze", async (req, res) => {
 
         // ==================================================
         // 4. COPYWRITER
-        // Só agora gera título, descrição, categoria e preço.
         // ==================================================
 
         let listing = null;
 
         try {
-
             listing = await buildListing({
                 identification: resultado.identification || {},
                 facts: resultado.facts || [],
@@ -105,14 +128,8 @@ router.post("/analyze", async (req, res) => {
                 catalogMatch,
                 sellerObservation: observacaoVendedor
             });
-
         } catch (err) {
-
-            console.error("======================================");
-            console.error("ERRO NO COPYWRITER");
-            console.error("======================================");
-            console.error(err);
-            console.error("======================================");
+            console.error("ERRO NO COPYWRITER:", err);
 
             listing = {
                 title: "",
@@ -124,30 +141,42 @@ router.post("/analyze", async (req, res) => {
         }
 
         // ==================================================
-        // 5. COMPATIBILIDADE DA API
-        // O Publication Engine passou a devolver o rascunho em
-        // `listing`. O frontend histórico consome os mesmos campos
-        // diretamente dentro de `resultado`. Mantemos os dois formatos
-        // para não quebrar o fluxo existente.
+        // 5. COMPATIBILIDADE COM O FRONTEND EXISTENTE
         // ==================================================
 
         const listingCompat = listing || {};
 
         const resultadoCompat = {
             ...resultado,
-            title: String(listingCompat.title || resultado.title || "").trim(),
-            description: String(listingCompat.description || resultado.description || "").trim(),
-            suggested_price: Number.isFinite(Number(listingCompat.suggested_price))
+            title: String(
+                listingCompat.title || resultado.title || ""
+            ).trim(),
+            description: String(
+                listingCompat.description || resultado.description || ""
+            ).trim(),
+            suggested_price: Number.isFinite(
+                Number(listingCompat.suggested_price)
+            )
                 ? Number(listingCompat.suggested_price)
                 : Number(resultado.suggested_price || 0),
-            category: String(listingCompat.category || resultado.category || "").trim(),
+            category: String(
+                listingCompat.category || resultado.category || ""
+            ).trim(),
             listing_draft: {
-                title: String(listingCompat.title || resultado.title || "").trim(),
-                description: String(listingCompat.description || resultado.description || "").trim(),
-                suggested_price: Number.isFinite(Number(listingCompat.suggested_price))
+                title: String(
+                    listingCompat.title || resultado.title || ""
+                ).trim(),
+                description: String(
+                    listingCompat.description || resultado.description || ""
+                ).trim(),
+                suggested_price: Number.isFinite(
+                    Number(listingCompat.suggested_price)
+                )
                     ? Number(listingCompat.suggested_price)
                     : Number(resultado.suggested_price || 0),
-                category: String(listingCompat.category || resultado.category || "").trim()
+                category: String(
+                    listingCompat.category || resultado.category || ""
+                ).trim()
             }
         };
 
@@ -155,45 +184,37 @@ router.post("/analyze", async (req, res) => {
         // 6. RESPOSTA FINAL
         // ==================================================
 
-        res.json({
-
+        return res.json({
             sucesso: true,
 
             pesquisaVisual: {
-                provider: pesquisaVisual.provider,
-                search_url: pesquisaVisual.search_url,
-                links: pesquisaVisual.links
+                provider: pesquisaVisual.provider || "unavailable",
+                search_url: pesquisaVisual.search_url || "",
+                links: Array.isArray(pesquisaVisual.links)
+                    ? pesquisaVisual.links
+                    : [],
+                erro: pesquisaVisual.erro || null
             },
 
             resultado: resultadoCompat,
-
             catalogMatch,
-
             listing
-
         });
 
     } catch (err) {
+        console.error("ERRO NA ANÁLISE DO PRODUTO:", err);
 
-        console.error("======================================");
-        console.error("ERRO IDENTIFICAÇÃO + LENS + CATÁLOGO");
-        console.error("======================================");
-        console.error(err);
-        console.error("======================================");
-
-        res.status(500).json({
+        return res.status(500).json({
             sucesso: false,
-            erro: err.message
+            erro: err.message || "Erro ao analisar o produto."
         });
     }
-
 });
 
 
-// ==================================================
+// ======================================================
 // CORRIGIR RASCUNHO + ESTIMAR PREÇO
-// Mantém o endpoint independente do produto salvo.
-// ==================================================
+// ======================================================
 
 router.post("/improve-draft", async (req, res) => {
     try {
@@ -205,6 +226,7 @@ router.post("/improve-draft", async (req, res) => {
         });
     } catch (err) {
         console.error("ERRO AO CORRIGIR RASCUNHO:", err);
+
         return res.status(500).json({
             sucesso: false,
             erro: err.message || "Erro ao corrigir o rascunho."
@@ -212,9 +234,23 @@ router.post("/improve-draft", async (req, res) => {
     }
 });
 
+
+// ======================================================
+// STATUS DA IA LOCAL
+// ======================================================
+
 router.get("/local-status", async (req, res) => {
-    try { res.json({ sucesso: true, ...await localAI.status() }); }
-    catch (err) { res.status(500).json({ sucesso: false, erro: err.message }); }
+    try {
+        return res.json({
+            sucesso: true,
+            ...await localAI.status()
+        });
+    } catch (err) {
+        return res.status(500).json({
+            sucesso: false,
+            erro: err.message
+        });
+    }
 });
 
 module.exports = router;
