@@ -1,3 +1,4 @@
+
 const { Pool } = require("pg");
 const path = require("path");
 
@@ -23,7 +24,6 @@ pool.connect()
         try {
             console.log("PostgreSQL conectado");
 
-            // A migraÃ§Ã£o roda somente no Render; a base local nÃ£o Ã© alterada.
             if (process.env.RENDER === "true") {
                 await client.query(`
                     ALTER TABLE product_images
@@ -32,9 +32,15 @@ pool.connect()
                         ADD COLUMN IF NOT EXISTS drive_web_view_link TEXT
                 `);
                 console.log("product_images_drive verificada no Render");
+
+                await client.query(`
+                    ALTER TABLE products
+                    ADD COLUMN IF NOT EXISTS ml_attributes JSONB
+                `);
+                console.log("products.ml_attributes verificada no Render");
             }
         } catch (err) {
-            console.error("Erro na conexÃ£o ou migraÃ§Ã£o inicial do PostgreSQL:");
+            console.error("Erro na conexão ou migração inicial do PostgreSQL:");
             console.error(err);
         } finally {
             client.release();
