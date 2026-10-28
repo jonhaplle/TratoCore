@@ -138,12 +138,24 @@ router.post("/", upload.array("imagem", 10), async (req, res, next) => {
             // DIMENSÕES
             // ==================================================
 
-            const driveResult = await uploadFile(
-    tempFile,
-    originalName,
-    file.mimetype || "image/jpeg",
-    "Produtos"
-);
+            let driveResult = null;
+            let driveError = null;
+
+            try {
+                driveResult = await uploadFile(
+                    tempFile,
+                    originalName,
+                    file.mimetype || "image/jpeg",
+                    "Produtos"
+                );
+            } catch (error) {
+                driveError = error;
+                console.error(
+                    `[Upload] Drive indisponível para "${originalName}"; mantendo cópia local:`,
+                    error.message
+                );
+            }
+
             const metadata = await sharp(tempFile).metadata();
 
             // ==================================================
@@ -212,13 +224,21 @@ router.post("/", upload.array("imagem", 10), async (req, res, next) => {
                 thumbUrl:
                     "/storage/thumbs/" + thumbName,
 
-                drive_file_id: driveResult.id,
+                drive_file_id: driveResult ? driveResult.id : null,
 
-                drive_folder_id: driveResult.folder_id,
+                drive_folder_id: driveResult ? driveResult.folder_id : null,
 
-                drive_web_view_link: driveResult.web_view_link || null,
+                drive_web_view_link: driveResult
+                    ? (driveResult.web_view_link || null)
+                    : null,
 
-                drive_url: "/api/product-images/drive/" + encodeURIComponent(driveResult.id)
+                drive_url: driveResult
+                    ? "/api/product-images/drive/" + encodeURIComponent(driveResult.id)
+                    : null,
+
+                drive_synced: Boolean(driveResult),
+
+                drive_error: driveError ? driveError.message : null
 
             });
 
