@@ -13,6 +13,7 @@ const aiRoutes = require("./routes/ai");
 const productImagesRoutes = require("./routes/productImages");
 const mlRoutes = require("./routes/ml");
 const tratocapRoutes = require("./routes/tratocap");
+const versionRoutes = require("./routes/version");
 const googleDriveService = require("./services/googleDriveService");
 
 const app = express();
@@ -68,6 +69,8 @@ app.use("/api/product-images", productImagesRoutes);
 app.use("/api/ml", mlRoutes);
 
 app.use("/api/tratocap", tratocapRoutes);
+
+app.use("/api/version", versionRoutes);
 
 // ======================================================
 // GOOGLE DRIVE

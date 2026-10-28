@@ -90,6 +90,21 @@ exports.publish = async (req, res) => {
             });
         }
 
+        // O anúncio foi criado no Mercado Livre, mas o vínculo não foi
+        // gravado no banco. Devolva o ID/link para evitar uma nova publicação.
+        if (err.ml) {
+            return res.status(500).json({
+                success: false,
+                error: err.message || "Anúncio criado no Mercado Livre, mas não registrado no banco.",
+                persisted: false,
+                ml: {
+                    id: err.ml.id,
+                    permalink: err.ml.permalink,
+                    status: err.ml.status
+                }
+            });
+        }
+
         if (err.response) {
 
             console.log("HTTP:", err.response.status);

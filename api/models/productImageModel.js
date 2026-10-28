@@ -18,11 +18,14 @@ async function create(image) {
             height,
             file_size,
             is_main,
-            sort_order
+            sort_order,
+            drive_file_id,
+            drive_folder_id,
+            drive_web_view_link
         )
         VALUES
         (
-            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13
         )
         RETURNING *
     `;
@@ -38,7 +41,10 @@ async function create(image) {
         image.height,
         image.file_size,
         image.is_main,
-        image.sort_order
+        image.sort_order,
+        image.drive_file_id || null,
+        image.drive_folder_id || null,
+        image.drive_web_view_link || null
 
     ];
 

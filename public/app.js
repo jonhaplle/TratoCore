@@ -380,7 +380,7 @@ function criarCampoObservacaoVendedor() {
 const observacaoVendedor = criarCampoObservacaoVendedor();
 
 // ======================================================
-// PREVIEW � FOTOS (ROBUSTO)
+// PREVIEW — FOTOS (ROBUSTO)
 // ======================================================
 
 function renderPhotoPreview() {
@@ -398,7 +398,7 @@ function renderPhotoPreview() {
     }
 
     if (files.length > 10) {
-        alert("Voc� pode selecionar no m�ximo 10 fotos.");
+        alert("Você pode selecionar no máximo 10 fotos.");
         photoInput.value = "";
         preview.innerHTML = "Sem imagem";
         return;
@@ -463,11 +463,11 @@ function renderPhotoPreview() {
     });
 
     if (!thumbs.children.length) {
-        preview.innerHTML = "Nenhum arquivo de imagem v�lido selecionado.";
+        preview.innerHTML = "Nenhum arquivo de imagem válido selecionado.";
         return;
     }
 
-    // Libera os Object URLs quando a p�gina for encerrada.
+    // Libera os Object URLs quando a página for encerrada.
     window.addEventListener("beforeunload", () => {
         objectUrls.forEach(url => URL.revokeObjectURL(url));
     }, { once: true });
@@ -588,7 +588,7 @@ async function corrigirRascunhoComIA() {
         if (description) description.value = r.description || description.value;
         if (salePrice && Number(r.suggested_price) > 0) salePrice.value = Number(r.suggested_price).toFixed(2);
 
-        alert("An�ncio corrigido com IA e pre�o estimado.");
+        alert("Anúncio corrigido com IA e preço estimado.");
     } catch (err) {
         console.error(err);
         alert(err.message || "Erro ao corrigir com IA.");
@@ -882,6 +882,15 @@ async function saveProduct() {
 
                             thumb_url:
                                 uploaded.thumbUrl,
+
+                            drive_file_id:
+                                uploaded.drive_file_id || null,
+
+                            drive_folder_id:
+                                uploaded.drive_folder_id || null,
+
+                            drive_web_view_link:
+                                uploaded.drive_web_view_link || null,
 
                             mime_type:
                                 uploaded.mimeType,

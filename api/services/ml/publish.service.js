@@ -234,16 +234,35 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
     // ======================================================
     const mlResponse = await apiService.publishItem(item);
 
-    if (product.description && product.description.trim().length > 0) {
-        await apiService.createDescription(mlResponse.id, product.description);
+    // O anúncio já existe no Mercado Livre. Registre o vínculo no banco
+    // imediatamente, antes de qualquer etapa opcional (descrição).
+    try {
+        await mlProductService.savePublication(productId, mlResponse);
+    } catch (persistError) {
+        persistError.ml = mlResponse;
+        throw persistError;
     }
 
-    await mlProductService.savePublication(productId, mlResponse);
+    // A descrição é opcional e não pode desfazer/ocultar a publicação.
+    let descriptionSaved = null;
+    let descriptionError = null;
+
+    if (product.description && product.description.trim().length > 0) {
+        try {
+            await apiService.createDescription(mlResponse.id, product.description);
+            descriptionSaved = true;
+        } catch (descriptionFailure) {
+            descriptionSaved = false;
+            descriptionError = descriptionFailure.response?.data || descriptionFailure.message;
+            console.error("Anúncio criado, mas a descrição falhou:", descriptionError);
+        }
+    }
 
     console.log("========================================");
     console.log("ANÚNCIO PUBLICADO COM SUCESSO");
     console.log("ID:", mlResponse.id);
     console.log("STATUS:", mlResponse.status);
+    console.log("DESCRIÇÃO:", descriptionSaved === null ? "não informada" : (descriptionSaved ? "ok" : "falhou"));
     console.log("========================================");
 
     return {
@@ -254,6 +273,8 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
             category_id: publicationSpec.category_id,
             category_name: publicationSpec.category.name,
             listing_type_id: publicationSpec.listing_type.id
-        }
+        },
+        description_saved: descriptionSaved,
+        description_error: descriptionError
     };
 };

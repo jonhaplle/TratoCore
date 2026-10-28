@@ -4,6 +4,7 @@ const sharp = require("sharp");
 const path = require("path");
 const fs = require("fs");
 const { v4: uuidv4 } = require("uuid");
+const { uploadFile } = require('../services/googleDriveService');
 
 const router = express.Router();
 
@@ -137,6 +138,12 @@ router.post("/", upload.array("imagem", 10), async (req, res, next) => {
             // DIMENSÕES
             // ==================================================
 
+            const driveResult = await uploadFile(
+    tempFile,
+    originalName,
+    file.mimetype || "image/jpeg",
+    "Produtos"
+);
             const metadata = await sharp(tempFile).metadata();
 
             // ==================================================
@@ -203,7 +210,15 @@ router.post("/", upload.array("imagem", 10), async (req, res, next) => {
                     "/storage/originals/" + originalName,
 
                 thumbUrl:
-                    "/storage/thumbs/" + thumbName
+                    "/storage/thumbs/" + thumbName,
+
+                drive_file_id: driveResult.id,
+
+                drive_folder_id: driveResult.folder_id,
+
+                drive_web_view_link: driveResult.web_view_link || null,
+
+                drive_url: "/api/product-images/drive/" + encodeURIComponent(driveResult.id)
 
             });
 

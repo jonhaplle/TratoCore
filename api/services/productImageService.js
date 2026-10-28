@@ -34,7 +34,11 @@ async function create(data) {
 
         is_main: data.is_main ?? true,
 
-        sort_order: data.sort_order ?? 1
+        sort_order: data.sort_order ?? 1,
+
+        drive_file_id: data.drive_file_id || null,
+        drive_folder_id: data.drive_folder_id || null,
+        drive_web_view_link: data.drive_web_view_link || null
 
     };
 

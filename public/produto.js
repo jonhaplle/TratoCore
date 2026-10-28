@@ -54,8 +54,20 @@ async function carregarProduto() {
             if (valor && !imagens.includes(valor)) imagens.push(valor);
         };
 
-        adicionarImagem(produto.original_url);
-        adicionarImagem(produto.thumb_url);
+        const urlDrive = (fileId) => fileId
+            ? `/api/product-images/drive/${encodeURIComponent(fileId)}`
+            : null;
+
+        // Se o produto já vier com o ID da imagem principal no Drive,
+        // ela tem prioridade sobre as URLs locais de /storage.
+        const drivePrincipal = urlDrive(produto.drive_file_id);
+
+        if (drivePrincipal) {
+            adicionarImagem(drivePrincipal);
+        } else {
+            adicionarImagem(produto.original_url);
+            adicionarImagem(produto.thumb_url);
+        }
 
         if (Array.isArray(produto.images)) {
             produto.images.forEach(img => {
@@ -63,8 +75,16 @@ async function carregarProduto() {
                     adicionarImagem(img);
                     return;
                 }
-                adicionarImagem(img.original_url);
-                adicionarImagem(img.thumb_url);
+
+                const driveImagem = urlDrive(img?.drive_file_id);
+
+                if (driveImagem) {
+                    adicionarImagem(driveImagem);
+                    return;
+                }
+
+                adicionarImagem(img?.original_url);
+                adicionarImagem(img?.thumb_url);
             });
         }
 

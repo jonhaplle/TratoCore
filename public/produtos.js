@@ -69,9 +69,25 @@ function renderizarTabela(lista) {
             ? produto.images[0]
             : null;
 
-        const imagemUrl = produto.thumb_url || produto.original_url || primeiraImagem?.thumb_url || primeiraImagem?.original_url || "";
-        const originalUrl = produto.original_url || primeiraImagem?.original_url || imagemUrl;
+       const imagemDrive = Array.isArray(produto.images)
+    ? produto.images.find(img => img && img.drive_file_id)
+    : null;
 
+const imagemDriveUrl = imagemDrive
+    ? `/api/product-images/drive/${encodeURIComponent(imagemDrive.drive_file_id)}`
+    : "";
+
+const imagemUrl = imagemDriveUrl ||
+    produto.thumb_url ||
+    produto.original_url ||
+    primeiraImagem?.thumb_url ||
+    primeiraImagem?.original_url ||
+    "";
+
+const originalUrl = imagemDriveUrl ||
+    produto.original_url ||
+    primeiraImagem?.original_url ||
+    imagemUrl;
         const foto = imagemUrl
             ? `
                 <img
@@ -631,6 +647,26 @@ async function publicarML(id, attributeOverrides = {}, options = {}) {
         const retorno = await response.json();
 
         if (!response.ok) {
+            if (retorno?.persisted === false && retorno?.ml?.id) {
+                const link = retorno.ml.permalink
+                    ? `\n\n${retorno.ml.permalink}`
+                    : "";
+
+                const aviso =
+                    `O anúncio foi criado no Mercado Livre (${retorno.ml.id}), ` +
+                    `mas não foi registrado no banco do TratoCore.${link}\n\n` +
+                    "Não publique novamente. Registre este ID manualmente.";
+
+                if (mostrarAlertas) {
+                    alert(aviso);
+                } else {
+                    console.error(`Produto ${id}: ${aviso}`);
+                }
+
+                await carregarProdutos();
+                return false;
+            }
+
             if (retorno?.needs_input && Array.isArray(retorno.missing)) {
                 abrirPendenciasPublicacaoML(id, retorno.missing, retorno.message);
 

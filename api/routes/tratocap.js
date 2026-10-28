@@ -100,9 +100,6 @@ router.post("/upload", upload.single("image"), async (req, res, next) => {
         };
         fs.writeFileSync(target + ".json", JSON.stringify(meta, null, 2), "utf8");
 
-        // A importação local continua agendada, mas o Drive passa a ser a cópia persistente.
-        if (destination === "product") scheduleAutoImport(album);
-
         let driveResult;
         try {
             const mimeType = req.file.mimetype || "image/jpeg";
@@ -126,6 +123,9 @@ router.post("/upload", upload.single("image"), async (req, res, next) => {
         meta.drive_web_view_link = driveResult.web_view_link || null;
         meta.drive_synced_at = new Date().toISOString();
         fs.writeFileSync(target + ".json", JSON.stringify(meta, null, 2), "utf8");
+
+        // Agenda somente depois que o envio ao Drive foi confirmado e os metadados foram gravados.
+        if (destination === "product") scheduleAutoImport(album);
 
         res.status(201).json({
             success: true,
@@ -242,6 +242,10 @@ async function importAlbums(requestedAlbum = null) {
             const originalPath = path.join(originalsRoot, originalName);
             const thumbPath = path.join(thumbsRoot, thumbName);
             const metadata = await sharp(source).metadata();
+            let imageMeta = {};
+            try {
+                imageMeta = JSON.parse(fs.readFileSync(source + ".json", "utf8"));
+            } catch (_) {}
             fs.copyFileSync(source, originalPath);
             await sharp(source).rotate().resize(250, 250, { fit: "inside", withoutEnlargement: true }).webp({ quality: 75 }).toFile(thumbPath);
             const image = await ProductImageService.create({
@@ -254,7 +258,10 @@ async function importAlbums(requestedAlbum = null) {
                 height: metadata.height || null,
                 file_size: fs.statSync(source).size,
                 is_main: i === 0,
-                sort_order: i + 1
+                sort_order: i + 1,
+                drive_file_id: imageMeta.drive_file_id || null,
+                drive_folder_id: imageMeta.drive_folder_id || null,
+                drive_web_view_link: imageMeta.drive_web_view_link || null
             });
             savedImages.push(image);
         }

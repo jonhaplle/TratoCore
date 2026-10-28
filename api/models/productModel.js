@@ -1,4 +1,4 @@
-﻿const db = require("../db");
+const db = require("../db");
 
 function normalizeImageUrl(value) {
     if (!value) return null;
@@ -22,16 +22,42 @@ function fallbackOriginal(fileName) {
     return "/storage/originals/" + name;
 }
 
+function driveProxyUrl(fileId) {
+    if (!fileId) return null;
+    return "/api/product-images/drive/" + encodeURIComponent(fileId);
+}
+
 function normalizeImageFields(product) {
     if (!product) return product;
-    product.thumb_url = normalizeImageUrl(product.thumb_url) || fallbackThumb(product.file_name);
-    product.original_url = normalizeImageUrl(product.original_url) || fallbackOriginal(product.file_name);
+
+    const mainDriveUrl = driveProxyUrl(product.drive_file_id);
+
+    if (mainDriveUrl) {
+        product.thumb_url = mainDriveUrl;
+        product.original_url = mainDriveUrl;
+    } else {
+        product.thumb_url = normalizeImageUrl(product.thumb_url) || fallbackThumb(product.file_name);
+        product.original_url = normalizeImageUrl(product.original_url) || fallbackOriginal(product.file_name);
+    }
+
     if (Array.isArray(product.images)) {
-        product.images = product.images.map(img => ({
-            ...img,
-            thumb_url: normalizeImageUrl(img.thumb_url) || fallbackThumb(img.file_name),
-            original_url: normalizeImageUrl(img.original_url) || fallbackOriginal(img.file_name)
-        }));
+        product.images = product.images.map(img => {
+            const driveUrl = driveProxyUrl(img.drive_file_id);
+
+            if (driveUrl) {
+                return {
+                    ...img,
+                    thumb_url: driveUrl,
+                    original_url: driveUrl
+                };
+            }
+
+            return {
+                ...img,
+                thumb_url: normalizeImageUrl(img.thumb_url) || fallbackThumb(img.file_name),
+                original_url: normalizeImageUrl(img.original_url) || fallbackOriginal(img.file_name)
+            };
+        });
     }
     return product;
 }
@@ -59,7 +85,8 @@ async function getAll() {
                         'original_url', img.original_url,
                         'thumb_url', img.thumb_url,
                         'is_main', img.is_main,
-                        'sort_order', img.sort_order
+                        'sort_order', img.sort_order,
+                        'drive_file_id', img.drive_file_id
                     )
                     ORDER BY img.is_main DESC, img.sort_order ASC, img.id ASC
                 )
@@ -73,7 +100,8 @@ async function getAll() {
             SELECT
                 pi.thumb_url,
                 pi.original_url,
-                pi.file_name
+                pi.file_name,
+                pi.drive_file_id
             FROM product_images pi
             WHERE pi.product_id = p.id
             ORDER BY pi.is_main DESC, pi.sort_order ASC, pi.id ASC
@@ -112,7 +140,8 @@ async function getById(id) {
                         'original_url', img.original_url,
                         'thumb_url', img.thumb_url,
                         'is_main', img.is_main,
-                        'sort_order', img.sort_order
+                        'sort_order', img.sort_order,
+                        'drive_file_id', img.drive_file_id
                     )
                     ORDER BY img.is_main DESC, img.sort_order ASC, img.id ASC
                 )
@@ -126,7 +155,8 @@ async function getById(id) {
             SELECT
                 pi.thumb_url,
                 pi.original_url,
-                pi.file_name
+                pi.file_name,
+                pi.drive_file_id
             FROM product_images pi
             WHERE pi.product_id = p.id
             ORDER BY pi.is_main DESC, pi.sort_order ASC, pi.id ASC

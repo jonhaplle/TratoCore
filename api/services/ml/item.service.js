@@ -46,7 +46,10 @@ exports.build = async (product, pictures, publicationSpec, attributeOverrides = 
     const uploadedPictures = await pictureService.upload(
         pictures.map(p => ({
             source: p.original_url || p.source || p.path,
-            path: p.path
+            path: p.path,
+            file_name: p.file_name,
+            mime_type: p.mime_type,
+            drive_file_id: p.drive_file_id
         }))
     );
 
