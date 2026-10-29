@@ -3,6 +3,14 @@ const router = express.Router();
 
 const controller = require("../controllers/mlController");
 const apiService = require("../services/ml/api.service");
+const productService = require("../services/productService");
+const requireMlDiagnosticKey = require("../middleware/mlDiagnosticKeyAuth");
+const { createPublicationDiagnostic } = require("../services/ml/publicationDiagnostic.service");
+
+const runProduct10Diagnostic = createPublicationDiagnostic({
+    productService,
+    apiService
+});
 
 // ======================================================
 // OAUTH
@@ -16,6 +24,21 @@ router.get("/callback", controller.callback);
 // ======================================================
 
 router.get("/me", controller.me);
+
+// Diagnóstico restrito: não cria nem atualiza anúncios.
+router.post("/diagnostics/product-10", requireMlDiagnosticKey, async (req, res) => {
+    res.set("Cache-Control", "no-store");
+
+    try {
+        return res.json(await runProduct10Diagnostic());
+    } catch (error) {
+        const status = error.status === 404 ? 404 : 502;
+        return res.status(status).json({
+            success: false,
+            error: status === 404 ? "Produto não encontrado." : "Falha no diagnóstico do Mercado Livre."
+        });
+    }
+});
 
 // ======================================================
 // PUBLICAÇÃO

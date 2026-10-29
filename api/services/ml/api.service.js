@@ -107,6 +107,20 @@ exports.getItem = async (itemId) => {
     return response.data;
 };
 
+exports.getItemsBulk = async (itemIds = []) => {
+    const ids = [...new Set((itemIds || []).map(id => String(id || "").trim()).filter(Boolean))];
+    if (!ids.length) return [];
+
+    const response = await request({
+        method: "get",
+        url: `${API}/items/bulk`,
+        params: { ids: ids.join(",") },
+        timeout: 30000
+    });
+
+    return response.data;
+};
+
 exports.getMe = async () => {
 
     const response = await request({
@@ -316,10 +330,11 @@ exports.getProduct = async (productId) => {
 
 exports.searchUserItems = async (userId, params = {}) => {
     if (!userId) throw new Error("user_id nao informado para busca de anuncios.");
-    const token = await exports.getAccessToken();
-    const response = await axios.get(`${API}/users/${userId}/items/search`, {
-        headers: { Authorization: `Bearer ${token}` },
-        params: { limit: 50, ...params }
+    const response = await request({
+        method: "get",
+        url: `${API}/users/${encodeURIComponent(userId)}/items/search`,
+        params: { limit: 50, ...params },
+        timeout: 30000
     });
     return response.data;
 };
