@@ -5,17 +5,36 @@ const { createGoogleDriveProduct13Diagnostic } = require("./googleDriveProduct13
 const ROOT_ID = "photos-root-id";
 const FOLDER_ID = "rings-folder-id";
 
-function createDriveFixture({ rootPages, folderPages = {}, rootName = "FOTOS" } = {}) {
+function createDriveFixture({
+    rootPages,
+    folderPages = {},
+    rootName = "FOTOS",
+    rootDriveId = null,
+    rootCanListChildren = true,
+    targets = {},
+    listErrors = {}
+} = {}) {
     const calls = { get: [], list: [], writes: 0 };
     const drive = {
         files: {
             async get(params, options) {
                 calls.get.push({ params, options });
-                return { data: { id: ROOT_ID, name: rootName, mimeType: "application/vnd.google-apps.folder" } };
+                if (params.fileId === ROOT_ID) {
+                    return { data: {
+                        id: ROOT_ID,
+                        name: rootName,
+                        mimeType: "application/vnd.google-apps.folder",
+                        driveId: rootDriveId,
+                        capabilities: { canListChildren: rootCanListChildren, canReadDrive: true }
+                    } };
+                }
+                return { data: targets[params.fileId] || {} };
             },
             async list(params, options) {
                 calls.list.push({ params, options });
-                const pages = params.q.includes(FOLDER_ID) ? folderPages : rootPages;
+                const parentId = [FOLDER_ID, ROOT_ID].find(id => params.q.includes(id)) || ROOT_ID;
+                if (listErrors[parentId]) throw listErrors[parentId];
+                const pages = parentId === FOLDER_ID ? folderPages : rootPages;
                 const page = pages?.[params.pageToken || "first"] || { files: [] };
                 return { data: page };
             },
@@ -46,6 +65,7 @@ test("recursively finds UUID and jewelry-name image candidates with preview meta
                     { id: "image-exact", name: "a2e3cc52-3542-41e7-9106-565182a8d855.jpeg", mimeType: "image/jpeg", size: "110053", modifiedTime: "2026-09-01T10:00:00Z", webViewLink: "https://drive.google.com/file/d/image-exact/view", imageMediaMetadata: { width: 900, height: 1600 } },
                     { id: "image-main", name: "4799f28e-6966-46a9-af94-5f3f1d4b098b.jpeg", mimeType: "image/jpeg", size: "74956" },
                     { id: "image-third", name: "a827ac72-f8e3-4632-9831-6632549faecb.jpeg", mimeType: "image/jpeg", size: "151808" },
+                    { id: "image-generic", name: "IMG_20260904_100000.jpg", mimeType: "image/jpeg", size: "90000", thumbnailLink: "https://drive.google.com/thumbnail/generic" },
                     { id: "not-image", name: "Anel.txt", mimeType: "text/plain" }
                 ]
             }
@@ -61,7 +81,7 @@ test("recursively finds UUID and jewelry-name image candidates with preview meta
     const search = createGoogleDriveProduct13Diagnostic({
         driveService: fixture.service,
         getRootFolderId: () => ROOT_ID,
-        maxResults: 3
+        maxCandidates: 3
     });
 
     const result = await search();
@@ -69,6 +89,10 @@ test("recursively finds UUID and jewelry-name image candidates with preview meta
     assert.equal(result.success, true);
     assert.equal(result.candidateCount, 4);
     assert.equal(result.candidates.length, 3);
+    assert.equal(result.images.length, 5);
+    assert.equal(result.imagesReturned, 5);
+    assert.ok(result.images.some(image => image.name === "IMG_20260904_100000.jpg" && image.matchedTerms.length === 0));
+    assert.equal(result.images.find(image => image.name === "IMG_20260904_100000.jpg").thumbnailUrl, "https://drive.google.com/thumbnail/generic");
     assert.equal(result.candidates[0].matchType, "uuid");
     assert.deepEqual(
         result.candidates.map(candidate => candidate.name).sort(),
@@ -83,6 +107,13 @@ test("recursively finds UUID and jewelry-name image candidates with preview meta
     assert.equal(exactCandidate.previewUrl, "https://drive.google.com/file/d/image-exact/view");
     assert.equal(fixture.calls.list.length, 3);
     assert.equal(fixture.calls.writes, 0);
+    assert.equal(result.folderInventory[0].path, "FOTOS");
+    assert.equal(result.folderInventory[0].subfolderCount, 1);
+    assert.equal(result.folderInventory[0].filesCount, 5);
+    assert.equal(result.folderInventory[0].imageCount, 4);
+    assert.equal(result.folderInventory[1].filesCount, 1);
+    assert.equal(result.itemsScanned, 7);
+    assert.equal(result.filesScanned, 6);
     assert.ok(fixture.calls.list.every(call => call.params.pageSize <= 1000));
     assert.ok(fixture.calls.list.every(call => call.options.timeout > 0));
 });
@@ -116,6 +147,144 @@ test("returns partial results when a Drive page request times out", async () => 
     assert.equal(result.truncated, true);
     assert.equal(result.truncatedReason, "request_timeout");
     assert.equal(calls.writes, 0);
+});
+
+test("detects shortcuts, follows image targets with resource keys and inventories shared drives", async () => {
+    const fixture = createDriveFixture({
+        rootDriveId: "shared-drive-root",
+        rootPages: {
+            first: {
+                files: [{
+                    id: "shortcut-file",
+                    name: "Foto da pasta",
+                    mimeType: "application/vnd.google-apps.shortcut",
+                    shortcutDetails: {
+                        targetId: "target-image",
+                        targetMimeType: "image/jpeg",
+                        targetResourceKey: "resource-key-fixture"
+                    }
+                }]
+            }
+        },
+        targets: {
+            "target-image": {
+                id: "target-image",
+                name: "IMG_alianca.jpg",
+                mimeType: "image/jpeg",
+                modifiedTime: "2026-09-05T12:00:00Z",
+                size: "12345",
+                webViewLink: "https://drive.google.com/file/d/target-image/view",
+                thumbnailLink: "https://drive.google.com/thumbnail/target-image",
+                imageMediaMetadata: { width: 700, height: 900 }
+            }
+        }
+    });
+    const search = createGoogleDriveProduct13Diagnostic({
+        driveService: fixture.service,
+        getRootFolderId: () => ROOT_ID
+    });
+
+    const result = await search();
+
+    assert.equal(result.sharedDrive, true);
+    assert.equal(result.shortcutCount, 1);
+    assert.equal(result.shortcuts[0].status, "image_available");
+    assert.equal(result.images.length, 1);
+    assert.equal(result.images[0].viaShortcut, true);
+    assert.equal(result.images[0].width, 700);
+    assert.ok(fixture.calls.get[1].options.headers["X-Goog-Drive-Resource-Keys"].includes("resource-key-fixture"));
+    assert.ok(fixture.calls.list[0].params.supportsAllDrives);
+    assert.ok(fixture.calls.list[0].params.includeItemsFromAllDrives);
+    assert.equal(fixture.calls.list[0].params.corpora, "drive");
+    assert.equal(fixture.calls.list[0].params.driveId, "shared-drive-root");
+    assert.equal(JSON.stringify(result).includes("resource-key-fixture"), false);
+    assert.equal(fixture.calls.writes, 0);
+});
+
+test("recurses through a shortcut to a shared-drive folder and returns its unnamed images", async () => {
+    const calls = { get: [], list: [], writes: 0 };
+    const targetFolderId = "shortcut-target-folder";
+    const drive = {
+        files: {
+            async get(params, options) {
+                calls.get.push({ params, options });
+                if (params.fileId === ROOT_ID) {
+                    return { data: { id: ROOT_ID, name: "FOTOS", mimeType: "application/vnd.google-apps.folder" } };
+                }
+                return { data: {
+                    id: targetFolderId,
+                    name: "Album",
+                    mimeType: "application/vnd.google-apps.folder",
+                    driveId: "shared-album-drive",
+                    resourceKey: "target-folder-key",
+                    capabilities: { canListChildren: true, canReadDrive: true }
+                } };
+            },
+            async list(params, options) {
+                calls.list.push({ params, options });
+                if (params.q.includes(targetFolderId)) {
+                    return { data: { files: [
+                        { id: "generic-photo", name: "DSC_1001.jpg", mimeType: "image/jpeg", size: "4567", thumbnailLink: "https://drive.google.com/thumbnail/generic-photo" }
+                    ] } };
+                }
+                return { data: { files: [{
+                    id: "folder-shortcut",
+                    name: "Album antigo",
+                    mimeType: "application/vnd.google-apps.shortcut",
+                    shortcutDetails: {
+                        targetId: targetFolderId,
+                        targetMimeType: "application/vnd.google-apps.folder",
+                        targetResourceKey: "target-folder-key"
+                    }
+                }] } };
+            },
+            async create() { calls.writes++; },
+            async delete() { calls.writes++; }
+        }
+    };
+    const search = createGoogleDriveProduct13Diagnostic({
+        driveService: { getDriveClient: () => drive },
+        getRootFolderId: () => ROOT_ID
+    });
+
+    const result = await search();
+
+    assert.equal(result.foldersScanned, 2);
+    assert.equal(result.shortcutCount, 1);
+    assert.equal(result.shortcuts[0].status, "folder_queued");
+    assert.equal(result.folderInventory[1].path, "FOTOS/Album antigo");
+    assert.equal(result.folderInventory[1].driveType, "shared_drive");
+    assert.equal(result.images.length, 1);
+    assert.equal(result.images[0].name, "DSC_1001.jpg");
+    assert.equal(result.images[0].matchType, "unmatched");
+    assert.equal(result.images[0].thumbnailUrl, "https://drive.google.com/thumbnail/generic-photo");
+    assert.equal(calls.list[1].params.corpora, "drive");
+    assert.equal(calls.list[1].params.driveId, "shared-album-drive");
+    assert.equal(calls.list[1].options.headers["X-Goog-Drive-Resource-Keys"], `${targetFolderId}/target-folder-key`);
+    assert.equal(JSON.stringify(result).includes("target-folder-key"), false);
+    assert.equal(calls.writes, 0);
+});
+
+test("reports inaccessible subfolders without hiding access problems", async () => {
+    const denied = new Error("forbidden details should not be returned");
+    denied.response = { status: 403 };
+    const fixture = createDriveFixture({
+        rootPages: {
+            first: { files: [{ id: FOLDER_ID, name: "Joias arquivadas", mimeType: "application/vnd.google-apps.folder", capabilities: { canListChildren: true } }] }
+        },
+        listErrors: { [FOLDER_ID]: denied }
+    });
+    const search = createGoogleDriveProduct13Diagnostic({
+        driveService: fixture.service,
+        getRootFolderId: () => ROOT_ID
+    });
+
+    const result = await search();
+    assert.equal(result.complete, false);
+    assert.equal(result.truncated, false);
+    assert.deepEqual(result.permissionIssues, [{ folder: "FOTOS/Joias arquivadas", status: 403 }]);
+    assert.equal(result.folderInventory[1].status, "permission_denied");
+    assert.equal(JSON.stringify(result).includes("forbidden details"), false);
 });
 
 test("rejects a root folder that is not FOTOS", async () => {
