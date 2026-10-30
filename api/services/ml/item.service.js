@@ -1,7 +1,25 @@
 const pictureService = require("./picture.service");
 const attributeResolver = require("./attributeResolver.service");
 
-exports.build = async (product, pictures, publicationSpec, attributeOverrides = {}, shipping = null) => {
+exports.uploadPictures = async pictures => {
+    const uploadedPictures = await pictureService.upload(
+        pictures.map(p => ({
+            source: p.original_url || p.source || p.path,
+            path: p.path,
+            file_name: p.file_name,
+            mime_type: p.mime_type,
+            drive_file_id: p.drive_file_id
+        }))
+    );
+
+    if (!uploadedPictures?.length) {
+        throw new Error("Nenhuma imagem válida foi enviada.");
+    }
+
+    return uploadedPictures;
+};
+
+exports.build = async (product, pictures, publicationSpec, attributeOverrides = {}, shipping = null, options = {}) => {
     if (!publicationSpec?.category_id) {
         throw new Error("Ficha de publicação do Mercado Livre não informada.");
     }
@@ -19,7 +37,7 @@ exports.build = async (product, pictures, publicationSpec, attributeOverrides = 
             ? "new"
             : "used";
 
-    // Resolve todos os atributos ANTES de enviar fotos ao ML.
+    // Resolve os atributos antes de qualquer upload de imagem.
     const resolved = attributeResolver.build({
         product,
         categoryAttributes: publicationSpec.attributes,
@@ -43,19 +61,17 @@ exports.build = async (product, pictures, publicationSpec, attributeOverrides = 
         throw new Error("O produto não possui imagens.");
     }
 
-    const uploadedPictures = await pictureService.upload(
-        pictures.map(p => ({
-            source: p.original_url || p.source || p.path,
-            path: p.path,
-            file_name: p.file_name,
-            mime_type: p.mime_type,
-            drive_file_id: p.drive_file_id
-        }))
+    // Para fotos do Drive com URL pública, valida por URL e só envia
+    // ao endpoint de imagens depois que a validação de atributos passar.
+    const canDeferUpload = pictures.every(picture =>
+        Boolean(picture.drive_file_id) &&
+        /^https?:\/\//i.test(String(picture.original_url || picture.source || ""))
     );
-
-    if (!uploadedPictures.length) {
-        throw new Error("Nenhuma imagem válida foi enviada.");
-    }
+    const itemPictures = options.skipPictureUpload
+        ? []
+        : canDeferUpload
+        ? pictures.map(picture => ({ source: picture.original_url || picture.source }))
+        : await exports.uploadPictures(pictures);
 
     const familyName = String(product.title || "")
         .trim()
@@ -70,7 +86,7 @@ exports.build = async (product, pictures, publicationSpec, attributeOverrides = 
         buying_mode: "buy_it_now",
         listing_type_id: publicationSpec.listing_type.id,
         condition,
-        pictures: uploadedPictures,
+        pictures: itemPictures,
         attributes: resolved.attributes
     };
 

@@ -131,6 +131,7 @@ async function getById(id) {
             pi.thumb_url,
             pi.original_url,
             pi.file_name,
+            pi.drive_file_id,
 
             COALESCE((
                 SELECT json_agg(

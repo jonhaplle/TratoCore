@@ -3,6 +3,8 @@ const CATEGORY_ID = "MLB193633";
 const MAX_SEARCH_RESULTS = 1000;
 const SEARCH_PAGE_SIZE = 100;
 const BULK_SIZE = 20;
+const attributeResolver = require("./attributeResolver.service");
+const attributeRequirements = require("./attributeRequirements.service");
 
 function normalizeText(value) {
     return String(value || "")
@@ -28,9 +30,7 @@ function compactAttribute(attribute) {
 }
 
 function compactConditionalResult(result) {
-    const attributes = Array.isArray(result)
-        ? result
-        : result?.required_attributes || result?.conditional_attributes || result?.attributes || [];
+    const attributes = attributeRequirements.getConditionalRequired(result);
 
     return {
         required_attributes: Array.isArray(attributes) ? attributes.map(compactAttribute) : [],
@@ -46,7 +46,7 @@ function safeStageError(stage, error) {
     };
 }
 
-function buildConditionalPayload(product, listingTypeId) {
+function buildConditionalPayload(product, listingTypeId, attributes = []) {
     const title = String(product.title || "").trim();
     const price = Number(product.sale_price);
     if (!title) throw new Error("Produto 10 está sem título.");
@@ -62,12 +62,38 @@ function buildConditionalPayload(product, listingTypeId) {
         condition: String(product.condition || "used").toLowerCase() === "new" ? "new" : "used",
         listing_type_id: listingTypeId,
         description: { plain_text: String(product.description || title).trim() },
-        // Candidate for diagnosis only; GTIN and its absence reason are deliberately omitted.
-        attributes: [
-            { id: "BRAND", value_name: "Genérico" },
-            { id: "MODEL", value_name: "Saca-rolhas manual vintage" }
-        ]
+        // Candidates only; no material, GTIN or GTIN absence reason is inferred.
+        attributes: attributes.filter(attribute =>
+            attribute && String(attribute.id || "").trim() &&
+            (String(attribute.value_id || "").trim() || String(attribute.value_name || "").trim())
+        )
     };
+}
+
+function buildValidationPayload(product, categoryId, listingTypeId, attributes, category = {}) {
+    const title = String(product.title || "").trim();
+    const maxTitleLength = Number(category.settings?.max_title_length || 60);
+    const pictures = (product.images || [])
+        .map(image => image?.original_url || image?.source || image?.path)
+        .filter(Boolean)
+        .map(source => ({ source }));
+
+    return {
+        family_name: title.substring(0, maxTitleLength),
+        category_id: categoryId,
+        price: Number(product.sale_price),
+        currency_id: "BRL",
+        available_quantity: Math.max(1, Number(product.quantity || 1)),
+        buying_mode: "buy_it_now",
+        listing_type_id: listingTypeId,
+        condition: String(product.condition || "used").toLowerCase() === "new" ? "new" : "used",
+        pictures,
+        attributes
+    };
+}
+
+function uniqueIds(...groups) {
+    return [...new Set(groups.flat().filter(Boolean))];
 }
 
 async function searchPossibleMatches(apiService, userId, title) {
@@ -144,6 +170,10 @@ function createPublicationDiagnostic({ productService, apiService }) {
             errors: []
         };
 
+        let categoryDefinitions = [];
+        let category = {};
+        let prediction = null;
+
         let account = null;
         try {
             account = await apiService.getMe();
@@ -155,11 +185,25 @@ function createPublicationDiagnostic({ productService, apiService }) {
 
         try {
             const definitions = await apiService.getCategoryAttributes(CATEGORY_ID);
+            categoryDefinitions = definitions || [];
             result.category_attributes = (definitions || [])
                 .filter(attribute => attribute?.tags?.required || attribute?.tags?.conditional_required)
                 .map(compactAttribute);
         } catch (error) {
             result.errors.push(safeStageError("category_attributes", error));
+        }
+
+        try {
+            category = await apiService.getCategory(CATEGORY_ID) || {};
+        } catch (error) {
+            result.errors.push(safeStageError("category", error));
+        }
+
+        try {
+            const predictions = await apiService.predictCategory(product.title);
+            prediction = (predictions || []).find(item => item?.category_id === CATEGORY_ID) || null;
+        } catch (error) {
+            result.errors.push(safeStageError("category_prediction", error));
         }
 
         let listingTypes = [];
@@ -185,7 +229,15 @@ function createPublicationDiagnostic({ productService, apiService }) {
         };
 
         const conditionalType = listingTypes.find(item => item.id === preferredListingType) || listingTypes[0] || null;
+        let conditionalAttributes = [];
+        let resolved = { attributes: [], missing: [] };
         if (conditionalType) {
+            const preliminary = attributeResolver.build({
+                product,
+                categoryAttributes: categoryDefinitions,
+                conditionalAttributes: [],
+                prediction,
+            });
             result.conditional_validation = {
                 listing_type_tested: conditionalType.id,
                 preferred_type_tested: conditionalType.id === preferredListingType,
@@ -196,16 +248,14 @@ function createPublicationDiagnostic({ productService, apiService }) {
                     available_quantity: Math.max(1, Number(product.quantity || 1)),
                     condition: String(product.condition || "used").toLowerCase() === "new" ? "new" : "used"
                 },
-                candidate_attributes: [
-                    { id: "BRAND", value_name: "Genérico" },
-                    { id: "MODEL", value_name: "Saca-rolhas manual vintage" }
-                ],
+                candidate_attributes: preliminary.attributes,
                 gtin_sent: false,
                 empty_gtin_reason_sent: false
             };
             try {
-                const payload = buildConditionalPayload(product, conditionalType.id);
+                const payload = buildConditionalPayload(product, conditionalType.id, preliminary.attributes);
                 const validation = await apiService.getConditionalAttributes(CATEGORY_ID, payload);
+                conditionalAttributes = attributeRequirements.getConditionalRequired(validation);
                 result.conditional_validation.result = compactConditionalResult(validation);
             } catch (error) {
                 result.conditional_validation.error = safeStageError("conditional_attributes", error);
@@ -217,6 +267,51 @@ function createPublicationDiagnostic({ productService, apiService }) {
                 reason: "No hay listing type disponible para formar el payload de validación."
             };
         }
+
+        resolved = attributeResolver.build({
+            product,
+            categoryAttributes: categoryDefinitions,
+            conditionalAttributes,
+            prediction,
+        });
+
+        let officialMissingIds = [];
+        if (conditionalType) {
+            const validationPayload = buildValidationPayload(
+                product,
+                CATEGORY_ID,
+                conditionalType.id,
+                resolved.attributes,
+                category
+            );
+            try {
+                await apiService.validateItem(validationPayload);
+                result.official_validation = { passed: true, http_status: 200, missing_attributes: [] };
+            } catch (error) {
+                officialMissingIds = attributeRequirements.extractMissingIdsFromValidation(error);
+                result.official_validation = {
+                    passed: false,
+                    http_status: error?.response?.status || null,
+                    missing_attributes: attributeRequirements.buildMissing(categoryDefinitions, officialMissingIds)
+                };
+                if (!officialMissingIds.length) {
+                    result.official_validation.error = safeStageError("item_validation", error);
+                    result.errors.push(safeStageError("item_validation", error));
+                }
+            }
+        } else {
+            result.official_validation = { skipped: true, missing_attributes: [] };
+        }
+
+        const localMissingIds = (resolved.missing || []).map(item => item.id);
+        const missingIds = uniqueIds(localMissingIds, officialMissingIds);
+        const requiredDefinitions = attributeRequirements.mergeRequiredDefinitions(
+            categoryDefinitions,
+            conditionalAttributes,
+            uniqueIds(localMissingIds, officialMissingIds)
+        );
+        result.required_attributes = requiredDefinitions.map(compactAttribute);
+        result.missing_attributes = attributeRequirements.buildMissing(categoryDefinitions, missingIds);
 
         if (account?.id) {
             try {
@@ -237,6 +332,7 @@ module.exports = {
     CATEGORY_ID,
     PRODUCT_ID,
     buildConditionalPayload,
+    buildValidationPayload,
     compactAttribute,
     createPublicationDiagnostic
 };

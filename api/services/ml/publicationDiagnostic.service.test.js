@@ -5,7 +5,7 @@ const { createPublicationDiagnostic } = require("./publicationDiagnostic.service
 function fixtures(listingTypes = [
     { id: "gold_pro", name: "Premium" },
     { id: "gold_special", name: "Clássico" }
-]) {
+], validationError = null) {
     const calls = { conditional: [], searches: 0, bulk: [], publications: 0 };
     const productService = {
         async getById(id) {
@@ -27,13 +27,23 @@ function fixtures(listingTypes = [
             return [
                 { id: "BRAND", name: "Marca", value_type: "string", tags: { required: true } },
                 { id: "MODEL", name: "Modelo", value_type: "string", tags: { required: true } },
+                { id: "MATERIAL", name: "Material", value_type: "string", tags: {} },
                 { id: "GTIN", name: "GTIN", value_type: "string", tags: { conditional_required: true } }
             ];
+        },
+        async getCategory() { return { id: "MLB193633", settings: { max_title_length: 60 } }; },
+        async predictCategory() {
+            return [{ category_id: "MLB193633", attributes: [{ id: "MATERIAL", value_name: "Prata" }] }];
         },
         async getAvailableListingTypes() { return { available: listingTypes }; },
         async getConditionalAttributes(categoryId, payload) {
             calls.conditional.push({ categoryId, payload });
             return { required_attributes: [{ id: "EMPTY_GTIN_REASON", name: "Motivo de GTIN vazio" }] };
+        },
+        async validateItem(payload) {
+            calls.validation = payload;
+            if (validationError) throw validationError;
+            return {};
         },
         async searchUserItems(userId, params) {
             calls.searches += 1;
@@ -65,12 +75,39 @@ test("diagnostic returns listing, conditional attributes and possible active mat
     assert.deepEqual(result.duplicate_check.possible_matches.map(item => item.id), ["MLB111"]);
     assert.equal(f.calls.conditional.length, 1);
     assert.equal(f.calls.conditional[0].categoryId, "MLB193633");
-    assert.deepEqual(f.calls.conditional[0].payload.attributes, [
-        { id: "BRAND", value_name: "Genérico" },
-        { id: "MODEL", value_name: "Saca-rolhas manual vintage" }
-    ]);
-    assert.equal("GTIN" in f.calls.conditional[0].payload.attributes, false);
+    assert.equal(f.calls.conditional[0].payload.attributes.some(item => item.id === "MATERIAL"), false);
+    assert.equal(f.calls.conditional[0].payload.attributes.some(item => item.id === "BRAND" || item.id === "MODEL"), false);
+    assert.equal(f.calls.validation.attributes.some(item => item.id === "MATERIAL"), false);
+    assert.equal(f.calls.validation.attributes.some(item => item.id === "EMPTY_GTIN_REASON"), false);
+    assert.equal(f.calls.validation.attributes.some(item => /prata|aço/i.test(item.value_name || "")), false);
+    assert.equal(result.missing_attributes.some(item => item.id === "BRAND"), true);
+    assert.equal(result.missing_attributes.some(item => item.id === "MODEL"), true);
     assert.equal(JSON.stringify(result).includes("must-not-be-returned"), false);
+    assert.equal(f.calls.publications, 0);
+});
+
+test("diagnostic reports MATERIAL required by official validation and does not infer its value", async () => {
+    const validationError = Object.assign(new Error("validation failed"), {
+        response: {
+            status: 400,
+            data: {
+                cause: [{
+                    code: "item.attribute.missing_required",
+                    message: "The attributes [MATERIAL] are required for this category"
+                }]
+            }
+        }
+    });
+    const f = fixtures(undefined, validationError);
+    const result = await createPublicationDiagnostic(f)();
+
+    assert.equal(result.official_validation.passed, false);
+    assert.deepEqual(result.official_validation.missing_attributes.map(item => item.id), ["MATERIAL"]);
+    assert.equal(result.required_attributes.some(item => item.id === "MATERIAL"), true);
+    assert.equal(result.missing_attributes.some(item => item.id === "MATERIAL"), true);
+    assert.equal(f.calls.validation.attributes.some(item => item.id === "MATERIAL"), false);
+    assert.equal(f.calls.validation.attributes.some(item => item.id === "EMPTY_GTIN_REASON"), false);
+    assert.equal(f.calls.validation.attributes.some(item => /prata|aço/i.test(item.value_name || "")), false);
     assert.equal(f.calls.publications, 0);
 });
 

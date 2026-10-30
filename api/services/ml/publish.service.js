@@ -7,66 +7,33 @@ const apiService = require("./api.service");
 const mlProductService = require("./mlProduct.service");
 const publicationSpecService = require("./publicationSpec.service");
 const attributeResolver = require("./attributeResolver.service");
+const attributeRequirements = require("./attributeRequirements.service");
 
 function clean(value) {
     if (value === undefined || value === null) return "";
     return String(value).trim();
 }
 
-function findDefinition(publicationSpec, id) {
-    return (publicationSpec.attributes || []).find(item => item.id === id) || {
-        id,
-        name: id,
-        value_type: "string",
-        values: []
-    };
-}
-
-function buildMissing(publicationSpec, ids) {
-    const unique = [];
-    for (const id of ids || []) {
-        if (!id || unique.some(item => item.id === id)) continue;
-        const definition = findDefinition(publicationSpec, id);
-        unique.push({
-            id: definition.id,
-            name: definition.name || definition.id,
-            value_type: definition.value_type || "string",
-            value_max_length: definition.value_max_length,
-            values: Array.isArray(definition.values) ? definition.values : []
-        });
-    }
-    return unique;
-}
-
 function getConditionalRequired(publicationSpec) {
-    return Array.isArray(publicationSpec?.conditionalAttributes?.required_attributes)
-        ? publicationSpec.conditionalAttributes.required_attributes
-        : [];
-}
-
-function extractValidationCauses(error) {
-    const data = error?.response?.data || error?.data || error;
-    return Array.isArray(data?.cause) ? data.cause : [];
+    return attributeRequirements.getConditionalRequired(publicationSpec);
 }
 
 function extractMissingFromValidation(error, publicationSpec) {
-    const ids = [];
-    for (const cause of extractValidationCauses(error)) {
-        const code = clean(cause?.code);
-        const message = clean(cause?.message);
-        if (!code.includes("missing_required") && !code.includes("missing_conditional_required")) {
-            continue;
-        }
+    return attributeRequirements.buildMissing(
+        publicationSpec,
+        attributeRequirements.extractMissingIdsFromValidation(error)
+    );
+}
 
-        const matches = message.match(/attributes?\s*\[([^\]]+)\]/i);
-        if (matches) {
-            for (const id of matches[1].split(",")) {
-                const cleanId = id.trim();
-                if (cleanId) ids.push(cleanId);
-            }
-        }
-    }
-    return buildMissing(publicationSpec, ids);
+function extractValidationCauses(error) {
+    return attributeRequirements.extractValidationCauses(error);
+}
+
+function isPictureOnlyValidationError(error) {
+    const causes = extractValidationCauses(error);
+    return Number(error?.response?.status) === 400 &&
+        causes.length > 0 &&
+        causes.every(cause => String(cause?.code || "").toLowerCase().includes("picture"));
 }
 
 function missingError(missing, message = "Informações obrigatórias pendentes para publicar.") {
@@ -191,6 +158,28 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
     // ======================================================
     const shipping = await resolveShipping(publicationSpec.category_id);
 
+    // Faça uma validação de atributos sem enviar imagens. Isso também cobre
+    // pendências condicionais descobertas pelo ML para imagens locais.
+    const attributePreflight = await itemService.build(
+        product,
+        pictures,
+        publicationSpec,
+        attributeOverrides,
+        shipping,
+        { skipPictureUpload: true }
+    );
+    try {
+        await apiService.validateItem(attributePreflight);
+    } catch (error) {
+        const missing = extractMissingFromValidation(error, publicationSpec);
+        if (missing.length) {
+            throw missingError(missing, "O Mercado Livre ainda exige estas informações.");
+        }
+        if (!isPictureOnlyValidationError(error)) throw error;
+        // Sem imagens, a API pode reclamar apenas da ausência de fotos. Isso é
+        // esperado no preflight; erros de rede ou outras validações bloqueiam.
+    }
+
     const item = await itemService.build(
         product,
         pictures,
@@ -228,6 +217,10 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
 
     console.log("VALIDAÇÃO MERCADO LIVRE: OK / WARNINGS NÃO BLOQUEANTES");
     console.dir(validation, { depth: null });
+
+    if (item.pictures.some(picture => picture?.source)) {
+        item.pictures = await itemService.uploadPictures(pictures);
+    }
 
     // ======================================================
     // ETAPA 6 — PUBLICAÇÃO REAL

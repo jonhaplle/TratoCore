@@ -50,7 +50,7 @@ function productAttributeMap(product) {
 
 function knownProductValue(product, id) {
     const ai = product?.attributes || product?.ml_attributes || {};
-    const aiMap = { MUSIC_ARTIST_NAME: ai.artist, ALBUM_NAME: ai.album, MANUFACTURER: ai.manufacturer, MATERIAL: ai.material, SALE_FORMAT: ai.sale_format, UNITS_PER_PACK: ai.units_per_pack };
+    const aiMap = { MUSIC_ARTIST_NAME: ai.artist, ALBUM_NAME: ai.album, MANUFACTURER: ai.manufacturer, SALE_FORMAT: ai.sale_format, UNITS_PER_PACK: ai.units_per_pack };
     if (aiMap[id] !== undefined && aiMap[id] !== null && String(aiMap[id]).trim()) return aiMap[id];
     const map = {
         BRAND: product?.brand,
@@ -183,15 +183,12 @@ function extractDescriptionValue(product, definition) {
 function resolveOne(definition, product, predictorValues, overrides, options = {}) {
     const id = definition.id;
     const productMap = productAttributeMap(product);
-    const explicit = productMap[id];
+    // MATERIAL is not inferred from AI/predictor attributes: its value must
+    // come from a direct manual field/override or an explicitly labelled detail.
+    const explicit = id === "MATERIAL" ? null : productMap[id];
     const override = overrides[id];
     const required = options.required === true;
     const isNumberUnit = normalize(definition.value_type) === "number_unit";
-
-    if (id === "EMPTY_GTIN_REASON" && !clean(product?.gtin)) {
-        const value = valueFromAllowedList(definition, "17055160");
-        return value ? { id, ...value } : null;
-    }
 
     const directSources = [override, explicit];
 
@@ -217,7 +214,7 @@ function resolveOne(definition, product, predictorValues, overrides, options = {
 
         // Busca a capacidade explicitamente informada no campo do produto,
         // título ou descrição. Não converte IDs de lista em capacidade.
-        const known = knownProductValue(product, id);
+        const known = id === "MATERIAL" ? product?.material : knownProductValue(product, id);
         const fromKnown = parseNumberUnit(known, definition);
         if (fromKnown) return { id, ...fromKnown };
 
@@ -234,7 +231,7 @@ function resolveOne(definition, product, predictorValues, overrides, options = {
             }
         }
 
-        const known = knownProductValue(product, id);
+        const known = id === "MATERIAL" ? product?.material : knownProductValue(product, id);
         if (known !== undefined && clean(known)) {
             const value = valueFromAllowedList(definition, known);
             if (value) return { id, ...value };
@@ -248,7 +245,7 @@ function resolveOne(definition, product, predictorValues, overrides, options = {
     }
 
     // O predictor é auxiliar e só completa atributos obrigatórios.
-    if (required) {
+    if (required && id !== "MATERIAL") {
         const predicted = predictorValues[id];
         if (predicted) {
             if (isNumberUnit) {
@@ -273,9 +270,6 @@ function resolveOne(definition, product, predictorValues, overrides, options = {
         }
     }
 
-    if (id === "BRAND") return { id, value_name: "Genérica" };
-    if (id === "MANUFACTURER") return { id, value_name: "Genérico" };
-    if (id === "MODEL") return { id, value_name: "Genérico" };
 
     return null;
 }
@@ -400,14 +394,6 @@ exports.build = ({
     if (String(product?.condition || "used").toLowerCase() === "used" &&
         !attributes.some(a => a.id === "ITEM_CONDITION")) {
         attributes.push({ id: "ITEM_CONDITION", value_id: "2230581" });
-    }
-
-    if (!clean(product?.gtin)) {
-        const gtinDefinition = definitions.find(a => a.id === "EMPTY_GTIN_REASON");
-        if (gtinDefinition && !attributes.some(a => a.id === "EMPTY_GTIN_REASON")) {
-            const value = valueFromAllowedList(gtinDefinition, "17055160");
-            if (value) attributes.push({ id: "EMPTY_GTIN_REASON", ...value });
-        }
     }
 
     return { attributes, missing };
