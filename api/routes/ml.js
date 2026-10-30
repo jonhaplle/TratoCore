@@ -6,10 +6,15 @@ const apiService = require("../services/ml/api.service");
 const productService = require("../services/productService");
 const requireMlDiagnosticKey = require("../middleware/mlDiagnosticKeyAuth");
 const { createPublicationDiagnostic } = require("../services/ml/publicationDiagnostic.service");
+const googleDriveService = require("../services/googleDriveService");
+const { createGoogleDriveProduct13Diagnostic } = require("../services/googleDriveProduct13Diagnostic.service");
 
 const runProduct10Diagnostic = createPublicationDiagnostic({
     productService,
     apiService
+});
+const searchProduct13Drive = createGoogleDriveProduct13Diagnostic({
+    driveService: googleDriveService
 });
 
 // ======================================================
@@ -36,6 +41,21 @@ router.post("/diagnostics/product-10", requireMlDiagnosticKey, async (req, res) 
         return res.status(status).json({
             success: false,
             error: status === 404 ? "Produto não encontrado." : "Falha no diagnóstico do Mercado Livre."
+        });
+    }
+});
+
+// Diagnóstico temporário, somente leitura, das fotos do produto 13 no Drive.
+router.get("/diagnostics/drive/product-13", requireMlDiagnosticKey, async (req, res) => {
+    res.set("Cache-Control", "no-store");
+
+    try {
+        return res.json(await searchProduct13Drive());
+    } catch (error) {
+        const status = error.code === "DRIVE_ROOT_NOT_CONFIGURED" ? 503 : 502;
+        return res.status(status).json({
+            success: false,
+            error: "Não foi possível concluir a busca diagnóstica no Google Drive."
         });
     }
 });
