@@ -14,7 +14,13 @@ async function requestStatus(result) {
                 mimeType: "application/vnd.google-apps.folder",
                 capabilities: { canAddChildren: result }
             };
-        }
+        },
+        findExistingFolder: async () => ({
+            id: "products-folder",
+            name: "Produtos",
+            mimeType: "application/vnd.google-apps.folder",
+            capabilities: { canAddChildren: true }
+        })
     };
     const app = express();
     app.use("/api/drive/status", createDriveStatusRouter(service, {
@@ -46,6 +52,9 @@ for (const value of [true, false, null]) {
         assert.equal(result.body.read, true);
         assert.equal(result.body.canAddChildren, value);
         assert.equal(result.body.drive, "online");
+        assert.equal(result.body.productsFolder.exists, true);
+        assert.equal(result.body.productsFolder.canAddChildren, true);
+        assert.equal(result.body.driveType, "my_drive");
     });
 }
 

@@ -31,7 +31,8 @@ test("testConnection requests exact folder metadata and returns canAddChildren=t
         method: "get",
         options: {
             fileId: "fotos-folder",
-            fields: "id,name,mimeType,capabilities(canAddChildren)"
+            fields: "id,name,mimeType,driveId,capabilities(canAddChildren)",
+            supportsAllDrives: true
         }
     }]);
     assert.equal(folder.name, "FOTOS");
@@ -69,4 +70,28 @@ test("testConnection propagates a simulated permission error", async () => {
         googleDriveService.testConnection(drive, "fotos-folder"),
         error => error === permissionError
     );
+});
+
+test("findExistingFolder searches without creating and supports shared drives", async () => {
+    const calls = [];
+    const drive = {
+        files: {
+            list: async options => {
+                calls.push(options);
+                return { data: { files: [{ id: "products-folder", name: "Produtos" }] } };
+            },
+            create: async () => { throw new Error("Unexpected folder creation"); }
+        }
+    };
+
+    const folder = await googleDriveService.findExistingFolder(
+        "Produtos", "fotos-folder", "shared-drive", drive
+    );
+
+    assert.equal(folder.id, "products-folder");
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].supportsAllDrives, true);
+    assert.equal(calls[0].includeItemsFromAllDrives, true);
+    assert.equal(calls[0].corpora, "drive");
+    assert.equal(calls[0].driveId, "shared-drive");
 });

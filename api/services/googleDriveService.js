@@ -153,9 +153,32 @@ async function getFileStream(fileId) {
 async function testConnection(drive = getDriveClient(), folderId = ROOT_FOLDER_ID) {
     const result = await drive.files.get({
         fileId: folderId,
-        fields: "id,name,mimeType,capabilities(canAddChildren)"
+        fields: "id,name,mimeType,driveId,capabilities(canAddChildren)",
+        supportsAllDrives: true
     });
     return result.data;
+}
+
+async function findExistingFolder(folderName, parentId = ROOT_FOLDER_ID, driveId = null, drive = getDriveClient()) {
+    const safeName = safeDriveName(folderName);
+    const escapedName = escapeQueryValue(safeName);
+    const response = await drive.files.list({
+        q: [
+            `name = '${escapedName}'`,
+            "mimeType = 'application/vnd.google-apps.folder'",
+            `'${parentId}' in parents`,
+            "trashed = false"
+        ].join(" and "),
+        fields: "files(id,name,mimeType,driveId,capabilities(canAddChildren))",
+        spaces: "drive",
+        pageSize: 100,
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+        corpora: driveId ? "drive" : "user",
+        ...(driveId ? { driveId } : {})
+    });
+
+    return (response.data.files || []).find(folder => folder.name === safeName) || null;
 }
 
 module.exports = {
@@ -163,5 +186,6 @@ module.exports = {
     findOrCreateFolder,
     uploadFile,
     getFileStream,
-    testConnection
+    testConnection,
+    findExistingFolder
 };
