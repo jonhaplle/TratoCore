@@ -17,6 +17,7 @@ const storageRoot = path.join(__dirname, "../../storage");
 const originalsDir = path.join(storageRoot, "originals");
 const thumbsDir = path.join(storageRoot, "thumbs");
 const tempDir = path.join(storageRoot, "temp");
+const renderRuntime = process.env.RENDER === "true";
 
 [storageRoot, originalsDir, thumbsDir, tempDir].forEach((dir) => {
 
@@ -154,6 +155,14 @@ router.post("/", upload.array("imagem", 10), async (req, res, next) => {
                     `[Upload] Drive indisponível para "${originalName}"; mantendo cópia local:`,
                     error.message
                 );
+
+                if (renderRuntime) {
+                    const storageError = new Error(
+                        "Google Drive indisponivel. Upload cancelado para nao depender do armazenamento local temporario do Render."
+                    );
+                    storageError.status = 503;
+                    throw storageError;
+                }
             }
 
             const metadata = await sharp(tempFile).metadata();
@@ -162,16 +171,18 @@ router.post("/", upload.array("imagem", 10), async (req, res, next) => {
             // ORIGINAL
             // ==================================================
 
-            fs.copyFileSync(
-                tempFile,
-                originalFile
-            );
+            if (!renderRuntime) {
+                fs.copyFileSync(
+                    tempFile,
+                    originalFile
+                );
+            }
 
             // ==================================================
             // MINIATURA
             // ==================================================
 
-            await sharp(tempFile)
+            if (!renderRuntime) await sharp(tempFile)
 
                 .rotate()
 
@@ -218,11 +229,13 @@ router.post("/", upload.array("imagem", 10), async (req, res, next) => {
 
                 height: metadata.height || null,
 
-                originalUrl:
-                    "/storage/originals/" + originalName,
+                originalUrl: renderRuntime
+                    ? "/api/product-images/drive/" + encodeURIComponent(driveResult.id)
+                    : "/storage/originals/" + originalName,
 
-                thumbUrl:
-                    "/storage/thumbs/" + thumbName,
+                thumbUrl: renderRuntime
+                    ? "/api/product-images/drive/" + encodeURIComponent(driveResult.id)
+                    : "/storage/thumbs/" + thumbName,
 
                 drive_file_id: driveResult ? driveResult.id : null,
 
@@ -335,6 +348,10 @@ router.post("/", upload.array("imagem", 10), async (req, res, next) => {
                 cleanupError
             );
 
+        }
+
+        if (err.status === 503) {
+            return res.status(503).json({ sucesso: false, mensagem: err.message });
         }
 
         next(err);
