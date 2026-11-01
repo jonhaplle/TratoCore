@@ -14,6 +14,7 @@ const productImagesRoutes = require("./routes/productImages");
 const mlRoutes = require("./routes/ml");
 const tratocapRoutes = require("./routes/tratocap");
 const versionRoutes = require("./routes/version");
+const createDriveStatusRouter = require("./routes/driveStatus");
 const googleDriveService = require("./services/googleDriveService");
 
 const app = express();
@@ -76,47 +77,7 @@ app.use("/api/version", versionRoutes);
 // GOOGLE DRIVE
 // ======================================================
 
-app.get("/api/drive/status", async (req, res) => {
-
-    try {
-
-        const folder = await googleDriveService.testConnection();
-
-        res.json({
-
-            success: true,
-
-            drive: "online",
-
-            folder: {
-
-                id: folder.id,
-
-                name: folder.name,
-
-                mimeType: folder.mimeType
-
-            }
-
-        });
-
-    } catch (err) {
-
-        console.error("[Google Drive] Erro no teste:", err);
-
-        res.status(500).json({
-
-            success: false,
-
-            drive: "offline",
-
-            erro: err.message
-
-        });
-
-    }
-
-});
+app.use("/api/drive/status", createDriveStatusRouter(googleDriveService));
 
 // ======================================================
 // HOME

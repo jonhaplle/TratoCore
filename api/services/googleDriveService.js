@@ -150,11 +150,10 @@ async function getFileStream(fileId) {
     return response.data;
 }
 
-async function testConnection() {
-    const drive = getDriveClient();
+async function testConnection(drive = getDriveClient(), folderId = ROOT_FOLDER_ID) {
     const result = await drive.files.get({
-        fileId: ROOT_FOLDER_ID,
-        fields: "id,name,mimeType"
+        fileId: folderId,
+        fields: "id,name,mimeType,capabilities(canAddChildren)"
     });
     return result.data;
 }
