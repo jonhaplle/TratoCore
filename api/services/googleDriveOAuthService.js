@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const { Readable } = require("stream");
 const { google } = require("googleapis");
 const { createGoogleDriveOAuthStore } = require("./googleDriveOAuthStore");
 
@@ -135,13 +136,24 @@ function createGoogleDriveOAuthService(options = {}) {
         try {
             const created = await drive.files.create({
                 requestBody: { name: `.tratocore-drive-check-${crypto.randomUUID()}.txt`, parents: [saved.selectedFolderId] },
-                media: { mimeType: "text/plain", body: Buffer.from(content, "utf8") },
+                media: { mimeType: "text/plain", body: Readable.from([content]) },
                 fields: "id,name"
             });
             fileId = created.data?.id;
             if (!fileId) throw new Error("Google Drive did not confirm the test file.");
             const downloaded = await drive.files.get({ fileId, alt: "media" }, { responseType: "arraybuffer" });
-            const bytes = Buffer.isBuffer(downloaded.data) ? downloaded.data : Buffer.from(downloaded.data);
+            let bytes;
+            if (Buffer.isBuffer(downloaded.data)) {
+                bytes = downloaded.data;
+            } else if (downloaded.data instanceof ArrayBuffer) {
+                bytes = Buffer.from(downloaded.data);
+            } else if (downloaded.data?.[Symbol.asyncIterator]) {
+                const chunks = [];
+                for await (const chunk of downloaded.data) chunks.push(Buffer.from(chunk));
+                bytes = Buffer.concat(chunks);
+            } else {
+                bytes = Buffer.from(downloaded.data || "");
+            }
             if (bytes.toString("utf8") !== content) throw new Error("Google Drive test file did not match.");
             await drive.files.delete({ fileId });
             fileId = null;

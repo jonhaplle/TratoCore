@@ -105,7 +105,8 @@ function createGoogleDriveOAuthRouter(options = {}) {
         try {
             res.set("Cache-Control", "no-store");
             return res.json(await service.verifyWrite());
-        } catch (_) {
+        } catch (error) {
+            logger.error("[Google OAuth] Erro no teste de gravação:", error);
             return res.status(503).json({ success: false, error: "Teste de gravação no Drive falhou; uploads continuam bloqueados." });
         }
     });
