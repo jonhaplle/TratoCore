@@ -6,7 +6,7 @@ const path = require("path");
 const { v4: uuidv4 } = require("uuid");
 const ProductService = require("../services/productService");
 const ProductImageService = require("../services/productImageService");
-const { uploadFile } = require("../services/googleDriveService");
+const googleDriveOAuthService = require("../services/googleDriveOAuthService").createGoogleDriveOAuthService();
 
 const router = express.Router();
 
@@ -103,15 +103,15 @@ router.post("/upload", upload.single("image"), async (req, res, next) => {
         let driveResult;
         try {
             const mimeType = req.file.mimetype || "image/jpeg";
-            driveResult = await uploadFile(target, fileName, mimeType, album);
-        } catch (driveError) {
-            console.error(`[TratoCap] Falha ao enviar "${fileName}" para o Google Drive:`, driveError);
+            driveResult = await googleDriveOAuthService.uploadFile(target, fileName, mimeType);
+        } catch (_) {
+            console.error("[TratoCap] Falha segura ao persistir arquivo no Google Drive.");
             return res.status(502).json({
                 success: false,
                 local_saved: true,
                 drive_synced: false,
                 erro: "A imagem foi recebida pelo TratoCore, mas não foi possível confirmar o envio ao Google Drive.",
-                detalhe: driveError.message,
+                detalhe: "Google Drive indisponível.",
                 album,
                 destination,
                 file_name: fileName

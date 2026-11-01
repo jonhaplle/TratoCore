@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Configurar Google Drive — TratoCore</title>
+  <style>
+    body{font:16px system-ui,sans-serif;max-width:680px;margin:48px auto;padding:0 20px;color:#202124}button,input{font:inherit;padding:10px;margin:6px 0}button{cursor:pointer}#status{margin:16px 0;white-space:pre-wrap}.step{padding:16px 0;border-bottom:1px solid #ddd}
+  </style>
+</head>
+<body>
+  <h1>Configurar armazenamento Google Drive</h1>
+  <p>Use a chave administrativa configurada no Render. O fluxo solicitará apenas acesso aos arquivos selecionados ou criados pelo TratoCore.</p>
+  <label for="adminKey">Chave administrativa</label><br>
+  <input id="adminKey" type="password" autocomplete="off" size="42">
+  <section class="step"><h2>1. Autorizar conta Google</h2><button id="authorize">Autorizar Google Drive</button></section>
+  <section class="step"><h2>2. Selecionar a pasta existente</h2><button id="pick" disabled>Selecionar Meu Drive / TratoCore_DB / FOTOS / Produtos</button></section>
+  <section class="step"><h2>3. Confirmar persistência</h2><button id="verify" disabled>Gravar, ler e excluir TXT temporário</button></section>
+  <p id="status" role="status"></p>
+  <script src="/google-drive-setup.js"></script>
+</body>
+</html>

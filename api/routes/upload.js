@@ -4,20 +4,22 @@ const sharp = require("sharp");
 const path = require("path");
 const fs = require("fs");
 const { v4: uuidv4 } = require("uuid");
-const { uploadFile } = require('../services/googleDriveService');
+const { createGoogleDriveOAuthService } = require('../services/googleDriveOAuthService');
 
+function createUploadRouter(options = {}) {
 const router = express.Router();
+const googleDriveOAuthService = options.googleDriveOAuthService || createGoogleDriveOAuthService();
 
 // ======================================================
 // PASTAS
 // ======================================================
 
-const storageRoot = path.join(__dirname, "../../storage");
+const storageRoot = options.storageRoot || path.join(__dirname, "../../storage");
 
 const originalsDir = path.join(storageRoot, "originals");
 const thumbsDir = path.join(storageRoot, "thumbs");
 const tempDir = path.join(storageRoot, "temp");
-const renderRuntime = process.env.RENDER === "true";
+const renderRuntime = options.renderRuntime ?? process.env.RENDER === "true";
 
 [storageRoot, originalsDir, thumbsDir, tempDir].forEach((dir) => {
 
@@ -92,6 +94,7 @@ const upload = multer({
 router.post("/", upload.array("imagem", 10), async (req, res, next) => {
 
     const arquivosProcessados = [];
+    const arquivosDriveCriados = [];
 
     try {
 
@@ -143,18 +146,15 @@ router.post("/", upload.array("imagem", 10), async (req, res, next) => {
             let driveError = null;
 
             try {
-                driveResult = await uploadFile(
+                driveResult = await googleDriveOAuthService.uploadFile(
                     tempFile,
                     originalName,
-                    file.mimetype || "image/jpeg",
-                    "Produtos"
+                    file.mimetype || "image/jpeg"
                 );
+                if (driveResult?.id && !driveResult.reused_existing) arquivosDriveCriados.push(driveResult.id);
             } catch (error) {
                 driveError = error;
-                console.error(
-                    `[Upload] Drive indisponível para "${originalName}"; mantendo cópia local:`,
-                    error.message
-                );
+                console.error("[Upload] Falha segura ao persistir imagem no Google Drive.");
 
                 if (renderRuntime) {
                     const storageError = new Error(
@@ -251,7 +251,7 @@ router.post("/", upload.array("imagem", 10), async (req, res, next) => {
 
                 drive_synced: Boolean(driveResult),
 
-                drive_error: driveError ? driveError.message : null
+                drive_error: driveError ? "Google Drive indisponível." : null
 
             });
 
@@ -279,7 +279,7 @@ router.post("/", upload.array("imagem", 10), async (req, res, next) => {
 
     catch (err) {
 
-        console.error("Erro no upload:", err);
+        console.error("Erro seguro no upload de imagem.");
 
         // ==================================================
         // LIMPEZA DOS TEMPORÁRIOS
@@ -339,6 +339,11 @@ router.post("/", upload.array("imagem", 10), async (req, res, next) => {
 
             }
 
+            for (const fileId of arquivosDriveCriados) {
+                try { await googleDriveOAuthService.deleteFile(fileId); }
+                catch (_) { console.error("[Upload] Falha ao remover arquivo temporário do Drive."); }
+            }
+
         }
 
         catch (cleanupError) {
@@ -353,8 +358,7 @@ router.post("/", upload.array("imagem", 10), async (req, res, next) => {
         if (err.status === 503) {
             return res.status(503).json({ sucesso: false, mensagem: err.message });
         }
-
-        next(err);
+        return res.status(500).json({ sucesso: false, mensagem: "Falha segura ao processar upload." });
 
     }
 
@@ -362,4 +366,9 @@ router.post("/", upload.array("imagem", 10), async (req, res, next) => {
 
 // ======================================================
 
+return router;
+}
+
+const router = createUploadRouter();
+router.createUploadRouter = createUploadRouter;
 module.exports = router;

@@ -16,6 +16,7 @@ const tratocapRoutes = require("./routes/tratocap");
 const versionRoutes = require("./routes/version");
 const createDriveStatusRouter = require("./routes/driveStatus");
 const googleDriveService = require("./services/googleDriveService");
+const { createGoogleDriveOAuthRouter } = require("./routes/googleDriveOAuth");
 
 const app = express();
 
@@ -78,6 +79,7 @@ app.use("/api/version", versionRoutes);
 // ======================================================
 
 app.use("/api/drive/status", createDriveStatusRouter(googleDriveService));
+app.use("/api/google-drive/oauth", createGoogleDriveOAuthRouter());
 
 // ======================================================
 // HOME
