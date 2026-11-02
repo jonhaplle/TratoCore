@@ -1,6 +1,9 @@
-
 const express = require("express");
 const path = require("path");
+const fs = require("fs");
+const os = require("os");
+const crypto = require("crypto");
+const { pipeline } = require("stream/promises");
 
 const router = express.Router();
 
@@ -10,12 +13,139 @@ const { pesquisarImagem } = require("../services/lens.service");
 const { findCatalogMatch } = require("../services/catalog.service");
 const { buildListing, improveListing } = localAI;
 
+const googleDriveOAuthService =
+    require("../services/googleDriveOAuthService")
+        .createGoogleDriveOAuthService();
+
+function getDriveFileId(imageUrl) {
+    const value = String(imageUrl || "").trim();
+
+    let pathname = value;
+
+    try {
+        if (/^https?:\/\//i.test(value)) {
+            pathname = new URL(value).pathname;
+        }
+    } catch (_) {
+        return null;
+    }
+
+    const match = pathname.match(
+        /\/api\/product-images\/drive\/([^/?#]+)/
+    );
+
+    if (!match) return null;
+
+    try {
+        return decodeURIComponent(match[1]);
+    } catch (_) {
+        return null;
+    }
+}
+
+function getImageExtension(mimeType, fileName) {
+    const originalExtension = path.extname(fileName || "").toLowerCase();
+
+    if ([".jpg", ".jpeg", ".png", ".webp"].includes(originalExtension)) {
+        return originalExtension;
+    }
+
+    const extensions = {
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp"
+    };
+
+    return extensions[mimeType] || ".jpg";
+}
+
+async function prepareImage(imageUrl) {
+    const driveFileId = getDriveFileId(imageUrl);
+
+    // Imagem armazenada no Google Drive
+    if (driveFileId) {
+        const metadata =
+            await googleDriveOAuthService.getFileMetadata(driveFileId);
+
+        const mimeType = metadata.mimeType || "image/jpeg";
+
+        if (!mimeType.startsWith("image/")) {
+            throw new Error("O arquivo do Google Drive não é uma imagem.");
+        }
+
+        const extension = getImageExtension(
+            mimeType,
+            metadata.name
+        );
+
+        const tempFile = path.join(
+            os.tmpdir(),
+            `tratocore-${crypto.randomUUID()}${extension}`
+        );
+
+        try {
+            const stream =
+                await googleDriveOAuthService.getFileStream(driveFileId);
+
+            await pipeline(
+                stream,
+                fs.createWriteStream(tempFile)
+            );
+
+            return {
+                caminhoImagem: tempFile,
+                temporario: true
+            };
+        } catch (error) {
+            try {
+                fs.unlinkSync(tempFile);
+            } catch (_) {}
+
+            throw new Error(
+                `Não foi possível baixar a imagem do Google Drive: ${error.message}`
+            );
+        }
+    }
+
+    // Compatibilidade com imagens armazenadas localmente
+    let caminhoImagem = String(imageUrl).trim();
+
+    caminhoImagem = caminhoImagem.replace(
+        /^https?:\/\/[^/]+/i,
+        ""
+    );
+
+    caminhoImagem = caminhoImagem.replace(/^\/+/, "");
+
+    caminhoImagem = path.resolve(
+        __dirname,
+        "../../",
+        caminhoImagem
+    );
+
+    if (!fs.existsSync(caminhoImagem)) {
+        throw new Error("Imagem não encontrada.");
+    }
+
+    return {
+        caminhoImagem,
+        temporario: false
+    };
+}
+
+
+// ==================================================
+// ANALISAR PRODUTO
+// ==================================================
+
 router.post("/analyze", async (req, res) => {
+    let imagemTemporaria = null;
+
     try {
         const {
             imageUrl,
             observacaoVendedor = ""
-        } = req.body;
+        } = req.body || {};
 
         if (!imageUrl) {
             return res.status(400).json({
@@ -24,17 +154,17 @@ router.post("/analyze", async (req, res) => {
             });
         }
 
-        let caminhoImagem = imageUrl;
+        // 1. PREPARAR IMAGEM
 
-        caminhoImagem = caminhoImagem.replace(/^https?:\/\/[^/]+/i, "");
-        caminhoImagem = caminhoImagem.replace(/^\/+/, "");
-        caminhoImagem = path.join(__dirname, "../../", caminhoImagem);
+        const imagem = await prepareImage(imageUrl);
 
-        // ==================================================
-        // 1. PESQUISA VISUAL
-        // O Google Lens é opcional: sua falha não deve impedir
-        // a tentativa de análise da imagem.
-        // ==================================================
+        const caminhoImagem = imagem.caminhoImagem;
+
+        if (imagem.temporario) {
+            imagemTemporaria = caminhoImagem;
+        }
+
+        // 2. PESQUISA VISUAL
 
         let pesquisaVisual = {
             provider: "unavailable",
@@ -61,14 +191,11 @@ router.post("/analyze", async (req, res) => {
                 err.message
             );
 
-            pesquisaVisual.erro = err.message || "Pesquisa visual indisponível.";
+            pesquisaVisual.erro =
+                err.message || "Pesquisa visual indisponível.";
         }
 
-        // ==================================================
-        // 2. IDENTIFICAÇÃO
-        // Foto + resultados do Lens, quando disponíveis,
-        // + observação do vendedor.
-        // ==================================================
+        // 3. IDENTIFICAÇÃO
 
         const resultado = await analisarImagem(
             caminhoImagem,
@@ -82,9 +209,7 @@ router.post("/analyze", async (req, res) => {
             );
         }
 
-        // ==================================================
-        // 3. CATALOG MATCHER
-        // ==================================================
+        // 4. CATALOG MATCHER
 
         const catalogIdentification = {
             ...(resultado.catalog_input || {}),
@@ -114,9 +239,7 @@ router.post("/analyze", async (req, res) => {
             };
         }
 
-        // ==================================================
-        // 4. COPYWRITER
-        // ==================================================
+        // 5. COPYWRITER
 
         let listing = null;
 
@@ -140,49 +263,53 @@ router.post("/analyze", async (req, res) => {
             };
         }
 
-        // ==================================================
-        // 5. COMPATIBILIDADE COM O FRONTEND EXISTENTE
-        // ==================================================
+        // 6. COMPATIBILIDADE COM O FRONTEND
 
         const listingCompat = listing || {};
 
         const resultadoCompat = {
             ...resultado,
+
             title: String(
                 listingCompat.title || resultado.title || ""
             ).trim(),
+
             description: String(
                 listingCompat.description || resultado.description || ""
             ).trim(),
+
             suggested_price: Number.isFinite(
                 Number(listingCompat.suggested_price)
             )
                 ? Number(listingCompat.suggested_price)
                 : Number(resultado.suggested_price || 0),
+
             category: String(
                 listingCompat.category || resultado.category || ""
             ).trim(),
+
             listing_draft: {
                 title: String(
                     listingCompat.title || resultado.title || ""
                 ).trim(),
+
                 description: String(
                     listingCompat.description || resultado.description || ""
                 ).trim(),
+
                 suggested_price: Number.isFinite(
                     Number(listingCompat.suggested_price)
                 )
                     ? Number(listingCompat.suggested_price)
                     : Number(resultado.suggested_price || 0),
+
                 category: String(
                     listingCompat.category || resultado.category || ""
                 ).trim()
             }
         };
 
-        // ==================================================
-        // 6. RESPOSTA FINAL
-        // ==================================================
+        // 7. RESPOSTA FINAL
 
         return res.json({
             sucesso: true,
@@ -208,6 +335,20 @@ router.post("/analyze", async (req, res) => {
             sucesso: false,
             erro: err.message || "Erro ao analisar o produto."
         });
+
+    } finally {
+        // REMOVER ARQUIVO TEMPORÁRIO
+
+        if (imagemTemporaria) {
+            try {
+                await fs.promises.unlink(imagemTemporaria);
+            } catch (err) {
+                console.error(
+                    "Não foi possível remover imagem temporária:",
+                    err.message
+                );
+            }
+        }
     }
 });
 
@@ -224,6 +365,7 @@ router.post("/improve-draft", async (req, res) => {
             sucesso: true,
             resultado
         });
+
     } catch (err) {
         console.error("ERRO AO CORRIGIR RASCUNHO:", err);
 
@@ -245,6 +387,7 @@ router.get("/local-status", async (req, res) => {
             sucesso: true,
             ...await localAI.status()
         });
+
     } catch (err) {
         return res.status(500).json({
             sucesso: false,
