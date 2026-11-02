@@ -493,6 +493,15 @@ function isVoltageAttribute(attribute) {
     return /voltagem|tensao|voltage|voltaje/.test(text);
 }
 
+function isBivoltOption(value) {
+    const text = String(value?.name || value?.value_name || "")
+        .normalize("NFD")
+        .replace(/[\\u0300-\\u036f]/g, "")
+        .toLowerCase()
+        .replace(/\\s+/g, "");
+    return /bivolt|127\\/?220v?|110\\/?220v?|100[-–]240v?|100a240v?/.test(text);
+}
+
 function escapeHtml(value) {
     return String(value ?? "")
         .replace(/&/g, "&amp;")
@@ -511,8 +520,11 @@ function abrirPendenciasPublicacaoML(id, missing, message) {
 
     publicacaoMLCampos.innerHTML = publicacaoMLPendencias.map((attribute, index) => {
         const values = Array.isArray(attribute.values) ? attribute.values : [];
+        // Preferência padrão: Bivolt e rótulos equivalentes (127/220V,
+        // 110/220V ou faixa universal). Uma tensão específica já cadastrada
+        // no produto continua tendo prioridade no resolvedor do servidor.
         const bivolt = isVoltageAttribute(attribute)
-            ? values.find(value => /bivolt/i.test(String(value?.name || "")))
+            ? values.find(isBivoltOption)
             : null;
 
         if (values.length) {
