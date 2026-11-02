@@ -14,8 +14,10 @@ exports.upload = async (pictures) => {
 
     const token = await apiService.getAccessToken();
     const uploaded = [];
+    console.log(`[PictureUpload] Iniciando envio: ${pictures.length} imagem(ns).`);
 
-    for (const picture of pictures) {
+    for (const [index, picture] of pictures.entries()) {
+        console.log(`[PictureUpload] Imagem ${index + 1}/${pictures.length}: drive_file_id=${picture.drive_file_id ? "presente" : "ausente"}, path=${picture.path ? "presente" : "ausente"}, source=${picture.source ? "presente" : "ausente"}, original_url=${picture.original_url ? "presente" : "ausente"}`);
         const driveFileId = picture.drive_file_id || null;
         let stream;
         let filename = path.basename(String(picture.file_name || "imagem.jpg"));
@@ -54,8 +56,12 @@ exports.upload = async (pictures) => {
                 maxContentLength: Infinity,
                 timeout: 120000
             });
-            uploaded.push({ id: response.data.id });
-            console.log("Picture ID:", response.data.id);
+            const pictureId = response.data?.id;
+            if (!pictureId) {
+                throw new Error(`Mercado Livre não retornou ID para a imagem ${index + 1}. Resposta: ${JSON.stringify(response.data || {})}`);
+            }
+            uploaded.push({ id: pictureId });
+            console.log(`[PictureUpload] Imagem ${index + 1} enviada. ID ML: ${pictureId}`);
         } catch (error) {
             if (stream && typeof stream.destroy === "function") stream.destroy();
             throw error;
@@ -63,6 +69,7 @@ exports.upload = async (pictures) => {
     }
 
     if (!uploaded.length) throw new Error("Nenhuma imagem válida foi enviada.");
-    console.log(`${uploaded.length} imagem(ns) enviada(s) ao Mercado Livre.`);
+    if (uploaded.some(picture => !picture.id)) throw new Error("Upload incompleto: existe imagem sem ID do Mercado Livre.");
+    console.log(`[PictureUpload] Concluído: ${uploaded.length}/${pictures.length} imagem(ns) enviada(s) ao Mercado Livre.`);
     return uploaded;
 };
