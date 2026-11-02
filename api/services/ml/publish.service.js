@@ -197,7 +197,7 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
         product,
         pictures,
         publicationSpec,
-        attributeOverrides,
+        effectiveAttributeOverrides,
         shipping,
         { skipPictureUpload: true }
     );
@@ -217,7 +217,7 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
         product,
         pictures,
         publicationSpec,
-        attributeOverrides,
+        effectiveAttributeOverrides,
         shipping
     );
 
