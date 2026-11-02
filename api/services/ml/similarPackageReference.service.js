@@ -14,14 +14,14 @@ function clean(value) {
 function normalize(value) {
     return clean(value)
         .normalize("NFD")
-        .replace(/[\\u0300-\\u036f]/g, "")
+        .replace(/[\u0300-\u036f]/g, "")
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, " ")
         .trim();
 }
 
 function tokens(value) {
-    return normalize(value).split(/\\s+/).filter(token => token.length >= 2);
+    return normalize(value).split(/\s+/).filter(token => token.length >= 2);
 }
 
 function getAttribute(item, id) {
@@ -42,7 +42,7 @@ function readPackageValue(attribute, expectedUnit) {
     }
 
     const raw = clean(attribute.value_name);
-    const match = raw.match(/^(\\d+(?:[.,]\\d+)?)\\s*(cm|g)$/i);
+    const match = raw.match(/^(\d+(?:[.,]\d+)?)\s*(cm|g)$/i);
     if (!match) return null;
 
     const number = Number(match[1].replace(",", "."));
