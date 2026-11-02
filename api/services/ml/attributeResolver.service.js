@@ -206,7 +206,7 @@ function resolveOne(definition, product, predictorValues, overrides, options = {
             if (!source) continue;
             let raw = source.value_name;
             if (source.value_struct?.number != null) raw = source.value_struct.number;
-            const match = clean(raw).match(/^(\\d+)\\s*(?:cm|g)?$/i);
+            const match = clean(raw).match(/^(\d+)\s*(?:cm|g)?$/i);
             if (!match) continue;
             const number = Number(match[1]);
             if (Number.isSafeInteger(number) && number > 0) {
