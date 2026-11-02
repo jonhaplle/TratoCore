@@ -297,6 +297,21 @@ function resolveOne(definition, product, predictorValues, overrides, options = {
         }
     }
 
+    // Bivolt e o padrao quando nao ha tensao explicita no produto.
+    // Overrides e valores cadastrados no produto ja foram priorizados acima.
+    if (id === "VOLTAGE" && !knownProductValue(product, id)) {
+        const bivolt = (definition.values || []).find(value => {
+            const option = normalize(value.name || "");
+            return option.includes("bivolt") ||
+                option.includes("127/220v") ||
+                option.includes("110/220v") ||
+                option.includes("100-240v") ||
+                option.includes("100a240v");
+        });
+        if (bivolt?.id) return { id, value_id: String(bivolt.id) };
+        if (bivolt?.name) return { id, value_name: bivolt.name };
+    }
+
     // O predictor é auxiliar e só completa atributos obrigatórios.
     if (required && id !== "MATERIAL") {
         const predicted = predictorValues[id];
