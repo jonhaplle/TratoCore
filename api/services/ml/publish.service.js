@@ -8,6 +8,7 @@ const mlProductService = require("./mlProduct.service");
 const publicationSpecService = require("./publicationSpec.service");
 const attributeResolver = require("./attributeResolver.service");
 const attributeRequirements = require("./attributeRequirements.service");
+const similarPackageReference = require("./similarPackageReference.service");
 
 function clean(value) {
     if (value === undefined || value === null) return "";
@@ -122,6 +123,9 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
     const product = await productService.getById(productId);
     if (!product) throw new Error("Produto não encontrado.");
 
+    // Valores informados manualmente têm prioridade sobre qualquer referência.
+    const effectiveAttributeOverrides = { ...(attributeOverrides || {}) };
+
     const pictures = await productImageService.getByProductId(productId);
     if (!pictures || pictures.length === 0) throw new Error("O produto não possui imagens.");
 
@@ -139,6 +143,35 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
     console.log("==========================================");
 
     // ======================================================
+    // REFERÊNCIA LOGÍSTICA — "VENDER UM IGUAL"
+    // ======================================================
+    try {
+        const packageReference = await similarPackageReference.findPackageReference(
+            product,
+            publicationSpec.category_id
+        );
+
+        if (packageReference.found) {
+            for (const [id, value] of Object.entries(packageReference.attributes)) {
+                if (!effectiveAttributeOverrides[id]) {
+                    effectiveAttributeOverrides[id] = value;
+                }
+            }
+            console.log("[PackageReference] Dimensões encontradas em anúncio similar:", {
+                source_item_id: packageReference.source_item_id,
+                candidates_checked: packageReference.candidates_checked,
+                references_found: packageReference.references_found
+            });
+        } else {
+            console.log("[PackageReference] Sem referência logística confiável; usando estimativa de fallback quando disponível:", packageReference.reason);
+        }
+    } catch (referenceError) {
+        // A pesquisa de referência é auxiliar: falha nela não interrompe
+        // a publicação nem substitui as regras de validação do Mercado Livre.
+        console.warn("[PackageReference] Falha não bloqueante:", referenceError.message);
+    }
+
+    // ======================================================
     // ETAPA 2 — RESOLVER ATRIBUTOS ANTES DE FAZER UPLOAD
     // ======================================================
     const resolved = attributeResolver.build({
@@ -146,7 +179,7 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
         categoryAttributes: publicationSpec.attributes,
         conditionalAttributes: getConditionalRequired(publicationSpec),
         prediction: publicationSpec.prediction,
-        overrides: attributeOverrides
+        overrides: effectiveAttributeOverrides
     });
 
     if (resolved.missing.length) {
