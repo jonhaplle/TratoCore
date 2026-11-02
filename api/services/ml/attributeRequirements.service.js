@@ -12,9 +12,26 @@ function extractValidationCauses(error) {
 
 function extractMissingIdsFromValidation(error) {
     const ids = [];
+    const packageIds = [
+        "SELLER_PACKAGE_HEIGHT",
+        "SELLER_PACKAGE_WIDTH",
+        "SELLER_PACKAGE_LENGTH",
+        "SELLER_PACKAGE_WEIGHT"
+    ];
+
     for (const cause of extractValidationCauses(error)) {
-        const code = String(cause?.code || "").trim();
+        const code = String(cause?.code || "").trim().toLowerCase();
         const message = String(cause?.message || "").trim();
+
+        // O Mercado Livre exige estes quatro atributos para ME2 mesmo quando
+        // eles não aparecem como required na resposta da categoria.
+        if (code.includes("seller.package.dimensions")) {
+            for (const id of packageIds) {
+                if (!ids.includes(id)) ids.push(id);
+            }
+            continue;
+        }
+
         if (!code.includes("missing_required") && !code.includes("missing_conditional_required")) continue;
 
         const matches = message.match(/attributes?\s*\[([^\]]+)\]/i);
@@ -35,17 +52,31 @@ function buildMissing(publicationSpec, ids) {
 
     for (const id of ids || []) {
         if (!id || unique.some(item => item.id === id)) continue;
+        const packageUnits = {
+            SELLER_PACKAGE_HEIGHT: "cm",
+            SELLER_PACKAGE_WIDTH: "cm",
+            SELLER_PACKAGE_LENGTH: "cm",
+            SELLER_PACKAGE_WEIGHT: "g"
+        };
+        const packageLabels = {
+            SELLER_PACKAGE_HEIGHT: "Altura da embalagem",
+            SELLER_PACKAGE_WIDTH: "Largura da embalagem",
+            SELLER_PACKAGE_LENGTH: "Comprimento da embalagem",
+            SELLER_PACKAGE_WEIGHT: "Peso da embalagem"
+        };
+        const unit = packageUnits[id];
         const definition = definitions.find(item => item.id === id) || {
             id,
-            name: id,
-            value_type: "string",
+            name: packageLabels[id] || id,
+            value_type: unit ? "number" : "string",
             values: []
         };
         unique.push({
             id: definition.id,
-            name: definition.name || definition.id,
-            value_type: definition.value_type || "string",
-            value_max_length: definition.value_max_length,
+            name: definition.name || packageLabels[id] || definition.id,
+            value_type: unit ? "number" : (definition.value_type || "string"),
+            value_max_length: unit ? 10 : definition.value_max_length,
+            unit: unit || undefined,
             values: Array.isArray(definition.values) ? definition.values : []
         });
     }
