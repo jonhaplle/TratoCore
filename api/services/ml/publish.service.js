@@ -221,6 +221,12 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
         shipping
     );
 
+    // O validador do Mercado Livre exige IDs reais de imagens, não URLs
+    // temporárias em pictures[]. Faça o upload antes da validação final.
+    if (item.pictures.some(picture => picture?.source)) {
+        item.pictures = await itemService.uploadPictures(pictures);
+    }
+
     console.log("========== PAYLOAD MERCADO LIVRE ==========");
     console.log(JSON.stringify(item, null, 2));
     console.log("===========================================");
@@ -250,10 +256,6 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
 
     console.log("VALIDAÇÃO MERCADO LIVRE: OK / WARNINGS NÃO BLOQUEANTES");
     console.dir(validation, { depth: null });
-
-    if (item.pictures.some(picture => picture?.source)) {
-        item.pictures = await itemService.uploadPictures(pictures);
-    }
 
     // ======================================================
     // ETAPA 6 — PUBLICAÇÃO REAL
