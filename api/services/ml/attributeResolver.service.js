@@ -416,7 +416,7 @@ function mergeDefinitions(categoryAttributes, conditionalAttributes) {
                 id,
                 name,
                 value_type: "number",
-                tags: {},
+                tags: { required: true },
                 values: []
             });
         }
