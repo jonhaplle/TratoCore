@@ -128,6 +128,14 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
 
     const pictures = await productImageService.getByProductId(productId);
     if (!pictures || pictures.length === 0) throw new Error("O produto não possui imagens.");
+    console.log(`[PublishPictures] Produto ${productId}: ${pictures.length} registro(s) de imagem.`);
+    console.log("[PublishPictures] Origem dos registros:", pictures.map((picture, index) => ({
+        index: index + 1,
+        drive_file_id: Boolean(picture.drive_file_id),
+        original_url: Boolean(picture.original_url),
+        path: Boolean(picture.path),
+        file_name: picture.file_name || null
+    })));
 
     await apiService.getAccessToken();
 
@@ -223,9 +231,15 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
 
     // O validador do Mercado Livre exige IDs reais de imagens, não URLs
     // temporárias em pictures[]. Faça o upload antes da validação final.
-    if (item.pictures.some(picture => picture?.source)) {
+    const needsPictureUpload = item.pictures.some(picture => picture?.source);
+    console.log(`[PublishPictures] Antes do upload final: ${item.pictures.length} entrada(s); upload necessário=${needsPictureUpload}.`);
+    if (needsPictureUpload) {
         item.pictures = await itemService.uploadPictures(pictures);
     }
+    if (!Array.isArray(item.pictures) || item.pictures.length === 0 || item.pictures.some(picture => !picture?.id)) {
+        throw new Error(`Upload de fotos não produziu IDs válidos do Mercado Livre. Quantidade final: ${Array.isArray(item.pictures) ? item.pictures.length : 0}.`);
+    }
+    console.log(`[PublishPictures] Payload pronto: ${item.pictures.length} ID(s) de imagem do Mercado Livre.`);
 
     console.log("========== PAYLOAD MERCADO LIVRE ==========");
     console.log(JSON.stringify(item, null, 2));
