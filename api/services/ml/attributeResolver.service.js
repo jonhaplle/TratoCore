@@ -180,6 +180,34 @@ function extractDescriptionValue(product, definition) {
     return "";
 }
 
+function sellerPackageUnit(id) {
+    if (id === "SELLER_PACKAGE_HEIGHT" || id === "SELLER_PACKAGE_WIDTH" || id === "SELLER_PACKAGE_LENGTH") return "cm";
+    if (id === "SELLER_PACKAGE_WEIGHT") return "g";
+    return null;
+}
+
+function estimateSellerPackage(product) {
+    const text = normalize([
+        product?.title,
+        product?.product_type,
+        product?.line,
+        product?.model
+    ].filter(Boolean).join(" "));
+
+    // Estimativa conservadora para console de videogame embalado em caixa
+    // externa com proteção. Pode ser substituída por medidas reais via override.
+    if (/console|xbox|playstation|play station|ps[1-5]|nintendo switch|videogame|video game/.test(text)) {
+        return {
+            SELLER_PACKAGE_HEIGHT: 20,
+            SELLER_PACKAGE_WIDTH: 35,
+            SELLER_PACKAGE_LENGTH: 45,
+            SELLER_PACKAGE_WEIGHT: 3500
+        };
+    }
+
+    return null;
+}
+
 function resolveOne(definition, product, predictorValues, overrides, options = {}) {
     const id = definition.id;
     const productMap = productAttributeMap(product);
@@ -191,6 +219,31 @@ function resolveOne(definition, product, predictorValues, overrides, options = {
     const isNumberUnit = normalize(definition.value_type) === "number_unit";
 
     const directSources = [override, explicit];
+
+    // Valores reais/manualizados têm prioridade. Se não existirem, aplica
+    // estimativa conservadora por tipo de produto conhecido. Unidades exigidas
+    // pelo Mercado Livre: cm nas dimensões e g no peso.
+    const packageUnit = sellerPackageUnit(id);
+    if (packageUnit) {
+        for (const source of directSources) {
+            if (!source) continue;
+            let raw = source.value_name;
+            if (source.value_struct?.number != null) raw = source.value_struct.number;
+            const match = clean(raw).match(/^(\d+)\s*(?:cm|g)?$/i);
+            if (!match) continue;
+            const number = Number(match[1]);
+            if (Number.isSafeInteger(number) && number > 0) {
+                return { id, value_name: `${number} ${packageUnit}` };
+            }
+        }
+
+        const estimate = estimateSellerPackage(product);
+        const estimatedValue = estimate?.[id];
+        if (Number.isSafeInteger(estimatedValue) && estimatedValue > 0) {
+            return { id, value_name: `${estimatedValue} ${packageUnit}` };
+        }
+        return null;
+    }
 
     // Atributos number_unit não aceitam value_id como valor final.
     // Primeiro aproveita uma estrutura numérica/unidade já validada.
@@ -344,6 +397,27 @@ function mergeDefinitions(categoryAttributes, conditionalAttributes) {
             map.set(definition.id, {
                 ...definition,
                 tags: { ...(definition.tags || {}), required: true }
+            });
+        }
+    }
+
+    // A API do Mercado Livre pode exigir dimensões da embalagem ME2 mesmo
+    // sem marcá-las como required na ficha da categoria. Mantemos as definições
+    // disponíveis para aceitar os valores preenchidos após a validação.
+    const packageDefinitions = [
+        ["SELLER_PACKAGE_HEIGHT", "Altura da embalagem"],
+        ["SELLER_PACKAGE_WIDTH", "Largura da embalagem"],
+        ["SELLER_PACKAGE_LENGTH", "Comprimento da embalagem"],
+        ["SELLER_PACKAGE_WEIGHT", "Peso da embalagem"]
+    ];
+    for (const [id, name] of packageDefinitions) {
+        if (!map.has(id)) {
+            map.set(id, {
+                id,
+                name,
+                value_type: "number",
+                tags: {},
+                values: []
             });
         }
     }
