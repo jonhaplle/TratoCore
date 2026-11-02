@@ -186,6 +186,28 @@ function sellerPackageUnit(id) {
     return null;
 }
 
+function estimateSellerPackage(product) {
+    const text = normalize([
+        product?.title,
+        product?.product_type,
+        product?.line,
+        product?.model
+    ].filter(Boolean).join(" "));
+
+    // Estimativa conservadora para console de videogame embalado em caixa
+    // externa com proteção. Pode ser substituída por medidas reais via override.
+    if (/console|xbox|playstation|play station|ps[1-5]|nintendo switch|videogame|video game/.test(text)) {
+        return {
+            SELLER_PACKAGE_HEIGHT: 20,
+            SELLER_PACKAGE_WIDTH: 35,
+            SELLER_PACKAGE_LENGTH: 45,
+            SELLER_PACKAGE_WEIGHT: 3500
+        };
+    }
+
+    return null;
+}
+
 function resolveOne(definition, product, predictorValues, overrides, options = {}) {
     const id = definition.id;
     const productMap = productAttributeMap(product);
@@ -198,8 +220,9 @@ function resolveOne(definition, product, predictorValues, overrides, options = {
 
     const directSources = [override, explicit];
 
-    // SELLER_PACKAGE_* precisa ser informado em inteiros, usando cm para
-    // dimensões e g para peso. Não estimamos esses valores pelo produto.
+    // Valores reais/manualizados têm prioridade. Se não existirem, aplica
+    // estimativa conservadora por tipo de produto conhecido. Unidades exigidas
+    // pelo Mercado Livre: cm nas dimensões e g no peso.
     const packageUnit = sellerPackageUnit(id);
     if (packageUnit) {
         for (const source of directSources) {
@@ -212,6 +235,12 @@ function resolveOne(definition, product, predictorValues, overrides, options = {
             if (Number.isSafeInteger(number) && number > 0) {
                 return { id, value_name: `${number} ${packageUnit}` };
             }
+        }
+
+        const estimate = estimateSellerPackage(product);
+        const estimatedValue = estimate?.[id];
+        if (Number.isSafeInteger(estimatedValue) && estimatedValue > 0) {
+            return { id, value_name: `${estimatedValue} ${packageUnit}` };
         }
         return null;
     }
