@@ -496,10 +496,10 @@ function isVoltageAttribute(attribute) {
 function isBivoltOption(value) {
     const text = String(value?.name || value?.value_name || "")
         .normalize("NFD")
-        .replace(/[\\u0300-\\u036f]/g, "")
+        .replace(/[\u0300-\u036f]/g, "")
         .toLowerCase()
-        .replace(/\\s+/g, "");
-    return /bivolt|127\\/?220v?|110\\/?220v?|100[-–]240v?|100a240v?/.test(text);
+        .replace(/\s+/g, "");
+    return /bivolt|127\/?220v?|110\/?220v?|100[-–]240v?|100a240v?/.test(text);
 }
 
 function escapeHtml(value) {
