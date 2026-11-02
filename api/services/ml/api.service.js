@@ -328,6 +328,16 @@ exports.getProduct = async (productId) => {
     return response.data;
 };
 
+exports.searchSiteItems = async (query, params = {}) => {
+    const response = await request({
+        method: "get",
+        url: `${API}/sites/MLB/search`,
+        params: { q: String(query || "").trim(), limit: 30, ...params },
+        timeout: 30000
+    });
+    return response.data;
+};
+
 exports.searchUserItems = async (userId, params = {}) => {
     if (!userId) throw new Error("user_id nao informado para busca de anuncios.");
     const response = await request({
