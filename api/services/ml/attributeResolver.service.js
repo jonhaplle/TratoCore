@@ -180,6 +180,12 @@ function extractDescriptionValue(product, definition) {
     return "";
 }
 
+function sellerPackageUnit(id) {
+    if (id === "SELLER_PACKAGE_HEIGHT" || id === "SELLER_PACKAGE_WIDTH" || id === "SELLER_PACKAGE_LENGTH") return "cm";
+    if (id === "SELLER_PACKAGE_WEIGHT") return "g";
+    return null;
+}
+
 function resolveOne(definition, product, predictorValues, overrides, options = {}) {
     const id = definition.id;
     const productMap = productAttributeMap(product);
@@ -191,6 +197,24 @@ function resolveOne(definition, product, predictorValues, overrides, options = {
     const isNumberUnit = normalize(definition.value_type) === "number_unit";
 
     const directSources = [override, explicit];
+
+    // SELLER_PACKAGE_* precisa ser informado em inteiros, usando cm para
+    // dimensões e g para peso. Não estimamos esses valores pelo produto.
+    const packageUnit = sellerPackageUnit(id);
+    if (packageUnit) {
+        for (const source of directSources) {
+            if (!source) continue;
+            let raw = source.value_name;
+            if (source.value_struct?.number != null) raw = source.value_struct.number;
+            const match = clean(raw).match(/^(\\d+)\\s*(?:cm|g)?$/i);
+            if (!match) continue;
+            const number = Number(match[1]);
+            if (Number.isSafeInteger(number) && number > 0) {
+                return { id, value_name: `${number} ${packageUnit}` };
+            }
+        }
+        return null;
+    }
 
     // Atributos number_unit não aceitam value_id como valor final.
     // Primeiro aproveita uma estrutura numérica/unidade já validada.
@@ -344,6 +368,27 @@ function mergeDefinitions(categoryAttributes, conditionalAttributes) {
             map.set(definition.id, {
                 ...definition,
                 tags: { ...(definition.tags || {}), required: true }
+            });
+        }
+    }
+
+    // A API do Mercado Livre pode exigir dimensões da embalagem ME2 mesmo
+    // sem marcá-las como required na ficha da categoria. Mantemos as definições
+    // disponíveis para aceitar os valores preenchidos após a validação.
+    const packageDefinitions = [
+        ["SELLER_PACKAGE_HEIGHT", "Altura da embalagem"],
+        ["SELLER_PACKAGE_WIDTH", "Largura da embalagem"],
+        ["SELLER_PACKAGE_LENGTH", "Comprimento da embalagem"],
+        ["SELLER_PACKAGE_WEIGHT", "Peso da embalagem"]
+    ];
+    for (const [id, name] of packageDefinitions) {
+        if (!map.has(id)) {
+            map.set(id, {
+                id,
+                name,
+                value_type: "number",
+                tags: {},
+                values: []
             });
         }
     }
