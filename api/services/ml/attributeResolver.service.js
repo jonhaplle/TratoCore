@@ -456,9 +456,13 @@ exports.build = ({
     for (const definition of definitions) {
         const tags = definition.tags || {};
 
-        if (tags.hidden || tags.read_only || tags.fixed) continue;
+        // Atributos de embalagem são exigidos pelo ME2 mesmo quando a
+        // ficha da categoria os marca como hidden/read_only/fixed.
+        // Não os descarte: o resolvedor precisa enviar a estimativa ou override.
+        const isSellerPackageAttribute = Boolean(sellerPackageUnit(definition.id));
+        if (!isSellerPackageAttribute && (tags.hidden || tags.read_only || tags.fixed)) continue;
 
-        const required = tags.required === true;
+        const required = isSellerPackageAttribute || tags.required === true;
         const resolved = resolveOne(
             definition,
             product,
@@ -484,6 +488,14 @@ exports.build = ({
         !attributes.some(a => a.id === "ITEM_CONDITION")) {
         attributes.push({ id: "ITEM_CONDITION", value_id: "2230581" });
     }
+
+    console.log("[AttributeResolver] Embalagem resolvida:", attributes.filter(attribute =>
+        Boolean(sellerPackageUnit(attribute.id))
+    ));
+
+    console.log("[AttributeResolver] Embalagem pendente:", missing.filter(attribute =>
+        Boolean(sellerPackageUnit(attribute.id))
+    ));
 
     return { attributes, missing };
 };
