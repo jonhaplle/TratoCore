@@ -532,11 +532,17 @@ function abrirPendenciasPublicacaoML(id, missing, message) {
                 </div>`;
         }
 
-        const inputType = String(attribute.value_type || "string").toLowerCase() === "number" ? "number" : "text";
+        const packageAttribute = /^SELLER_PACKAGE_(HEIGHT|WIDTH|LENGTH|WEIGHT)$/.test(String(attribute.id || ""));
+        const packageUnit = String(attribute.id || "").endsWith("WEIGHT") ? "g" : "cm";
+        const inputType = packageAttribute || String(attribute.value_type || "string").toLowerCase() === "number" ? "number" : "text";
+        const packageHint = packageAttribute
+            ? `<div class="ml-atributo-ajuda">Informe um número inteiro em ${packageUnit}, considerando a embalagem pronta para envio.</div>`
+            : "";
         return `
             <div class="ml-atributo-pendente">
-                <label for="ml-pendente-${index}">${escapeHtml(attribute.name || attribute.id)}</label>
-                <input id="ml-pendente-${index}" data-attribute-id="${escapeHtml(attribute.id)}" data-value-type="${escapeHtml(attribute.value_type || "string")}" type="${inputType}" maxlength="${Number(attribute.value_max_length || 255)}" placeholder="Informe ${escapeHtml((attribute.name || attribute.id).toLowerCase())}">
+                <label for="ml-pendente-${index}">${escapeHtml(attribute.name || attribute.id)}${packageAttribute ? ` (${packageUnit})` : ""}</label>
+                <input id="ml-pendente-${index}" data-attribute-id="${escapeHtml(attribute.id)}" data-value-type="${escapeHtml(attribute.value_type || "string")}" type="${inputType}" ${packageAttribute ? 'min="1" step="1" inputmode="numeric"' : ""} maxlength="${Number(attribute.value_max_length || 255)}" placeholder="${packageAttribute ? `Informe o valor inteiro em ${packageUnit}` : `Informe ${escapeHtml((attribute.name || attribute.id).toLowerCase())}`}">
+                ${packageHint}
             </div>`;
     }).join("");
 
