@@ -426,15 +426,15 @@ function mergeDefinitions(categoryAttributes, conditionalAttributes) {
         ["SELLER_PACKAGE_WEIGHT", "Peso da embalagem"]
     ];
     for (const [id, name] of packageDefinitions) {
-        if (!map.has(id)) {
-            map.set(id, {
-                id,
-                name,
-                value_type: "number",
-                tags: { required: true },
-                values: []
-            });
-        }
+        const current = map.get(id);
+        map.set(id, {
+            ...(current || {}),
+            id,
+            name: current?.name || name,
+            value_type: current?.value_type || "number",
+            tags: { ...(current?.tags || {}), required: true },
+            values: current?.values || []
+        });
     }
 
     return [...map.values()];
