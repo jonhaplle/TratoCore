@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TratoCore — Central TratoCap</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="tratocap-central.css">
+</head>
+<body>
+<header class="topo">
+ <div><h1>TRATO CORE</h1><p>Central de captura e sincronização</p></div>
+ <nav><a href="index.html">Novo Produto</a><a href="produtos.html">Produtos</a><a class="ativo" href="tratocap.html">TratoCap</a></nav>
+</header>
+<main class="tc-wrap">
+ <section class="tc-hero">
+  <div><span class="tc-kicker">CENTRAL DE OPERAÇÃO</span><h2>TratoCap</h2><p>Acompanhe as fotos enviadas pelo celular e a importação dos álbuns.</p></div>
+  <div class="tc-hero-actions"><span id="serverBadge" class="tc-badge tc-loading">Verificando servidor…</span><button id="refreshBtn" type="button">Atualizar dados</button></div>
+ </section>
+ <section class="tc-stats" aria-label="Resumo da sincronização">
+  <article><span>Álbuns recebidos</span><strong id="albumCount">—</strong></article>
+  <article><span>Fotos recebidas</span><strong id="photoCount">—</strong></article>
+  <article><span>Álbuns importados</span><strong id="importedCount">—</strong></article>
+ </section>
+ <section class="tc-panel">
+  <div class="tc-panel-head"><div><h3>Álbuns recebidos</h3><p>Fotos armazenadas pelo sincronizador do TratoCap.</p></div><a href="produtos.html">Ver produtos →</a></div>
+  <div id="albumsState" class="tc-state">Carregando álbuns…</div>
+  <div id="albumsList" class="tc-albums"></div>
+ </section>
+ <section class="tc-panel tc-gallery-panel">
+  <div class="tc-panel-head"><div><h3>Galeria TratoCore</h3><p>Álbuns enviados ao destino de galeria.</p></div></div>
+  <div id="galleryState" class="tc-state">Carregando galeria…</div>
+  <div id="galleryList" class="tc-albums"></div>
+ </section>
+ <p class="tc-footnote">Os indicadores mostram somente dados retornados pela API. A presença de um álbum não significa, por si só, que a análise por IA foi concluída.</p>
+ <a class="tc-back" href="index.html">← Voltar à página inicial</a>
+</main>
+<script src="tratocap-central.js"></script>
+</body>
+</html>
