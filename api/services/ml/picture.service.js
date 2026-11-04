@@ -3,9 +3,27 @@ const path = require("path");
 const axios = require("axios");
 const FormData = require("form-data");
 const apiService = require("./api.service");
-const { getFileStream } = require("../googleDriveService");
+const googleDriveOAuthService = require("../googleDriveOAuthService").createGoogleDriveOAuthService();
+const legacyDrive = require("../googleDriveService");
 
 const API = "https://api.mercadolibre.com";
+
+async function getDriveFileStream(fileId) {
+    try {
+        return await googleDriveOAuthService.getFileStream(fileId);
+    } catch (oauthError) {
+        console.warn("[PictureUpload] Leitura OAuth do Drive falhou; tentando serviço legado:", oauthError.message);
+        try {
+            return await legacyDrive.getFileStream(fileId);
+        } catch (legacyError) {
+            const error = new Error(
+                `Não foi possível baixar a imagem ${fileId} do Google Drive. OAuth: ${oauthError.message}; serviço legado: ${legacyError.message}`
+            );
+            error.cause = legacyError;
+            throw error;
+        }
+    }
+}
 
 exports.upload = async (pictures) => {
     if (!Array.isArray(pictures) || pictures.length === 0) {
@@ -24,7 +42,7 @@ exports.upload = async (pictures) => {
         const mimeType = picture.mime_type || "image/jpeg";
 
         if (driveFileId) {
-            stream = await getFileStream(driveFileId);
+            stream = await getDriveFileStream(driveFileId);
             console.log("Imagem obtida do Google Drive:", driveFileId);
         } else {
             let filePath = picture.path || picture.source || picture.original_url;
@@ -32,7 +50,7 @@ exports.upload = async (pictures) => {
             if (/^https?:\/\//i.test(filePath)) {
                 throw new Error("Imagem sem ID do Google Drive: não é possível usar URL HTTP como arquivo local.");
             }
-            filePath = filePath.replace(/\//g, path.sep);
+            filePath = filePath.replace(/\\/g, path.sep);
             if (filePath.startsWith(path.sep)) filePath = filePath.substring(1);
             const absolutePath = path.resolve(process.cwd(), filePath);
             if (!fs.existsSync(absolutePath)) {
