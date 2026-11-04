@@ -45,7 +45,8 @@ exports.build = async (product, pictures, publicationSpec, attributeOverrides = 
             ? publicationSpec.conditionalAttributes.required_attributes
             : [],
         prediction: publicationSpec.prediction,
-        overrides: attributeOverrides
+        overrides: attributeOverrides,
+        requirePackageDimensions: options.requirePackageDimensions === true
     });
 
     if (resolved.missing.length) {
