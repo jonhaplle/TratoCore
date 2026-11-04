@@ -150,6 +150,11 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
     console.log("Listing type:", publicationSpec.listing_type.id);
     console.log("==========================================");
 
+    // Resolve a modalidade antes dos atributos: dimensões da embalagem
+    // só entram como obrigatórias quando a logística escolhida for ME2.
+    const shipping = await resolveShipping(publicationSpec.category_id);
+    const requirePackageDimensions = shipping?.mode === "me2";
+
     // ======================================================
     // REFERÊNCIA LOGÍSTICA — "VENDER UM IGUAL"
     // ======================================================
@@ -187,7 +192,8 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
         categoryAttributes: publicationSpec.attributes,
         conditionalAttributes: getConditionalRequired(publicationSpec),
         prediction: publicationSpec.prediction,
-        overrides: effectiveAttributeOverrides
+        overrides: effectiveAttributeOverrides,
+        requirePackageDimensions
     });
 
     if (resolved.missing.length) {
@@ -195,9 +201,8 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
     }
 
     // ======================================================
-    // ETAPA 4 — SHIPPING + PAYLOAD + FOTOS
+    // ETAPA 4 — PAYLOAD + FOTOS
     // ======================================================
-    const shipping = await resolveShipping(publicationSpec.category_id);
 
     // Faça uma validação de atributos sem enviar imagens. Isso também cobre
     // pendências condicionais descobertas pelo ML para imagens locais.
@@ -207,7 +212,7 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
         publicationSpec,
         effectiveAttributeOverrides,
         shipping,
-        { skipPictureUpload: true }
+        { skipPictureUpload: true, requirePackageDimensions }
     );
     try {
         await apiService.validateItem(attributePreflight);
@@ -226,7 +231,8 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
         pictures,
         publicationSpec,
         effectiveAttributeOverrides,
-        shipping
+        shipping,
+        { requirePackageDimensions }
     );
 
     // O validador do Mercado Livre exige IDs reais de imagens, não URLs
