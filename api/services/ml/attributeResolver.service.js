@@ -385,7 +385,7 @@ function normalizeDefinition(definition) {
     };
 }
 
-function mergeDefinitions(categoryAttributes, conditionalAttributes) {
+function mergeDefinitions(categoryAttributes, conditionalAttributes, requirePackageDimensions = false) {
     const map = new Map();
 
     for (const raw of categoryAttributes || []) {
@@ -416,25 +416,28 @@ function mergeDefinitions(categoryAttributes, conditionalAttributes) {
         }
     }
 
-    // A API do Mercado Livre pode exigir dimensões da embalagem ME2 mesmo
-    // sem marcá-las como required na ficha da categoria. Mantemos as definições
-    // disponíveis para aceitar os valores preenchidos após a validação.
-    const packageDefinitions = [
-        ["SELLER_PACKAGE_HEIGHT", "Altura da embalagem"],
-        ["SELLER_PACKAGE_WIDTH", "Largura da embalagem"],
-        ["SELLER_PACKAGE_LENGTH", "Comprimento da embalagem"],
-        ["SELLER_PACKAGE_WEIGHT", "Peso da embalagem"]
-    ];
-    for (const [id, name] of packageDefinitions) {
-        const current = map.get(id);
-        map.set(id, {
-            ...(current || {}),
-            id,
-            name: current?.name || name,
-            value_type: current?.value_type || "number",
-            tags: { ...(current?.tags || {}), required: true },
-            values: current?.values || []
-        });
+    // Atributos de embalagem são adicionados como obrigatórios somente
+    // quando a modalidade logística escolhida exige dimensões (ME2).
+    // Se a categoria já os definir como obrigatórios, essa regra oficial
+    // continua prevalecendo independentemente da modalidade.
+    if (requirePackageDimensions) {
+        const packageDefinitions = [
+            ["SELLER_PACKAGE_HEIGHT", "Altura da embalagem"],
+            ["SELLER_PACKAGE_WIDTH", "Largura da embalagem"],
+            ["SELLER_PACKAGE_LENGTH", "Comprimento da embalagem"],
+            ["SELLER_PACKAGE_WEIGHT", "Peso da embalagem"]
+        ];
+        for (const [id, name] of packageDefinitions) {
+            const current = map.get(id);
+            map.set(id, {
+                ...(current || {}),
+                id,
+                name: current?.name || name,
+                value_type: current?.value_type || "number",
+                tags: { ...(current?.tags || {}), required: true },
+                values: current?.values || []
+            });
+        }
     }
 
     return [...map.values()];
@@ -445,24 +448,23 @@ exports.build = ({
     categoryAttributes,
     conditionalAttributes = [],
     prediction,
-    overrides = {}
+    overrides = {},
+    requirePackageDimensions = false
 }) => {
     const attributes = [];
     const predictorValues = predictorMap(prediction);
     const overrideValues = overrideMap(overrides);
     const missing = [];
-    const definitions = mergeDefinitions(categoryAttributes, conditionalAttributes);
+    const definitions = mergeDefinitions(categoryAttributes, conditionalAttributes, requirePackageDimensions);
 
     for (const definition of definitions) {
         const tags = definition.tags || {};
 
-        // Atributos de embalagem são exigidos pelo ME2 mesmo quando a
-        // ficha da categoria os marca como hidden/read_only/fixed.
-        // Não os descarte: o resolvedor precisa enviar a estimativa ou override.
         const isSellerPackageAttribute = Boolean(sellerPackageUnit(definition.id));
-        if (!isSellerPackageAttribute && (tags.hidden || tags.read_only || tags.fixed)) continue;
+        const packageRequired = isSellerPackageAttribute && requirePackageDimensions;
+        if (!packageRequired && (tags.hidden || tags.read_only || tags.fixed)) continue;
 
-        const required = isSellerPackageAttribute || tags.required === true;
+        const required = packageRequired || tags.required === true;
         const resolved = resolveOne(
             definition,
             product,
