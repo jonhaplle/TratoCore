@@ -246,9 +246,9 @@ test("após validação aprovada, envia a imagem uma vez e passa o ID ao limite 
     assert.equal(result.statusCode, 500); // O mock interrompe antes de qualquer requisição externa.
     assert.equal(calls.validationPayloads.length, 2);
     assert.deepEqual(calls.validationPayloads[0].pictures, []);
-    assert.deepEqual(calls.validationPayloads[1].pictures, [{ source: "https://images.invalid/product-10.jpg" }]);
+    assert.deepEqual(calls.validationPayloads[1].pictures, [{ id: "PIC-10-1" }]);
     assert.equal(calls.pictureUpload, 1);
-    assert.deepEqual(calls.events, ["validate", "validate", "upload", "publishItem"]);
+    assert.deepEqual(calls.events, ["validate", "upload", "validate", "publishItem"]);
     assert.equal(calls.uploadInputs[0][0].drive_file_id, "drive-file-10");
     assert.deepEqual(calls.publishPayload.pictures, [{ id: "PIC-10-1" }]);
     assert.equal(calls.publishPayload.pictures.some(picture => picture.source), false);
@@ -284,11 +284,11 @@ test("falha no upload bloqueia publishItem", async () => {
     });
 
     assert.equal(result.statusCode, 500);
-    assert.equal(calls.validationPayloads.length, 2);
+    assert.equal(calls.validationPayloads.length, 1);
     assert.equal(calls.pictureUpload, 1);
     assert.equal(calls.publishItem, 0);
     assert.equal(calls.publishPayload, null);
-    assert.deepEqual(calls.events, ["validate", "validate", "upload"]);
+    assert.deepEqual(calls.events, ["validate", "upload"]);
 });
 
 test("imagem local não é enviada quando a validação condicional retorna MATERIAL pendente", async () => {
