@@ -25,7 +25,12 @@ function missingPicturesValidationError() {
     const error = new Error("simulated validation requires pictures");
     error.response = {
         status: 400,
-        data: { cause: [{ code: "item.pictures.required", message: "Pictures are required" }] }
+        data: {
+            cause: [
+                { department: "items", type: "error", code: "item.pictures.required", message: "Pictures are required" },
+                { department: "shipping", type: "warning", code: "shipping.lost_me1_by_user", message: "User has not mode me1" }
+            ]
+        }
     };
     return error;
 }
@@ -304,7 +309,7 @@ test("imagem local não é enviada quando a validação condicional retorna MATE
     assert.deepEqual(calls.events, ["validate"]);
 });
 
-test("preflight local ignora somente erro de imagem ausente e valida o payload completo após upload", async () => {
+test("preflight ignora erro de imagem ausente acompanhado de warning de shipping e valida após upload", async () => {
     const { calls, controller } = createBackend({
         imageKind: "local",
         validationErrors: [missingPicturesValidationError(), null]

@@ -32,9 +32,14 @@ function extractValidationCauses(error) {
 
 function isPictureOnlyValidationError(error) {
     const causes = extractValidationCauses(error);
+    // Warnings from unrelated departments (for example, shipping) do not
+    // invalidate the expected preflight response about missing pictures.
+    const blockingCauses = causes.filter(cause =>
+        String(cause?.type || "").toLowerCase() !== "warning"
+    );
     return Number(error?.response?.status) === 400 &&
-        causes.length > 0 &&
-        causes.every(cause => String(cause?.code || "").toLowerCase().includes("picture"));
+        blockingCauses.length > 0 &&
+        blockingCauses.every(cause => String(cause?.code || "").toLowerCase().includes("picture"));
 }
 
 function missingError(missing, message = "Informações obrigatórias pendentes para publicar.") {
