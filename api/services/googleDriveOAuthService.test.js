@@ -28,7 +28,8 @@ function fixture(tokenResponse = { access_token: "short-lived", refresh_token: "
             if (options.alt === "media") return { data: Buffer.from(lastContent, "utf8") };
             return { data: { id: options.fileId, name: "FOTOS", mimeType: "application/vnd.google-apps.folder" } };
         },
-        async create(options) { calls.push({ create: options }); return { data: { id: "drive-file-1", name: options.requestBody.name, mimeType: options.media.mimeType } }; },
+        async create(options) { calls.push({ create: options }); return { data: { id: options.requestBody.mimeType ? "album-folder-1" : "drive-file-1", name: options.requestBody.name, mimeType: options.requestBody.mimeType || options.media?.mimeType } }; },
+        async list(options) { calls.push({ list: options }); return { data: { files: [] } }; },
         async delete(options) { calls.push({ delete: options }); }
     };
     let lastContent = "";
@@ -40,7 +41,7 @@ function fixture(tokenResponse = { access_token: "short-lived", refresh_token: "
             else if (options.media.body?.[Symbol.asyncIterator]) {
                 for await (const chunk of options.media.body) lastContent += chunk.toString("utf8");
             }
-            return { data: { id: "drive-file-1", name: options.requestBody.name, mimeType: options.media.mimeType } };
+            return { data: { id: options.requestBody.mimeType ? "album-folder-1" : "drive-file-1", name: options.requestBody.name, mimeType: options.requestBody.mimeType || options.media?.mimeType } };
         }
     } };
     const google = { auth: { OAuth2 }, drive: () => driveApi };
@@ -105,6 +106,31 @@ test("upload uses the selected folder, returns confirmed Drive ID, and rejects b
         assert.equal(uploaded.id, "drive-file-1");
         assert.equal(calls.find(call => call.create).create.requestBody.parents[0], "products-folder-id");
     } finally { fs.unlinkSync(temp); }
+});
+
+test("uploadBuffer creates the album below FOTOS and uploads the original bytes", async () => {
+    const { service, state, calls } = fixture();
+    state.refreshToken = "refresh";
+    state.selectedFolderId = "fotos-folder-id";
+    state.selectedFolderName = "FOTOS";
+    state.writeVerifiedAt = new Date();
+
+    const uploaded = await service.uploadBuffer(
+        Buffer.from("original-image-bytes"),
+        "photo-uuid.jpg",
+        "image/jpeg",
+        "Relogios",
+        "photo-uuid"
+    );
+
+    assert.equal(uploaded.id, "drive-file-1");
+    assert.equal(uploaded.folder_id, "album-folder-1");
+    const folderCreate = calls.find(call => call.create?.requestBody?.mimeType);
+    const imageCreate = calls.find(call => call.create?.media);
+    assert.equal(folderCreate.create.requestBody.parents[0], "fotos-folder-id");
+    assert.equal(folderCreate.create.requestBody.name, "Relogios");
+    assert.equal(imageCreate.create.requestBody.parents[0], "album-folder-1");
+    assert.equal(imageCreate.create.requestBody.appProperties.tratocore_client_uuid, "photo-uuid");
 });
 
 test("temporary verification reads matching content and deletes the file", async () => {
