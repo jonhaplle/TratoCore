@@ -38,6 +38,11 @@ async function ensureSchema() {
                     album_name TEXT NOT NULL,
                     file_name TEXT NOT NULL,
                     mime_type TEXT NOT NULL,
+                    destination TEXT NOT NULL DEFAULT 'product',
+                    note TEXT,
+                    original_name TEXT,
+                    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    imported_product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
                     payload BYTEA,
                     status VARCHAR(20) NOT NULL DEFAULT 'pending'
                         CHECK (status IN ('pending', 'processing', 'synced', 'failed')),
@@ -54,7 +59,12 @@ async function ensureSchema() {
             `);
             await db.query(`
                 ALTER TABLE tratocap_sync_jobs
-                    ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    ADD COLUMN IF NOT EXISTS destination TEXT NOT NULL DEFAULT 'product',
+                    ADD COLUMN IF NOT EXISTS note TEXT,
+                    ADD COLUMN IF NOT EXISTS original_name TEXT,
+                    ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    ADD COLUMN IF NOT EXISTS imported_product_id INTEGER REFERENCES products(id) ON DELETE SET NULL
             `);
             await db.query(`
                 CREATE INDEX IF NOT EXISTS idx_tratocap_sync_jobs_pending
@@ -73,8 +83,8 @@ async function enqueue(job) {
     await ensureSchema();
     const result = await db.query(`
         INSERT INTO tratocap_sync_jobs
-            (client_uuid, sha256, album_name, file_name, mime_type, payload, status)
-        VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+            (client_uuid, sha256, album_name, file_name, mime_type, destination, note, original_name, received_at, payload, status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')
         ON CONFLICT (client_uuid) DO NOTHING
         RETURNING *
     `, [
@@ -83,6 +93,10 @@ async function enqueue(job) {
         job.album_name,
         job.file_name,
         job.mime_type || "image/jpeg",
+        job.destination || "product",
+        job.note || "",
+        job.original_name || "",
+        job.received_at || new Date(),
         job.payload
     ]);
 
@@ -97,7 +111,8 @@ async function enqueue(job) {
     if (
         String(row.sha256).trim() !== String(job.sha256).trim() ||
         String(row.album_name) !== String(job.album_name) ||
-        String(row.file_name) !== String(job.file_name)
+        String(row.file_name) !== String(job.file_name) ||
+        String(row.destination || "product") !== String(job.destination || "product")
     ) {
         const error = new Error("client_uuid já utilizado por outra imagem.");
         error.status = 409;
@@ -135,7 +150,10 @@ async function markSynced(job, driveFile) {
     await db.query(`
         UPDATE tratocap_sync_jobs
         SET status = 'synced',
-            payload = NULL,
+            payload = CASE
+                WHEN destination = 'gallery' OR imported_product_id IS NOT NULL THEN NULL
+                ELSE payload
+            END,
             drive_file_id = $2,
             drive_folder_id = $3,
             drive_web_view_link = $4,
@@ -219,6 +237,33 @@ async function processOne(driveService) {
     }
 }
 
+
+async function markAlbumImported(albumName, productId) {
+    await ensureSchema();
+    await db.query(`
+        UPDATE tratocap_sync_jobs
+        SET imported_product_id = $2,
+            payload = CASE WHEN status = 'synced' THEN NULL ELSE payload END,
+            updated_at = NOW()
+        WHERE album_name = $1
+          AND destination = 'product'
+          AND imported_product_id IS NULL
+    `, [albumName, productId]);
+}
+
+async function getUnimportedProductImages() {
+    await ensureSchema();
+    const result = await db.query(`
+        SELECT *
+        FROM tratocap_sync_jobs
+        WHERE destination = 'product'
+          AND imported_product_id IS NULL
+          AND payload IS NOT NULL
+        ORDER BY created_at ASC
+    `);
+    return result.rows;
+}
+
 async function getByClientUuid(clientUuid) {
     await ensureSchema();
     const result = await db.query(
@@ -241,4 +286,4 @@ async function getStatus() {
     return result.rows[0] || { pending: 0, processing: 0, synced: 0 };
 }
 
-module.exports = { ensureSchema, enqueue, processOne, getByClientUuid, getStatus };
+module.exports = { ensureSchema, enqueue, processOne, markAlbumImported, getUnimportedProductImages, getByClientUuid, getStatus };
