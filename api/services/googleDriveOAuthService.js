@@ -141,6 +141,8 @@ function createGoogleDriveOAuthService(options = {}) {
         if (!saved.writeVerifiedAt) throw new Error("Valide a gravação no Google Drive antes de sincronizar.");
         const root = await getSelectedRoot(drive, saved);
         const folder = await findOrCreateAlbumFolder(drive, root.id, albumName);
+        const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+        const contentHash = crypto.createHash("sha256").update(bytes).digest("hex");
         const safeName = String(fileName || (clientUuid || crypto.randomUUID()) + ".jpg").replace(/[\\/]/g, "_");
         const q = [
             "'" + folder.id + "' in parents",
@@ -150,10 +152,18 @@ function createGoogleDriveOAuthService(options = {}) {
         const existing = await drive.files.list({
             q,
             pageSize: 10,
-            fields: "files(id,name,mimeType,webViewLink,webContentLink)"
+            fields: "files(id,name,mimeType,webViewLink,webContentLink,appProperties)"
         });
         const reused = existing.data?.files?.[0];
         if (reused?.id) {
+            const savedUuid = reused.appProperties?.tratocore_client_uuid;
+            const savedHash = reused.appProperties?.tratocore_sha256;
+            if (String(savedUuid || "") !== String(clientUuid || "") || String(savedHash || "") !== contentHash) {
+                const conflict = new Error("Já existe um arquivo com este nome no álbum, mas o conteúdo não corresponde ao client_uuid/SHA-256 recebido.");
+                conflict.status = 409;
+                conflict.code = "TRATOCAP_DRIVE_FILE_CONFLICT";
+                throw conflict;
+            }
             return {
                 id: reused.id,
                 name: reused.name,
@@ -164,12 +174,14 @@ function createGoogleDriveOAuthService(options = {}) {
             };
         }
 
-        const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
         const result = await drive.files.create({
             requestBody: {
                 name: safeName,
                 parents: [folder.id],
-                appProperties: clientUuid ? { tratocore_client_uuid: String(clientUuid) } : undefined
+                appProperties: clientUuid ? {
+                    tratocore_client_uuid: String(clientUuid),
+                    tratocore_sha256: contentHash
+                } : undefined
             },
             media: {
                 mimeType: mimeType || "application/octet-stream",
