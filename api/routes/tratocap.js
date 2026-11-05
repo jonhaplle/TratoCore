@@ -332,35 +332,59 @@ async function importAlbums(requestedAlbum = null) {
         const albumDir = path.join(albumsRoot, album);
         if (!fs.existsSync(albumDir) || !fs.statSync(albumDir).isDirectory()) continue;
         const markerPath = path.join(albumDir, ".tratocore-import.json");
+        let marker = null;
+        let product = null;
         if (fs.existsSync(markerPath)) {
-            const marker = JSON.parse(fs.readFileSync(markerPath, "utf8"));
-            if (marker.product_id) await SyncQueue.markAlbumImported(album, marker.product_id);
-            skipped.push({ album, reason: "Já importado", data: marker });
-            continue;
+            marker = JSON.parse(fs.readFileSync(markerPath, "utf8"));
+            if (marker.product_id) product = await ProductService.getById(marker.product_id);
         }
 
         const files = imageFiles(albumDir);
-        if (!files.length) { skipped.push({ album, reason: "Nenhuma imagem" }); continue; }
+        if (!files.length) {
+            skipped.push({ album, reason: "Nenhuma imagem" });
+            continue;
+        }
+
+        const existingImages = product
+            ? await ProductImageService.getByProductId(product.id)
+            : [];
+        const existingUuids = new Set(existingImages.map(image => image.client_uuid).filter(Boolean));
+        const existingHashes = new Set(existingImages.map(image => String(image.sha256 || "").trim()).filter(Boolean));
+        const newFiles = [];
+
+        for (const file of files) {
+            let fileMeta = {};
+            try { fileMeta = JSON.parse(fs.readFileSync(file + ".json", "utf8")); } catch (_) {}
+            const knownUuid = fileMeta.client_uuid && existingUuids.has(fileMeta.client_uuid);
+            const knownHash = !fileMeta.client_uuid && fileMeta.sha256 && existingHashes.has(String(fileMeta.sha256).trim());
+            if (!knownUuid && !knownHash) newFiles.push({ file, fileMeta });
+        }
+
+        if (!newFiles.length) {
+            if (product) await SyncQueue.markAlbumImported(album, product.id);
+            skipped.push({ album, reason: "Nenhuma foto nova", data: marker });
+            continue;
+        }
 
         let note = "";
-        try {
-            const firstMeta = JSON.parse(fs.readFileSync(files[0] + ".json", "utf8"));
-            note = firstMeta.note || "";
-        } catch (_) {}
+        try { note = newFiles[0].fileMeta.note || ""; } catch (_) {}
 
-        const product = await ProductService.create({
-            title: album.replace(/[_-]+/g, " ").trim() || "Produto importado do TratoCap",
-            description: note,
-            quantity: 1,
-            condition: "used",
-            status: "NEW",
-            product_type: "",
-            ai_confidence: 0
-        });
+        if (!product) {
+            product = await ProductService.create({
+                title: album.replace(/[_-]+/g, " ").trim() || "Produto importado do TratoCap",
+                description: note,
+                quantity: 1,
+                condition: "used",
+                status: "NEW",
+                product_type: "",
+                ai_confidence: 0
+            });
+        }
 
         const savedImages = [];
-        for (let i = 0; i < files.length; i++) {
-            const source = files[i];
+        for (let i = 0; i < newFiles.length; i++) {
+            const source = newFiles[i].file;
+            const imageMeta = newFiles[i].fileMeta || {};
             const ext = path.extname(source).toLowerCase() || ".jpg";
             const base = `${uuidv4()}`;
             const originalName = base + ext;
@@ -368,10 +392,7 @@ async function importAlbums(requestedAlbum = null) {
             const originalPath = path.join(originalsRoot, originalName);
             const thumbPath = path.join(thumbsRoot, thumbName);
             const metadata = await sharp(source).metadata();
-            let imageMeta = {};
-            try {
-                imageMeta = JSON.parse(fs.readFileSync(source + ".json", "utf8"));
-            } catch (_) {}
+
             if (imageMeta.client_uuid) {
                 const syncJob = await SyncQueue.getByClientUuid(imageMeta.client_uuid);
                 if (syncJob?.status === "synced") {
@@ -380,11 +401,13 @@ async function importAlbums(requestedAlbum = null) {
                     imageMeta.drive_web_view_link = syncJob.drive_web_view_link || null;
                     imageMeta.drive_synced_at = syncJob.synced_at || null;
                     imageMeta.drive_sync_error = null;
+                    imageMeta.drive_sync_status = "synced";
                 } else if (syncJob) {
                     imageMeta.drive_sync_status = syncJob.status;
                     imageMeta.drive_sync_error = syncJob.last_error || null;
                 }
             }
+
             fs.copyFileSync(source, originalPath);
             await sharp(source).rotate().resize(250, 250, { fit: "inside", withoutEnlargement: true }).webp({ quality: 75 }).toFile(thumbPath);
             const image = await ProductImageService.create({
@@ -396,8 +419,8 @@ async function importAlbums(requestedAlbum = null) {
                 width: metadata.width || null,
                 height: metadata.height || null,
                 file_size: fs.statSync(source).size,
-                is_main: i === 0,
-                sort_order: i + 1,
+                is_main: existingImages.length === 0 && i === 0,
+                sort_order: existingImages.length + i + 1,
                 drive_file_id: imageMeta.drive_file_id || null,
                 drive_folder_id: imageMeta.drive_folder_id || null,
                 drive_web_view_link: imageMeta.drive_web_view_link || null,
@@ -410,7 +433,14 @@ async function importAlbums(requestedAlbum = null) {
             savedImages.push(image);
         }
 
-        const result = { album, product_id: product.id, images: savedImages.length, imported_at: new Date().toISOString() };
+        const result = {
+            album,
+            product_id: product.id,
+            images: existingImages.length + savedImages.length,
+            new_images: savedImages.length,
+            imported_at: new Date().toISOString(),
+            incremental: Boolean(marker)
+        };
         fs.writeFileSync(markerPath, JSON.stringify(result, null, 2), "utf8");
         await SyncQueue.markAlbumImported(album, product.id);
         imported.push(result);
