@@ -5,7 +5,7 @@
   const query = new URLSearchParams(location.search);
   if (query.has("oauth")) {
     status.textContent = query.get("oauth") === "connected"
-      ? "Conta Google autorizada. Selecione Produtos no Picker."
+      ? "Conta Google autorizada. Selecione FOTOS no Picker."
       : "Autorização não concluída. Confira a conta e tente novamente.";
     history.replaceState(null, "", location.pathname);
   }
@@ -62,7 +62,7 @@
             const folder = data.docs?.[0];
             await api("/selected-folder", { method: "POST", body: JSON.stringify({ fileId: folder?.id }) });
             document.getElementById("verify").disabled = false;
-            status.textContent = "Pasta Produtos validada. Execute o teste temporário antes de liberar uploads.";
+            status.textContent = "Pasta FOTOS validada. Execute o teste temporário antes de liberar uploads.";
           } catch (error) { status.textContent = error.message; }
         }).build();
       picker.setVisible(true);
