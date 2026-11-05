@@ -18,5 +18,15 @@ jobs:
           node-version: 24
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+      - name: Check changed JavaScript syntax
+        run: |
+          node --check api/routes/tratocap.js
+          node --check api/routes/googleDriveOAuth.js
+          node --check api/services/googleDriveOAuthService.js
+          node --check api/services/tratocapSyncQueue.service.js
+          node --check api/services/productImageService.js
+          node --check api/models/productImageModel.js
+          node --check public/google-drive-setup.js
+          node --check public/tratocap-central.js
       - name: Run focused gallery and Drive tests
         run: npm test
