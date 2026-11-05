@@ -83,6 +83,26 @@ test("falha temporária preserva o payload e agenda nova tentativa com backoff",
     assert.ok(db.calls.some(call => call.sql.includes("status = 'pending'") && call.sql.includes("last_error")));
 });
 
+
+test("payload do produto só é liberado depois da importação e sincronização", async () => {
+    const db = fakeDatabase(pendingJob());
+    const queue = loadQueueService(db);
+    await queue.markAlbumImported("Relogios", 17);
+    const update = db.calls.find(call => call.sql.includes("imported_product_id = $2"));
+    assert.ok(update);
+    assert.ok(update.sql.includes("CASE WHEN status = 'synced' THEN NULL ELSE payload END"));
+    assert.deepEqual(update.values, ["Relogios", 17]);
+});
+
+test("recuperação consulta todos os payloads de produtos ainda necessários", async () => {
+    const db = fakeDatabase(pendingJob());
+    const queue = loadQueueService(db);
+    await queue.getUnimportedProductImages();
+    const query = db.calls.find(call => call.sql.includes("SELECT *") && call.sql.includes("tratocap_sync_jobs"));
+    assert.ok(query.sql.includes("destination = 'product'"));
+    assert.ok(query.sql.includes("payload IS NOT NULL"));
+});
+
 test("conflito permanente de UUID/SHA fica em estado failed e não entra em retry automático", async () => {
     const db = fakeDatabase(pendingJob());
     const queue = loadQueueService(db);
