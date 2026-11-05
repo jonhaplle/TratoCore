@@ -30,6 +30,11 @@ CREATE TABLE IF NOT EXISTS tratocap_sync_jobs (
     album_name TEXT NOT NULL,
     file_name TEXT NOT NULL,
     mime_type TEXT NOT NULL,
+    destination TEXT NOT NULL DEFAULT 'product',
+    note TEXT,
+    original_name TEXT,
+    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    imported_product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
     payload BYTEA,
     status VARCHAR(20) NOT NULL DEFAULT 'pending'
         CHECK (status IN ('pending', 'processing', 'synced', 'failed')),
@@ -45,7 +50,12 @@ CREATE TABLE IF NOT EXISTS tratocap_sync_jobs (
 );
 
 ALTER TABLE tratocap_sync_jobs
-    ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS destination TEXT NOT NULL DEFAULT 'product',
+    ADD COLUMN IF NOT EXISTS note TEXT,
+    ADD COLUMN IF NOT EXISTS original_name TEXT,
+    ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS imported_product_id INTEGER REFERENCES products(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS idx_tratocap_sync_jobs_pending
     ON tratocap_sync_jobs(status, updated_at)
