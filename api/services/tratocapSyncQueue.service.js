@@ -181,6 +181,7 @@ async function markPending(job, error) {
         UPDATE tratocap_sync_jobs
         SET status = 'pending',
             last_error = $2,
+            next_retry_at = NOW() + make_interval(secs => LEAST(60 * attempts, 900)),
             updated_at = NOW()
         WHERE id = $1
     `, [job.id, message]);
