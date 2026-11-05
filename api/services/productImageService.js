@@ -37,7 +37,8 @@ async function create(data) {
 
         is_main: data.is_main ?? true,
 
-        sort_order: data.sort_order ?? 1,\n        selected_for_ml: data.selected_for_ml ?? true,
+        sort_order: data.sort_order ?? 1,
+        selected_for_ml: data.selected_for_ml ?? true,
 
         drive_file_id: data.drive_file_id || null,
         drive_folder_id: data.drive_folder_id || null,
@@ -58,7 +59,9 @@ async function create(data) {
 // LISTAR IMAGENS DO PRODUTO
 // ======================================================
 
-async function getByProductId(productId) {\n\n    await SyncQueue.ensureSchema();
+async function getByProductId(productId) {
+
+    await SyncQueue.ensureSchema();
 
     if (!productId) {
         throw new Error("ID do produto não informado.");
