@@ -86,7 +86,7 @@ router.get("/status", async (req, res) => {
         sistema: "TratoCore",
         modulo: "TratoCap Sync + Album Importer",
         status: "online",
-        versao: "2.2",
+        versao: "2.3",
         auto_import: true,
         auto_import_delay_ms: AUTO_IMPORT_DELAY_MS,
         albums_path: albumsRoot,
