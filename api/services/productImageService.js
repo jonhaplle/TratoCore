@@ -45,7 +45,8 @@ async function create(data) {
         client_uuid: data.client_uuid || null,
         sha256: data.sha256 || null,
         drive_sync_status: data.drive_sync_status || (data.drive_file_id ? "synced" : "pending"),
-        drive_sync_error: data.drive_sync_error || null,\n        drive_synced_at: data.drive_synced_at || null
+        drive_sync_error: data.drive_sync_error || null,
+        drive_synced_at: data.drive_synced_at || null
 
     };
 
