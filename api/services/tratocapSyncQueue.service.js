@@ -13,6 +13,7 @@ async function ensureSchema() {
                     ADD COLUMN IF NOT EXISTS client_uuid TEXT,
                     ADD COLUMN IF NOT EXISTS sha256 CHAR(64),
                     ADD COLUMN IF NOT EXISTS drive_sync_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    ADD COLUMN IF NOT EXISTS selected_for_ml BOOLEAN NOT NULL DEFAULT TRUE,
                     ADD COLUMN IF NOT EXISTS drive_sync_error TEXT,
                     ADD COLUMN IF NOT EXISTS drive_synced_at TIMESTAMPTZ
             `);
