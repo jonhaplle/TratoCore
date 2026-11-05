@@ -54,6 +54,7 @@
    $('serverBadge').className='tc-badge '+(status.status==='online'?'tc-online':'tc-offline');
    $('pendingSyncCount').textContent=Number(status.sync_queue?.pending || 0);
    $('syncedCount').textContent=Number(status.sync_queue?.synced || 0);
+   $('failedSyncCount').textContent=Number(status.sync_queue?.failed || 0);
   } catch(e) {
    $('serverBadge').textContent='Falha ao consultar servidor'; $('serverBadge').className='tc-badge tc-offline';
   }
