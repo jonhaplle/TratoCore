@@ -25,6 +25,8 @@ jobs:
           node --check api/services/googleDriveOAuthService.js
           node --check api/services/tratocapSyncQueue.service.js
           node --check api/services/tratocapSyncQueue.service.test.js
+          node --check api/services/productImageService.selection.test.js
+          node --check public/produto.js
           node --check api/services/productImageService.js
           node --check api/models/productImageModel.js
           node --check public/google-drive-setup.js
