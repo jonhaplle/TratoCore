@@ -149,7 +149,16 @@ router.get("/gallery", (req, res, next) => {
                 if (files.length) {
                     try { note = JSON.parse(fs.readFileSync(files[0] + ".json", "utf8")).note || ""; } catch (_) {}
                 }
-                return { album: e.name, images: files.length, note, destination: "gallery" };
+                return {
+                    album: e.name,
+                    images: files.length,
+                    note,
+                    destination: "gallery",
+                    photos: files.map(file => ({
+                        name: path.basename(file),
+                        url: "/storage/gallery/albums/" + encodeURIComponent(e.name) + "/" + encodeURIComponent(path.basename(file))
+                    }))
+                };
             });
         res.json({ success: true, gallery: albums });
     } catch (err) { next(err); }
