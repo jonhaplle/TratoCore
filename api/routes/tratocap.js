@@ -195,7 +195,12 @@ router.post("/upload", upload.single("image"), async (req, res, next) => {
             auto_import: destination === "product" ? "agendado" : "desativado",
             auto_import_delay_ms: destination === "product" ? AUTO_IMPORT_DELAY_MS : null
         });
-    } catch (err) { next(err); }
+    } catch (err) {
+        if (req.file?.path && fs.existsSync(req.file.path)) {
+            try { fs.unlinkSync(req.file.path); } catch (_) {}
+        }
+        next(err);
+    }
 });
 
 
