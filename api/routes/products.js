@@ -14,5 +14,6 @@ router.put("/:id", controller.update);
 router.delete("/:id", controller.remove);
 
 router.post("/:id/improve-ai", controller.improveWithAI);
+router.post("/:id/prepare-listing", controller.prepareListing);
 
 module.exports = router;

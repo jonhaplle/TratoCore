@@ -289,8 +289,9 @@ async function update(id, product) {
             color=$14,
             condition=$15,
             ai_confidence=$16,
-            ml_attributes=$17
-        WHERE id=$18
+            ml_attributes=$17,
+            ml_category_id=$18
+        WHERE id=$19
         RETURNING *
     `;
 
@@ -312,6 +313,7 @@ async function update(id, product) {
         product.condition || "used",
         Number(product.ai_confidence || 0),
         product.ml_attributes || product.attributes || null,
+        product.ml_category_id || null,
         id
     ];
 
