@@ -21,6 +21,8 @@ jobs:
       - name: Check changed JavaScript syntax
         run: |
           node --check api/routes/tratocap.js
+          node --check api/routes/productImages.js
+          node --check api/controllers/productImageController.js
           node --check api/routes/googleDriveOAuth.js
           node --check api/services/googleDriveOAuthService.js
           node --check api/services/tratocapSyncQueue.service.js
@@ -29,6 +31,8 @@ jobs:
           node --check public/produto.js
           node --check api/services/productImageService.js
           node --check api/models/productImageModel.js
+          node --check api/models/productModel.js
+          node --check api/services/ml/publish.service.js
           node --check public/google-drive-setup.js
           node --check public/tratocap-central.js
       - name: Run focused gallery and Drive tests
