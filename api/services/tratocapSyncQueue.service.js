@@ -7,6 +7,9 @@ async function ensureSchema() {
         schemaPromise = (async () => {
             await db.query(`
                 ALTER TABLE product_images
+                    ADD COLUMN IF NOT EXISTS drive_file_id TEXT,
+                    ADD COLUMN IF NOT EXISTS drive_folder_id TEXT,
+                    ADD COLUMN IF NOT EXISTS drive_web_view_link TEXT,
                     ADD COLUMN IF NOT EXISTS client_uuid TEXT,
                     ADD COLUMN IF NOT EXISTS sha256 CHAR(64),
                     ADD COLUMN IF NOT EXISTS drive_sync_status VARCHAR(20) NOT NULL DEFAULT 'pending',
