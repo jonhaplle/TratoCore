@@ -91,13 +91,13 @@ function createGoogleDriveOAuthRouter(options = {}) {
     router.post("/selected-folder", requireAdmin, async (req, res) => {
         const fileId = String(req.body?.fileId || "");
         if (!/^[a-zA-Z0-9_-]+$/.test(fileId)) {
-            return res.status(400).json({ success: false, error: "Selecione a pasta Produtos pelo Google Picker." });
+            return res.status(400).json({ success: false, error: "Selecione a pasta FOTOS pelo Google Picker." });
         }
         try {
             res.set("Cache-Control", "no-store");
-            return res.json({ success: true, folder: await service.selectProductsFolder(fileId) });
+            return res.json({ success: true, folder: await service.selectRootFolder(fileId) });
         } catch (_) {
-            return res.status(400).json({ success: false, error: "A pasta selecionada não pôde ser validada como Produtos." });
+            return res.status(400).json({ success: false, error: "A pasta selecionada não pôde ser validada como FOTOS." });
         }
     });
 

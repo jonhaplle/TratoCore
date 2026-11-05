@@ -52,6 +52,9 @@
    const status=await api('status');
    $('serverBadge').textContent=status.status==='online'?'Servidor online · v'+escapeHtml(status.versao):'Servidor indisponível';
    $('serverBadge').className='tc-badge '+(status.status==='online'?'tc-online':'tc-offline');
+   $('pendingSyncCount').textContent=Number(status.sync_queue?.pending || 0);
+   $('syncedCount').textContent=Number(status.sync_queue?.synced || 0);
+   $('failedSyncCount').textContent=Number(status.sync_queue?.failed || 0);
   } catch(e) {
    $('serverBadge').textContent='Falha ao consultar servidor'; $('serverBadge').className='tc-badge tc-offline';
   }
@@ -67,11 +70,31 @@
    $('albumsList').innerHTML=''; $('albumCount').textContent='—'; $('photoCount').textContent='—'; $('importedCount').textContent='—';
   }
   try {
-   const data=await api('gallery');
-   renderAlbums('galleryList','galleryState',data.gallery||[],'Nenhum álbum na galeria.',true);
+   const localData=await api('gallery');
+   renderAlbums('localGalleryList','localGalleryState',localData.gallery||[],'Nenhum álbum na galeria local.',true);
   } catch(e) {
-   $('galleryState').hidden=false; $('galleryState').textContent='Não foi possível carregar a galeria: '+e.message;
+   $('localGalleryState').hidden=false;
+   $('localGalleryState').textContent='Não foi possível carregar a galeria local: '+e.message;
+   $('localGalleryList').innerHTML='';
+  }
+  try {
+   const adminKey=sessionStorage.getItem('googleDriveAdminKey');
+   if(!adminKey) throw new Error('Abra Configurar Google Drive, informe a chave administrativa e volte para esta página.');
+   const response=await fetch('/api/tratocap/drive-gallery',{headers:{Accept:'application/json',Authorization:'Bearer '+adminKey}});
+   const data=await response.json().catch(()=>({}));
+   if(!response.ok) throw new Error(data.erro || data.error || ('HTTP '+response.status));
+   renderAlbums('galleryList','galleryState',data.gallery||[],'Nenhum álbum encontrado na pasta FOTOS.',true);
+  } catch(e) {
+   $('galleryState').hidden=false; $('galleryState').textContent='Galeria permanente: '+e.message+' ';
    $('galleryList').innerHTML='';
+   if(!document.querySelector('[data-drive-setup-link]')) {
+    const link=document.createElement('a');
+    link.href='google-drive-setup.html';
+    link.textContent='Configurar Google Drive';
+    link.dataset.driveSetupLink='true';
+    link.className='tc-back';
+    $('galleryState').appendChild(link);
+   }
   }
   $('refreshBtn').disabled=false; $('refreshBtn').textContent='Atualizar dados';
  }

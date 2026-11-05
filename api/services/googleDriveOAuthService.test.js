@@ -26,9 +26,10 @@ function fixture(tokenResponse = { access_token: "short-lived", refresh_token: "
         async get(options) {
             calls.push({ get: options });
             if (options.alt === "media") return { data: Buffer.from(lastContent, "utf8") };
-            return { data: { id: options.fileId, name: "Produtos", mimeType: "application/vnd.google-apps.folder" } };
+            return { data: { id: options.fileId, name: "FOTOS", mimeType: "application/vnd.google-apps.folder" } };
         },
-        async create(options) { calls.push({ create: options }); return { data: { id: "drive-file-1", name: options.requestBody.name, mimeType: options.media.mimeType } }; },
+        async create(options) { calls.push({ create: options }); return { data: { id: options.requestBody.mimeType ? "album-folder-1" : "drive-file-1", name: options.requestBody.name, mimeType: options.requestBody.mimeType || options.media?.mimeType } }; },
+        async list(options) { calls.push({ list: options }); return { data: { files: [] } }; },
         async delete(options) { calls.push({ delete: options }); }
     };
     let lastContent = "";
@@ -36,11 +37,11 @@ function fixture(tokenResponse = { access_token: "short-lived", refresh_token: "
         ...files,
         async create(options) {
             calls.push({ create: options });
-            if (Buffer.isBuffer(options.media.body)) lastContent = options.media.body.toString("utf8");
-            else if (options.media.body?.[Symbol.asyncIterator]) {
+            if (Buffer.isBuffer(options.media?.body)) lastContent = options.media.body.toString("utf8");
+            else if (options.media?.body?.[Symbol.asyncIterator]) {
                 for await (const chunk of options.media.body) lastContent += chunk.toString("utf8");
             }
-            return { data: { id: "drive-file-1", name: options.requestBody.name, mimeType: options.media.mimeType } };
+            return { data: { id: options.requestBody.mimeType ? "album-folder-1" : "drive-file-1", name: options.requestBody.name, mimeType: options.requestBody.mimeType || options.media?.mimeType } };
         }
     } };
     const google = { auth: { OAuth2 }, drive: () => driveApi };
@@ -83,11 +84,11 @@ test("Picker config returns scoped short-lived access token, API key and project
     assert.ok(calls.some(call => call.credentials?.refresh_token === "refresh"), "refresh token is supplied to OAuth client for automatic access-token renewal");
 });
 
-test("only existing Produtos folder can be selected and selecting resets write verification", async () => {
+test("only existing FOTOS folder can be selected and selecting resets write verification", async () => {
     const { service, state } = fixture();
     state.refreshToken = "refresh";
     state.writeVerifiedAt = new Date();
-    assert.deepEqual(await service.selectProductsFolder("existing-products-id"), { id: "existing-products-id", name: "Produtos" });
+    assert.deepEqual(await service.selectRootFolder("existing-products-id"), { id: "existing-products-id", name: "FOTOS" });
     assert.equal(state.writeVerifiedAt, null);
 });
 
@@ -95,7 +96,7 @@ test("upload uses the selected folder, returns confirmed Drive ID, and rejects b
     const { service, state, calls } = fixture();
     state.refreshToken = "refresh";
     state.selectedFolderId = "products-folder-id";
-    state.selectedFolderName = "Produtos";
+    state.selectedFolderName = "FOTOS";
     const temp = path.join(os.tmpdir(), `tratocore-upload-${Date.now()}.txt`);
     fs.writeFileSync(temp, "non-product test payload");
     try {
@@ -107,11 +108,36 @@ test("upload uses the selected folder, returns confirmed Drive ID, and rejects b
     } finally { fs.unlinkSync(temp); }
 });
 
+test("uploadBuffer creates the album below FOTOS and uploads the original bytes", async () => {
+    const { service, state, calls } = fixture();
+    state.refreshToken = "refresh";
+    state.selectedFolderId = "fotos-folder-id";
+    state.selectedFolderName = "FOTOS";
+    state.writeVerifiedAt = new Date();
+
+    const uploaded = await service.uploadBuffer(
+        Buffer.from("original-image-bytes"),
+        "photo-uuid.jpg",
+        "image/jpeg",
+        "Relogios",
+        "photo-uuid"
+    );
+
+    assert.equal(uploaded.id, "drive-file-1");
+    assert.equal(uploaded.folder_id, "album-folder-1");
+    const folderCreate = calls.find(call => call.create?.requestBody?.mimeType);
+    const imageCreate = calls.find(call => call.create?.media);
+    assert.equal(folderCreate.create.requestBody.parents[0], "fotos-folder-id");
+    assert.equal(folderCreate.create.requestBody.name, "Relogios");
+    assert.equal(imageCreate.create.requestBody.parents[0], "album-folder-1");
+    assert.equal(imageCreate.create.requestBody.appProperties.tratocore_client_uuid, "photo-uuid");
+});
+
 test("temporary verification reads matching content and deletes the file", async () => {
     const { service, state, calls } = fixture();
     state.refreshToken = "refresh";
     state.selectedFolderId = "products-folder-id";
-    state.selectedFolderName = "Produtos";
+    state.selectedFolderName = "FOTOS";
     const result = await service.verifyWrite();
     assert.deepEqual(result, { success: true, verified: true });
     assert.equal(calls.filter(call => call.delete).length, 1);
@@ -122,9 +148,12 @@ test("failed read cleans up temporary file and does not mark verified", async ()
     const { service, state } = fixture();
     state.refreshToken = "refresh";
     state.selectedFolderId = "products-folder-id";
-    state.selectedFolderName = "Produtos";
+    state.selectedFolderName = "FOTOS";
     const { drive } = await service.getAuthorizedDrive();
-    drive.files.get = async () => ({ data: Buffer.from("wrong") });
-    await assert.rejects(service.verifyWrite(), /did not match/);
+    const originalGet = drive.files.get.bind(drive.files);
+    drive.files.get = async options => options.alt === "media"
+        ? ({ data: Buffer.from("wrong") })
+        : originalGet(options);
+    await assert.rejects(service.verifyWrite(), /não corresponde/);
     assert.equal(state.writeVerifiedAt, null);
 });

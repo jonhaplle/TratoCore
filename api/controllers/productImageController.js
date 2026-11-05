@@ -150,6 +150,28 @@ async function setMainImage(req, res) {
 // REMOVER
 // ======================================================
 
+
+async function updateSelection(req, res) {
+    try {
+        const result = await ProductImageService.updateSelection(
+            req.params.productId,
+            req.body?.selected_image_ids,
+            req.body?.main_image_id
+        );
+        return res.status(200).json({
+            success: true,
+            message: "Seleção e ordem das imagens atualizadas.",
+            data: result
+        });
+    } catch (err) {
+        console.error(err);
+        return res.status(err.status || 400).json({
+            success: false,
+            message: err.message
+        });
+    }
+}
+
 async function remove(req, res) {
 
     try {
@@ -188,6 +210,7 @@ module.exports = {
     getByProductId,
     getMainImage,
     setMainImage,
+    updateSelection,
     remove
 
 };

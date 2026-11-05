@@ -1,4 +1,5 @@
 const db = require("../db");
+const SyncQueue = require("../services/tratocapSyncQueue.service");
 
 function normalizeImageUrl(value) {
     if (!value) return null;
@@ -68,6 +69,8 @@ function normalizeImageFields(product) {
 
 async function getAll() {
 
+    await SyncQueue.ensureSchema();
+
     const sql = `
         SELECT
 
@@ -86,7 +89,8 @@ async function getAll() {
                         'thumb_url', img.thumb_url,
                         'is_main', img.is_main,
                         'sort_order', img.sort_order,
-                        'drive_file_id', img.drive_file_id
+                        'drive_file_id', img.drive_file_id,
+                        'selected_for_ml', img.selected_for_ml
                     )
                     ORDER BY img.is_main DESC, img.sort_order ASC, img.id ASC
                 )
@@ -123,6 +127,8 @@ async function getAll() {
 
 async function getById(id) {
 
+    await SyncQueue.ensureSchema();
+
     const sql = `
         SELECT
 
@@ -142,7 +148,8 @@ async function getById(id) {
                         'thumb_url', img.thumb_url,
                         'is_main', img.is_main,
                         'sort_order', img.sort_order,
-                        'drive_file_id', img.drive_file_id
+                        'drive_file_id', img.drive_file_id,
+                        'selected_for_ml', img.selected_for_ml
                     )
                     ORDER BY img.is_main DESC, img.sort_order ASC, img.id ASC
                 )

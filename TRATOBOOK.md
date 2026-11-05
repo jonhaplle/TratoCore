@@ -93,11 +93,15 @@ Servidor Node funcionando.
 
 Executável utilizado:
 
-C:\Program Files\nodejs\node.exe
+C:\Program Files
+odejs
+ode.exe
 
 Inicialização conhecida:
 
-"C:\Program Files\nodejs\node.exe" C:\TratoCore\api\server.js
+"C:\Program Files
+odejs
+ode.exe" C:\TratoCore\api\server.js
 
 Servidor:
 
@@ -276,7 +280,9 @@ storage/temp
 
 O upload.js foi validado com:
 
-"C:\Program Files\nodejs\node.exe" --check
+"C:\Program Files
+odejs
+ode.exe" --check
 C:\TratoCore\api\routes\upload.js
 
 Resultado:
@@ -1401,18 +1407,24 @@ testar navegador, quando aplicável.
 
 Verificar Node:
 
-"C:\Program Files\nodejs\node.exe" --version
+"C:\Program Files
+odejs
+ode.exe" --version
 
 
 Verificar sintaxe:
 
-"C:\Program Files\nodejs\node.exe" --check
+"C:\Program Files
+odejs
+ode.exe" --check
 "C:\TratoCore\arquivo.js"
 
 
 Iniciar servidor:
 
-"C:\Program Files\nodejs\node.exe"
+"C:\Program Files
+odejs
+ode.exe"
 "C:\TratoCore\api\server.js"
 
 
@@ -1442,7 +1454,9 @@ não foi reconhecido pelo PATH.
 
 Foi resolvido utilizando:
 
-C:\Program Files\nodejs\node.exe
+C:\Program Files
+odejs
+ode.exe
 
 
 Em algumas ocasiões:
@@ -1462,7 +1476,8 @@ também não foi reconhecido diretamente.
 
 Foi localizado:
 
-C:\Windows\System32\notepad.exe
+C:\Windows\System32
+otepad.exe
 
 
 Portanto, quando o PATH falhar, utilizar o caminho completo.
@@ -1494,7 +1509,8 @@ Para editar arquivos:
 
 usar:
 
-C:\Windows\System32\notepad.exe
+C:\Windows\System32
+otepad.exe
 C:\TratoCore\arquivo
 
 
@@ -2520,3 +2536,127 @@ BUSCA REAL DE CANDIDATOS → MATCHER → TESTE XBOX CLASSIC.
 ============================================================
 FIM DA ATUALIZAÇÃO — 12/08/2026 — VERSÃO 5.1
 ============================================================
+
+
+============================================================
+TRATOBOOK — GALERIA DEFINITIVA / FASE 1
+============================================================
+
+Branch de trabalho:
+feature/galeria-definitiva
+
+Pull Request:
+#17 — Galeria definitiva: FOTOS, sincronização durável e visualização do Drive
+
+REGRA:
+A branch main não foi alterada. Não mesclar o PR antes da validação
+automatizada e dos testes reais no Render/Google Drive.
+
+ARQUITETURA IMPLEMENTADA NA BRANCH:
+
+Google Drive:
+- A pasta raiz selecionada pelo Picker deve se chamar FOTOS.
+- Cada álbum recebido pelo TratoCap é criado como subpasta de FOTOS.
+- O serviço mantém o escopo OAuth drive.file.
+- O método selectProductsFolder permanece como alias de compatibilidade,
+  mas a pasta aceita agora é FOTOS.
+- O upload usa client_uuid como nome estável e appProperties.
+- O serviço procura arquivo existente no álbum antes de criar outro.
+
+SINCRONIZAÇÃO DURÁVEL:
+- Novo serviço: api/services/tratocapSyncQueue.service.js
+- Nova tabela: tratocap_sync_jobs
+- A cópia binária da imagem é guardada em PostgreSQL (BYTEA) enquanto
+  a sincronização está pendente.
+- Para destino gallery, o payload é limpo após confirmação do Drive.
+- Para destino product, o payload permanece no PostgreSQL até o Drive confirmar e o álbum ser importado como produto; só então é limpo.
+- Se o Render reiniciar antes da importação, os álbuns não importados são reconstruídos a partir do payload persistido e a importação automática é reagendada.
+- Worker tenta sincronizar até 10 itens por ciclo, a cada 15 segundos.
+- Jobs em estado processing há mais de 10 minutos podem ser retomados.
+- Falhas deixam a imagem pendente e preservam o payload para retry.
+- client_uuid e SHA-256 são usados para impedir reutilização conflitante.
+
+METADADOS:
+product_images recebe:
+- client_uuid
+- sha256
+- drive_sync_status
+- drive_sync_error
+- drive_synced_at
+- drive_file_id
+- drive_folder_id
+- drive_web_view_link
+
+MIGRATION:
+sql/025_tratocap_gallery_sync.sql
+
+O serviço ensureSchema também cria/verifica essas estruturas de forma
+idempotente na primeira operação de sincronização ou gravação de imagem.
+
+GALERIA:
+- GET /api/tratocap/drive-gallery lista álbuns e imagens dentro de FOTOS.
+- A rota exige Authorization: Bearer GOOGLE_OAUTH_ADMIN_KEY.
+- As imagens são exibidas pela rota de proxy do TratoCore (a rota de imagem existente ainda exige revisão de autenticação).
+- A Central TratoCap mostra pendências e sincronizações concluídas.
+- A chave administrativa é reutilizada da sessionStorage da página
+  google-drive-setup.html na mesma sessão do navegador.
+
+TESTES:
+- api/services/googleDriveOAuthService.test.js atualizado para FOTOS.
+- Cobertura adicionada para criação de subpasta e upload de bytes originais.
+- package.json inclui npm test com os testes focados de Drive/galeria.
+- Workflow .github/workflows/tratocore-gallery-checks.yml verifica
+  sintaxe dos arquivos alterados e executa npm test.
+
+PENDÊNCIAS ANTES DE MESCLAR:
+1. Confirmar GitHub Actions verde.
+2. Selecionar a pasta FOTOS existente no Google Picker.
+3. Executar teste de gravação/leitura/exclusão de TXT.
+4. Enviar fotos reais pelo TratoCap.
+5. Confirmar criação de FOTOS/<nome-do-album> no Drive.
+6. Simular indisponibilidade do Drive e confirmar retry após recuperação.
+7. Confirmar importação de produto e vínculo das imagens em product_images.
+8. Confirmar a Central TratoCap lendo a galeria do Drive no Render.
+9. Revisar autenticação e exposição das rotas de imagens antes de produção.
+
+NÃO FOI FEITO:
+- Nenhuma alteração na main.
+- Nenhuma mesclagem do PR.
+- Nenhuma alteração de variável no Render.
+- Nenhuma operação de escrita/exclusão no Google Drive real.
+- Nenhuma publicação ou alteração no Mercado Livre.
+
+============================================================
+FIM DA ATUALIZAÇÃO — GALERIA DEFINITIVA / FASE 1
+============================================================
+
+
+ATUALIZAÇÃO COMPLEMENTAR — SELEÇÃO PARA MERCADO LIVRE:
+
+- product_images recebe selected_for_ml BOOLEAN DEFAULT TRUE.
+- GET /api/products/:id retorna selected_for_ml em cada imagem.
+- PUT /api/product-images/product/:productId/selection salva IDs selecionados,
+  ordem e imagem principal.
+- A interface public/produto.html permite marcar/desmarcar imagens,
+  definir a principal e reordenar.
+- O limite de seleção é de 10 imagens.
+- publish.service.js utiliza somente imagens selected_for_ml=true,
+  com a imagem principal primeiro e a ordem salva.
+- Imagens antigas permanecem selecionadas por padrão para preservar
+  o comportamento anterior.
+
+TESTES ADICIONAIS:
+- api/services/tratocapSyncQueue.service.test.js
+- api/services/productImageService.selection.test.js
+- npm test executa os testes focados de Drive, fila e seleção de imagens.
+
+
+ATUALIZAÇÃO — RECUPERAÇÃO DURÁVEL DE IMPORTAÇÃO:
+- A fila guarda destination, note, original_name e received_at.
+- Para destino product, o payload BYTEA permanece até que Drive e importação
+  do produto estejam confirmados.
+- A recuperação na inicialização restaura os arquivos dos álbuns ainda não
+  importados e reagenda a importação automática.
+- Depois da confirmação de Drive e da importação, o payload é liberado.
+- Para destino gallery, o payload é liberado assim que o Drive confirma.
+- Versão do módulo TratoCap nesta branch: 2.3.

@@ -1,0 +1,39 @@
+name: TratoCore gallery checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feature/galeria-definitiva]
+
+jobs:
+  gallery-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Check changed JavaScript syntax
+        run: |
+          node --check api/routes/tratocap.js
+          node --check api/routes/productImages.js
+          node --check api/controllers/productImageController.js
+          node --check api/routes/googleDriveOAuth.js
+          node --check api/services/googleDriveOAuthService.js
+          node --check api/services/tratocapSyncQueue.service.js
+          node --check api/services/tratocapSyncQueue.service.test.js
+          node --check api/services/productImageService.selection.test.js
+          node --check public/produto.js
+          node --check api/services/productImageService.js
+          node --check api/models/productImageModel.js
+          node --check api/models/productModel.js
+          node --check api/services/ml/publish.service.js
+          node --check public/google-drive-setup.js
+          node --check public/tratocap-central.js
+      - name: Run focused gallery and Drive tests
+        run: npm test
