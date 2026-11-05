@@ -63,7 +63,7 @@ test("fila persistente envia bytes originais e registra confirmação do Drive",
     assert.equal(calls[0][1], "photo-uuid.jpg");
     assert.equal(calls[0][3], "Relogios");
     assert.equal(calls[0][4], "photo-uuid");
-    assert.ok(db.calls.some(call => call.sql.includes("payload = NULL")));
+    assert.ok(db.calls.some(call => call.sql.includes("payload = CASE") && call.sql.includes("imported_product_id IS NOT NULL")));
     assert.ok(db.calls.some(call => call.sql.includes("UPDATE product_images") && call.sql.includes("drive_sync_status = 'synced'")));
 });
 
