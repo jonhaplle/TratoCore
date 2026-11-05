@@ -95,7 +95,7 @@ test("upload uses the selected folder, returns confirmed Drive ID, and rejects b
     const { service, state, calls } = fixture();
     state.refreshToken = "refresh";
     state.selectedFolderId = "products-folder-id";
-    state.selectedFolderName = "Produtos";
+    state.selectedFolderName = "FOTOS";
     const temp = path.join(os.tmpdir(), `tratocore-upload-${Date.now()}.txt`);
     fs.writeFileSync(temp, "non-product test payload");
     try {
@@ -111,7 +111,7 @@ test("temporary verification reads matching content and deletes the file", async
     const { service, state, calls } = fixture();
     state.refreshToken = "refresh";
     state.selectedFolderId = "products-folder-id";
-    state.selectedFolderName = "Produtos";
+    state.selectedFolderName = "FOTOS";
     const result = await service.verifyWrite();
     assert.deepEqual(result, { success: true, verified: true });
     assert.equal(calls.filter(call => call.delete).length, 1);
@@ -122,7 +122,7 @@ test("failed read cleans up temporary file and does not mark verified", async ()
     const { service, state } = fixture();
     state.refreshToken = "refresh";
     state.selectedFolderId = "products-folder-id";
-    state.selectedFolderName = "Produtos";
+    state.selectedFolderName = "FOTOS";
     const { drive } = await service.getAuthorizedDrive();
     drive.files.get = async () => ({ data: Buffer.from("wrong") });
     await assert.rejects(service.verifyWrite(), /did not match/);
