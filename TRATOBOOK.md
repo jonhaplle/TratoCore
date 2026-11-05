@@ -2578,7 +2578,7 @@ idempotente na primeira operação de sincronização ou gravação de imagem.
 GALERIA:
 - GET /api/tratocap/drive-gallery lista álbuns e imagens dentro de FOTOS.
 - A rota exige Authorization: Bearer GOOGLE_OAUTH_ADMIN_KEY.
-- As imagens são exibidas pela rota privada de proxy do TratoCore.
+- As imagens são exibidas pela rota de proxy do TratoCore (a rota de imagem existente ainda exige revisão de autenticação).
 - A Central TratoCap mostra pendências e sincronizações concluídas.
 - A chave administrativa é reutilizada da sessionStorage da página
   google-drive-setup.html na mesma sessão do navegador.
