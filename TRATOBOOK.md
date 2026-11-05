@@ -2611,3 +2611,23 @@ NÃO FOI FEITO:
 ============================================================
 FIM DA ATUALIZAÇÃO — GALERIA DEFINITIVA / FASE 1
 ============================================================
+
+
+ATUALIZAÇÃO COMPLEMENTAR — SELEÇÃO PARA MERCADO LIVRE:
+
+- product_images recebe selected_for_ml BOOLEAN DEFAULT TRUE.
+- GET /api/products/:id retorna selected_for_ml em cada imagem.
+- PUT /api/product-images/product/:productId/selection salva IDs selecionados,
+  ordem e imagem principal.
+- A interface public/produto.html permite marcar/desmarcar imagens,
+  definir a principal e reordenar.
+- O limite de seleção é de 10 imagens.
+- publish.service.js utiliza somente imagens selected_for_ml=true,
+  com a imagem principal primeiro e a ordem salva.
+- Imagens antigas permanecem selecionadas por padrão para preservar
+  o comportamento anterior.
+
+TESTES ADICIONAIS:
+- api/services/tratocapSyncQueue.service.test.js
+- api/services/productImageService.selection.test.js
+- npm test executa os testes focados de Drive, fila e seleção de imagens.
