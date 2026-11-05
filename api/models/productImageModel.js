@@ -25,7 +25,8 @@ async function create(image) {
             client_uuid,
             sha256,
             drive_sync_status,
-            drive_sync_error
+            drive_sync_error,
+            drive_synced_at
         )
         VALUES
         (
@@ -52,7 +53,8 @@ async function create(image) {
         image.client_uuid || null,
         image.sha256 || null,
         image.drive_sync_status || (image.drive_file_id ? "synced" : "pending"),
-        image.drive_sync_error || null
+        image.drive_sync_error || null,
+        image.drive_synced_at || null
 
     ];
 
