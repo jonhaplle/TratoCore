@@ -58,7 +58,7 @@ async function create(data) {
 // LISTAR IMAGENS DO PRODUTO
 // ======================================================
 
-async function getByProductId(productId) {
+async function getByProductId(productId) {\n\n    await SyncQueue.ensureSchema();
 
     if (!productId) {
         throw new Error("ID do produto não informado.");
