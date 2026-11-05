@@ -184,6 +184,7 @@ module.exports = {
     getByProductId,
     getMainImage,
     setMainImage,
+    updateSelection,
     remove
 
 };
