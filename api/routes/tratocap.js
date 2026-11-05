@@ -375,7 +375,8 @@ async function importAlbums(requestedAlbum = null) {
                 client_uuid: imageMeta.client_uuid || null,
                 sha256: imageMeta.sha256 || null,
                 drive_sync_status: imageMeta.drive_file_id ? "synced" : "pending",
-                drive_sync_error: imageMeta.drive_sync_error || null
+                drive_sync_error: imageMeta.drive_sync_error || null,
+                drive_synced_at: imageMeta.drive_synced_at || null
             });
             savedImages.push(image);
         }
