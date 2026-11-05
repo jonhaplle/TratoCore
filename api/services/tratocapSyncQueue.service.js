@@ -40,6 +40,7 @@ async function ensureSchema() {
                     payload BYTEA,
                     status VARCHAR(20) NOT NULL DEFAULT 'pending'
                         CHECK (status IN ('pending', 'processing', 'synced')),
+                    next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     attempts INTEGER NOT NULL DEFAULT 0,
                     last_error TEXT,
                     drive_file_id TEXT,
@@ -49,6 +50,10 @@ async function ensureSchema() {
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     synced_at TIMESTAMPTZ
                 )
+            `);
+            await db.query(`
+                ALTER TABLE tratocap_sync_jobs
+                    ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             `);
             await db.query(`
                 CREATE INDEX IF NOT EXISTS idx_tratocap_sync_jobs_pending
@@ -107,7 +112,7 @@ async function claimNext() {
         WITH candidate AS (
             SELECT id
             FROM tratocap_sync_jobs
-            WHERE status = 'pending'
+            WHERE (status = 'pending' AND next_retry_at <= NOW())
                OR (status = 'processing' AND updated_at < NOW() - INTERVAL '10 minutes')
             ORDER BY created_at ASC
             FOR UPDATE SKIP LOCKED
