@@ -356,6 +356,18 @@ async function importAlbums(requestedAlbum = null) {
             try {
                 imageMeta = JSON.parse(fs.readFileSync(source + ".json", "utf8"));
             } catch (_) {}
+            if (imageMeta.client_uuid) {
+                const syncJob = await SyncQueue.getByClientUuid(imageMeta.client_uuid);
+                if (syncJob?.status === "synced") {
+                    imageMeta.drive_file_id = syncJob.drive_file_id;
+                    imageMeta.drive_folder_id = syncJob.drive_folder_id;
+                    imageMeta.drive_web_view_link = syncJob.drive_web_view_link || null;
+                    imageMeta.drive_synced_at = syncJob.synced_at || null;
+                    imageMeta.drive_sync_error = null;
+                } else if (syncJob?.last_error) {
+                    imageMeta.drive_sync_error = syncJob.last_error;
+                }
+            }
             fs.copyFileSync(source, originalPath);
             await sharp(source).rotate().resize(250, 250, { fit: "inside", withoutEnlargement: true }).webp({ quality: 75 }).toFile(thumbPath);
             const image = await ProductImageService.create({
