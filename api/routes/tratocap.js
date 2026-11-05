@@ -112,7 +112,8 @@ router.post("/upload", upload.single("image"), async (req, res, next) => {
         const bytes = fs.readFileSync(req.file.path);
         const sha256 = crypto.createHash("sha256").update(bytes).digest("hex");
 
-        if (fs.existsSync(target)) {
+        const targetExists = fs.existsSync(target);
+        if (targetExists) {
             let previous = {};
             try { previous = JSON.parse(fs.readFileSync(target + ".json", "utf8")); } catch (_) {}
             const previousHash = previous.sha256 || crypto.createHash("sha256").update(fs.readFileSync(target)).digest("hex");
@@ -120,9 +121,6 @@ router.post("/upload", upload.single("image"), async (req, res, next) => {
                 fs.unlinkSync(req.file.path);
                 return res.status(409).json({ success: false, code: "TRATOCAP_UUID_CONFLICT", erro: "Este client_uuid já foi utilizado para outra imagem." });
             }
-            fs.unlinkSync(req.file.path);
-        } else {
-            fs.renameSync(req.file.path, target);
         }
 
         const meta = {
@@ -134,10 +132,12 @@ router.post("/upload", upload.single("image"), async (req, res, next) => {
             received_at: new Date().toISOString(),
             original_name: req.file.originalname || "",
             file_name: fileName,
-            file_size: fs.statSync(target).size,
+            file_size: bytes.length,
             drive_sync_status: "pending"
         };
 
+        // Primeiro persiste os bytes no PostgreSQL. Se o Render reiniciar
+        // antes da gravação local, a rotina de recuperação reconstrói o álbum.
         await SyncQueue.ensureSchema();
         await SyncQueue.enqueue({
             client_uuid: clientUuid,
@@ -151,6 +151,11 @@ router.post("/upload", upload.single("image"), async (req, res, next) => {
             received_at: meta.received_at,
             payload: bytes
         });
+
+        if (targetExists) fs.unlinkSync(req.file.path);
+        else fs.renameSync(req.file.path, target);
+        fs.writeFileSync(target + ".json", JSON.stringify(meta, null, 2), "utf8");
+
         // A fila é durável no PostgreSQL. Uma falha de rede/Drive não perde a foto.
         await runSyncWorker();
         const job = await SyncQueue.getByClientUuid(clientUuid);
