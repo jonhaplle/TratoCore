@@ -2520,3 +2520,94 @@ BUSCA REAL DE CANDIDATOS → MATCHER → TESTE XBOX CLASSIC.
 ============================================================
 FIM DA ATUALIZAÇÃO — 12/08/2026 — VERSÃO 5.1
 ============================================================
+
+
+============================================================
+TRATOBOOK — GALERIA DEFINITIVA / FASE 1
+============================================================
+
+Branch de trabalho:
+feature/galeria-definitiva
+
+Pull Request:
+#17 — Galeria definitiva: FOTOS, sincronização durável e visualização do Drive
+
+REGRA:
+A branch main não foi alterada. Não mesclar o PR antes da validação
+automatizada e dos testes reais no Render/Google Drive.
+
+ARQUITETURA IMPLEMENTADA NA BRANCH:
+
+Google Drive:
+- A pasta raiz selecionada pelo Picker deve se chamar FOTOS.
+- Cada álbum recebido pelo TratoCap é criado como subpasta de FOTOS.
+- O serviço mantém o escopo OAuth drive.file.
+- O método selectProductsFolder permanece como alias de compatibilidade,
+  mas a pasta aceita agora é FOTOS.
+- O upload usa client_uuid como nome estável e appProperties.
+- O serviço procura arquivo existente no álbum antes de criar outro.
+
+SINCRONIZAÇÃO DURÁVEL:
+- Novo serviço: api/services/tratocapSyncQueue.service.js
+- Nova tabela: tratocap_sync_jobs
+- A cópia binária da imagem é guardada em PostgreSQL (BYTEA) enquanto
+  a sincronização está pendente.
+- Após confirmação do Drive, o payload binário é limpo da fila.
+- Worker tenta sincronizar até 10 itens por ciclo, a cada 15 segundos.
+- Jobs em estado processing há mais de 10 minutos podem ser retomados.
+- Falhas deixam a imagem pendente e preservam o payload para retry.
+- client_uuid e SHA-256 são usados para impedir reutilização conflitante.
+
+METADADOS:
+product_images recebe:
+- client_uuid
+- sha256
+- drive_sync_status
+- drive_sync_error
+- drive_synced_at
+- drive_file_id
+- drive_folder_id
+- drive_web_view_link
+
+MIGRATION:
+sql/025_tratocap_gallery_sync.sql
+
+O serviço ensureSchema também cria/verifica essas estruturas de forma
+idempotente na primeira operação de sincronização ou gravação de imagem.
+
+GALERIA:
+- GET /api/tratocap/drive-gallery lista álbuns e imagens dentro de FOTOS.
+- A rota exige Authorization: Bearer GOOGLE_OAUTH_ADMIN_KEY.
+- As imagens são exibidas pela rota privada de proxy do TratoCore.
+- A Central TratoCap mostra pendências e sincronizações concluídas.
+- A chave administrativa é reutilizada da sessionStorage da página
+  google-drive-setup.html na mesma sessão do navegador.
+
+TESTES:
+- api/services/googleDriveOAuthService.test.js atualizado para FOTOS.
+- Cobertura adicionada para criação de subpasta e upload de bytes originais.
+- package.json inclui npm test com os testes focados de Drive/galeria.
+- Workflow .github/workflows/tratocore-gallery-checks.yml verifica
+  sintaxe dos arquivos alterados e executa npm test.
+
+PENDÊNCIAS ANTES DE MESCLAR:
+1. Confirmar GitHub Actions verde.
+2. Selecionar a pasta FOTOS existente no Google Picker.
+3. Executar teste de gravação/leitura/exclusão de TXT.
+4. Enviar fotos reais pelo TratoCap.
+5. Confirmar criação de FOTOS/<nome-do-album> no Drive.
+6. Simular indisponibilidade do Drive e confirmar retry após recuperação.
+7. Confirmar importação de produto e vínculo das imagens em product_images.
+8. Confirmar a Central TratoCap lendo a galeria do Drive no Render.
+9. Revisar autenticação e exposição das rotas de imagens antes de produção.
+
+NÃO FOI FEITO:
+- Nenhuma alteração na main.
+- Nenhuma mesclagem do PR.
+- Nenhuma alteração de variável no Render.
+- Nenhuma operação de escrita/exclusão no Google Drive real.
+- Nenhuma publicação ou alteração no Mercado Livre.
+
+============================================================
+FIM DA ATUALIZAÇÃO — GALERIA DEFINITIVA / FASE 1
+============================================================
