@@ -72,7 +72,11 @@ const upload = multer({
         : cb(new Error("Formato de imagem não permitido."))
 });
 
-router.get("/status", (req, res) => {
+router.get("/status", async (req, res) => {
+    let sync_queue = { pending: 0, processing: 0, synced: 0 };
+    try { sync_queue = await SyncQueue.getStatus(); } catch (error) {
+        console.warn("[TratoCap] Status da fila indisponível:", error.message);
+    }
     res.json({
         success: true,
         sistema: "TratoCore",
@@ -83,7 +87,8 @@ router.get("/status", (req, res) => {
         auto_import_delay_ms: AUTO_IMPORT_DELAY_MS,
         albums_path: albumsRoot,
         gallery_path: galleryRoot,
-        destinations: ["product", "gallery"]
+        destinations: ["product", "gallery"],
+        sync_queue
     });
 });
 
@@ -128,36 +133,18 @@ router.post("/upload", upload.single("image"), async (req, res, next) => {
             drive_sync_status: "pending"
         };
 
-        let job = null;
-        if (destination === "product") {
-            await SyncQueue.ensureSchema();
-            job = await SyncQueue.enqueue({
-                client_uuid: clientUuid,
-                sha256,
-                album_name: album,
-                file_name: fileName,
-                mime_type: req.file.mimetype || "image/jpeg",
-                payload: bytes
-            });
-            // Tenta sincronizar imediatamente; se o Drive estiver indisponível,
-            // a cópia binária permanece no PostgreSQL para novas tentativas.
-            await runSyncWorker();
-            job = await SyncQueue.getByClientUuid(clientUuid);
-        } else {
-            try {
-                const driveResult = await googleDriveOAuthService.uploadBuffer(
-                    bytes, fileName, req.file.mimetype || "image/jpeg", album, clientUuid
-                );
-                meta.drive_file_id = driveResult.id;
-                meta.drive_folder_id = driveResult.folder_id;
-                meta.drive_web_view_link = driveResult.web_view_link || null;
-                meta.drive_synced_at = new Date().toISOString();
-                meta.drive_sync_status = "synced";
-            } catch (driveError) {
-                meta.drive_sync_error = driveError.message;
-                console.warn("[TratoCap] Galeria local salva; Drive aguardando configuração:", driveError.message);
-            }
-        }
+        await SyncQueue.ensureSchema();
+        const jobCreated = await SyncQueue.enqueue({
+            client_uuid: clientUuid,
+            sha256,
+            album_name: album,
+            file_name: fileName,
+            mime_type: req.file.mimetype || "image/jpeg",
+            payload: bytes
+        });
+        // A fila é durável no PostgreSQL. Uma falha de rede/Drive não perde a foto.
+        await runSyncWorker();
+        const job = await SyncQueue.getByClientUuid(clientUuid);
 
         if (job?.status === "synced") {
             meta.drive_file_id = job.drive_file_id;
@@ -165,8 +152,9 @@ router.post("/upload", upload.single("image"), async (req, res, next) => {
             meta.drive_web_view_link = job.drive_web_view_link || null;
             meta.drive_synced_at = job.synced_at || new Date().toISOString();
             meta.drive_sync_status = "synced";
-        } else if (job?.last_error) {
-            meta.drive_sync_error = job.last_error;
+        } else {
+            meta.drive_sync_status = job?.status || "pending";
+            meta.drive_sync_error = job?.last_error || null;
         }
         fs.writeFileSync(target + ".json", JSON.stringify(meta, null, 2), "utf8");
 
@@ -180,13 +168,15 @@ router.post("/upload", upload.single("image"), async (req, res, next) => {
             album,
             destination,
             file_name: fileName,
-            drive_synced: Boolean(driveResult),
-            drive: driveResult ? {
-                id: driveResult.id,
-                name: driveResult.name,
-                folder_id: driveResult.folder_id,
-                web_view_link: driveResult.web_view_link || null,
-                reused_existing: Boolean(driveResult.reused_existing)
+            client_uuid: clientUuid,
+            sha256,
+            drive_synced: meta.drive_sync_status === "synced",
+            drive_sync_status: meta.drive_sync_status,
+            drive_sync_error: meta.drive_sync_error || null,
+            drive: meta.drive_file_id ? {
+                id: meta.drive_file_id,
+                folder_id: meta.drive_folder_id,
+                web_view_link: meta.drive_web_view_link || null
             } : null,
             auto_import: destination === "product" ? "agendado" : "desativado",
             auto_import_delay_ms: destination === "product" ? AUTO_IMPORT_DELAY_MS : null
@@ -311,6 +301,7 @@ router.get("/albums", (req, res, next) => {
 });
 
 async function importAlbums(requestedAlbum = null) {
+    await SyncQueue.ensureSchema();
     const names = requestedAlbum
         ? [safeAlbumName(requestedAlbum)]
         : fs.readdirSync(albumsRoot, { withFileTypes: true })
@@ -376,7 +367,11 @@ async function importAlbums(requestedAlbum = null) {
                 sort_order: i + 1,
                 drive_file_id: imageMeta.drive_file_id || null,
                 drive_folder_id: imageMeta.drive_folder_id || null,
-                drive_web_view_link: imageMeta.drive_web_view_link || null
+                drive_web_view_link: imageMeta.drive_web_view_link || null,
+                client_uuid: imageMeta.client_uuid || null,
+                sha256: imageMeta.sha256 || null,
+                drive_sync_status: imageMeta.drive_file_id ? "synced" : "pending",
+                drive_sync_error: imageMeta.drive_sync_error || null
             });
             savedImages.push(image);
         }
