@@ -104,7 +104,14 @@ async function prepare(productId, sellerObservation = "") {
 
     const attributes = {
         ...(product.ml_attributes && !Array.isArray(product.ml_attributes) ? product.ml_attributes : {}),
-        ...(analysis.attributes || {})
+        ...(analysis.attributes || {}),
+        _preparation: {
+            condition: "used",
+            category_id: category?.id || null,
+            category_name: category?.name || null,
+            price_research: priceResearch,
+            analyzed_at: new Date().toISOString()
+        }
     };
     let requiredMissing = [];
     if (category) {
