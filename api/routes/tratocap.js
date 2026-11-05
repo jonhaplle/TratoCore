@@ -77,7 +77,7 @@ const upload = multer({
 });
 
 router.get("/status", async (req, res) => {
-    let sync_queue = { pending: 0, processing: 0, synced: 0 };
+    let sync_queue = { pending: 0, processing: 0, synced: 0, failed: 0 };
     try { sync_queue = await SyncQueue.getStatus(); } catch (error) {
         console.warn("[TratoCap] Status da fila indisponível:", error.message);
     }
@@ -386,7 +386,7 @@ async function importAlbums(requestedAlbum = null) {
                 drive_web_view_link: imageMeta.drive_web_view_link || null,
                 client_uuid: imageMeta.client_uuid || null,
                 sha256: imageMeta.sha256 || null,
-                drive_sync_status: imageMeta.drive_file_id ? "synced" : "pending",
+                drive_sync_status: imageMeta.drive_file_id ? "synced" : (imageMeta.drive_sync_status || "pending"),
                 drive_sync_error: imageMeta.drive_sync_error || null,
                 drive_synced_at: imageMeta.drive_synced_at || null
             });
