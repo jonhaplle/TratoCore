@@ -189,8 +189,24 @@ function createGoogleDriveOAuthService(options = {}) {
     }
 
     async function uploadFile(filePath, fileName, mimeType) {
-        const bytes = fs.readFileSync(filePath);
-        return uploadBuffer(bytes, fileName, mimeType, "Sem_Album", null);
+        // Compatibilidade com chamadas antigas: grava diretamente na raiz FOTOS.
+        const { drive, saved } = await getAuthorizedDrive();
+        const root = await getSelectedRoot(drive, saved);
+        if (!saved.writeVerifiedAt) throw new Error("Verify Google Drive write access before uploading images.");
+        const result = await drive.files.create({
+            requestBody: { name: fileName, parents: [root.id] },
+            media: { mimeType: mimeType || "application/octet-stream", body: fs.createReadStream(filePath) },
+            fields: "id,name,mimeType,webViewLink,webContentLink"
+        });
+        if (!result.data?.id) throw new Error("Google Drive did not confirm the upload.");
+        return {
+            id: result.data.id,
+            name: result.data.name,
+            folder_id: root.id,
+            web_view_link: result.data.webViewLink || null,
+            web_content_link: result.data.webContentLink || null,
+            reused_existing: false
+        };
     }
 
     async function deleteFile(fileId) {
