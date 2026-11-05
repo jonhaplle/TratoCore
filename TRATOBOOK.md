@@ -2552,7 +2552,7 @@ SINCRONIZAÇÃO DURÁVEL:
 - Nova tabela: tratocap_sync_jobs
 - A cópia binária da imagem é guardada em PostgreSQL (BYTEA) enquanto
   a sincronização está pendente.
-- Após confirmação do Drive, o payload binário é limpo da fila.
+- Para destino gallery, o payload é limpo após confirmação do Drive.\n- Para destino product, o payload permanece no PostgreSQL até o Drive confirmar e o álbum ser importado como produto; só então é limpo.\n- Se o Render reiniciar antes da importação, os álbuns não importados são reconstruídos a partir do payload persistido e a importação automática é reagendada.
 - Worker tenta sincronizar até 10 itens por ciclo, a cada 15 segundos.
 - Jobs em estado processing há mais de 10 minutos podem ser retomados.
 - Falhas deixam a imagem pendente e preservam o payload para retry.
