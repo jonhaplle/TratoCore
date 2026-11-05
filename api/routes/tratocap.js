@@ -100,49 +100,38 @@ router.post("/upload", upload.single("image"), async (req, res, next) => {
         };
         fs.writeFileSync(target + ".json", JSON.stringify(meta, null, 2), "utf8");
 
-        let driveResult;
+        // O armazenamento local é a fonte principal. O Google Drive é opcional.
+        let driveResult = null;
         try {
             const mimeType = req.file.mimetype || "image/jpeg";
             driveResult = await googleDriveOAuthService.uploadFile(target, fileName, mimeType);
-        } catch (_) {
-            console.error("[TratoCap] Falha segura ao persistir arquivo no Google Drive.");
-            return res.status(502).json({
-                success: false,
-                local_saved: true,
-                drive_synced: false,
-                erro: "A imagem foi recebida pelo TratoCore, mas não foi possível confirmar o envio ao Google Drive.",
-                detalhe: "Google Drive indisponível.",
-                album,
-                destination,
-                file_name: fileName
-            });
+            meta.drive_file_id = driveResult.id;
+            meta.drive_folder_id = driveResult.folder_id;
+            meta.drive_web_view_link = driveResult.web_view_link || null;
+            meta.drive_synced_at = new Date().toISOString();
+        } catch (driveError) {
+            console.warn("[TratoCap] Google Drive indisponível; mantendo imagem no storage local:", driveError.message);
         }
-
-        meta.drive_file_id = driveResult.id;
-        meta.drive_folder_id = driveResult.folder_id;
-        meta.drive_web_view_link = driveResult.web_view_link || null;
-        meta.drive_synced_at = new Date().toISOString();
         fs.writeFileSync(target + ".json", JSON.stringify(meta, null, 2), "utf8");
 
-        // Agenda somente depois que o envio ao Drive foi confirmado e os metadados foram gravados.
+        // A importação não depende do Google Drive.
         if (destination === "product") scheduleAutoImport(album);
 
         res.status(201).json({
             success: true,
-            message: destination === "gallery"
-                ? "Imagem salva na Galeria TratoCore e sincronizada com o Google Drive."
-                : "Imagem recebida pelo TratoCore e sincronizada com o Google Drive.",
+            local_saved: true,
+            message: "Imagem recebida e salva no TratoCore.",
             album,
             destination,
             file_name: fileName,
-            drive_synced: true,
-            drive: {
+            drive_synced: Boolean(driveResult),
+            drive: driveResult ? {
                 id: driveResult.id,
                 name: driveResult.name,
                 folder_id: driveResult.folder_id,
                 web_view_link: driveResult.web_view_link || null,
                 reused_existing: Boolean(driveResult.reused_existing)
-            },
+            } : null,
             auto_import: destination === "product" ? "agendado" : "desativado",
             auto_import_delay_ms: destination === "product" ? AUTO_IMPORT_DELAY_MS : null
         });
@@ -189,7 +178,17 @@ router.get("/albums", (req, res, next) => {
             .map(e => {
                 const dir = path.join(albumsRoot, e.name);
                 const marker = path.join(dir, ".tratocore-import.json");
-                return { album: e.name, images: imageFiles(dir).length, imported: fs.existsSync(marker) };
+                const files = imageFiles(dir);
+                return {
+                    album: e.name,
+                    images: files.length,
+                    imported: fs.existsSync(marker),
+                    product_id: fs.existsSync(marker) ? JSON.parse(fs.readFileSync(marker, "utf8")).product_id || null : null,
+                    photos: files.map(file => ({
+                        name: path.basename(file),
+                        url: "/storage/tratocap/albums/" + encodeURIComponent(e.name) + "/" + encodeURIComponent(path.basename(file))
+                    }))
+                };
             });
         res.json({ success: true, albums });
     } catch (err) { next(err); }
