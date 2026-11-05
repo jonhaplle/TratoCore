@@ -59,6 +59,13 @@ async function create(data) {
 // LISTAR IMAGENS DO PRODUTO
 // ======================================================
 
+
+async function getByClientUuid(clientUuid) {
+    await SyncQueue.ensureSchema();
+    if (!clientUuid) return null;
+    return ProductImage.getByClientUuid(clientUuid);
+}
+
 async function getByProductId(productId) {
 
     await SyncQueue.ensureSchema();
@@ -144,6 +151,7 @@ module.exports = {
 
     create,
     getByProductId,
+    getByClientUuid,
     getMainImage,
     setMainImage,
     updateSelection,
