@@ -505,4 +505,7 @@ router.post("/import", async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
-const recoveryTimer = setTimeout(recoverUnimportedAlbums, 5000);\nif (typeof recoveryTimer.unref === "function") recoveryTimer.unref();\n\nmodule.exports = router;
+const recoveryTimer = setTimeout(recoverUnimportedAlbums, 5000);
+if (typeof recoveryTimer.unref === "function") recoveryTimer.unref();
+
+module.exports = router;
