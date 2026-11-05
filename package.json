@@ -8,7 +8,7 @@
         "start": "node index.js",
         "dev": "nodemon api/server.js",
         "doctor": "node tools/doctor.js",
-        "test": "node --test api/services/googleDriveOAuthService.test.js api/services/googleDriveOAuthStore.test.js api/services/tratocapSyncQueue.service.test.js api/services/ml/picture.service.test.js"
+        "test": "node --test api/services/googleDriveOAuthService.test.js api/services/googleDriveOAuthStore.test.js api/services/tratocapSyncQueue.service.test.js api/services/productImageService.selection.test.js api/services/ml/picture.service.test.js"
     },
     "keywords": [
         "tratocore",
