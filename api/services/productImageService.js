@@ -37,7 +37,7 @@ async function create(data) {
 
         is_main: data.is_main ?? true,
 
-        sort_order: data.sort_order ?? 1,
+        sort_order: data.sort_order ?? 1,\n        selected_for_ml: data.selected_for_ml ?? true,
 
         drive_file_id: data.drive_file_id || null,
         drive_folder_id: data.drive_folder_id || null,
@@ -106,6 +106,24 @@ async function setMainImage(productId, imageId) {
 // ======================================================
 // REMOVER
 // ======================================================
+
+
+async function updateSelection(productId, selectedImageIds, mainImageId) {
+    await SyncQueue.ensureSchema();
+    const id = Number(productId);
+    if (!Number.isInteger(id) || id <= 0) throw new Error("ID do produto inválido.");
+    if (!Array.isArray(selectedImageIds) || selectedImageIds.length < 1 || selectedImageIds.length > 10) {
+        throw new Error("Selecione entre 1 e 10 imagens para o Mercado Livre.");
+    }
+    const ids = selectedImageIds.map(Number);
+    if (ids.some(value => !Number.isInteger(value) || value <= 0) || new Set(ids).size !== ids.length) {
+        throw new Error("A seleção de imagens contém IDs inválidos ou duplicados.");
+    }
+    const mainId = Number(mainImageId || ids[0]);
+    if (!ids.includes(mainId)) throw new Error("A imagem principal precisa estar selecionada para o Mercado Livre.");
+    const ordered = [mainId, ...ids.filter(value => value !== mainId)];
+    return ProductImage.updateSelection(id, ordered, mainId);
+}
 
 async function remove(id) {
 
