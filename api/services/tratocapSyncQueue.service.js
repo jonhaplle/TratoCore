@@ -39,7 +39,7 @@ async function ensureSchema() {
                     mime_type TEXT NOT NULL,
                     payload BYTEA,
                     status VARCHAR(20) NOT NULL DEFAULT 'pending'
-                        CHECK (status IN ('pending', 'processing', 'synced')),
+                        CHECK (status IN ('pending', 'processing', 'synced', 'failed')),
                     next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     attempts INTEGER NOT NULL DEFAULT 0,
                     last_error TEXT,
@@ -156,6 +156,23 @@ async function markSynced(job, driveFile) {
     `, [job.client_uuid, driveFile.id, driveFile.folder_id, driveFile.web_view_link || null]);
 }
 
+async function markFailed(job, error) {
+    const message = String(error?.message || error || "Falha permanente").slice(0, 2000);
+    await db.query(`
+        UPDATE tratocap_sync_jobs
+        SET status = 'failed',
+            last_error = $2,
+            updated_at = NOW()
+        WHERE id = $1
+    `, [job.id, message]);
+    await db.query(`
+        UPDATE product_images
+        SET drive_sync_status = 'failed',
+            drive_sync_error = $2
+        WHERE client_uuid = $1
+    `, [job.client_uuid, message]);
+}
+
 async function markPending(job, error) {
     const message = String(error?.message || error || "Falha desconhecida").slice(0, 2000);
     await db.query(`
@@ -190,8 +207,12 @@ async function processOne(driveService) {
         await markSynced(job, uploaded);
         return { processed: true, synced: true, client_uuid: job.client_uuid };
     } catch (error) {
-        await markPending(job, error);
-        return { processed: true, synced: false, client_uuid: job.client_uuid, error: error.message };
+        if (error?.status === 409 || error?.code === "TRATOCAP_DRIVE_FILE_CONFLICT") {
+            await markFailed(job, error);
+        } else {
+            await markPending(job, error);
+        }
+        return { processed: true, synced: false, failed: error?.status === 409 || error?.code === "TRATOCAP_DRIVE_FILE_CONFLICT", client_uuid: job.client_uuid, error: error.message };
     }
 }
 
@@ -210,7 +231,8 @@ async function getStatus() {
         SELECT
             COUNT(*) FILTER (WHERE status = 'pending')::INTEGER AS pending,
             COUNT(*) FILTER (WHERE status = 'processing')::INTEGER AS processing,
-            COUNT(*) FILTER (WHERE status = 'synced')::INTEGER AS synced
+            COUNT(*) FILTER (WHERE status = 'synced')::INTEGER AS synced,
+            COUNT(*) FILTER (WHERE status = 'failed')::INTEGER AS failed
         FROM tratocap_sync_jobs
     `);
     return result.rows[0] || { pending: 0, processing: 0, synced: 0 };
