@@ -117,6 +117,10 @@ async function setMainImage(productId, imageId) {
             is_main = (id = $2),
             selected_for_ml = CASE WHEN id = $2 THEN TRUE ELSE selected_for_ml END
         WHERE product_id = $1
+          AND EXISTS (
+              SELECT 1 FROM product_images selected
+              WHERE selected.id = $2 AND selected.product_id = $1
+          )
         RETURNING id
         `,
         [productId, imageId]
