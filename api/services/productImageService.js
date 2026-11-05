@@ -1,4 +1,5 @@
 const ProductImage = require("../models/productImageModel");
+const SyncQueue = require("./tratocapSyncQueue.service");
 
 // ======================================================
 // SALVAR IMAGEM
