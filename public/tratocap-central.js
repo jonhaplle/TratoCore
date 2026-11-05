@@ -9,6 +9,22 @@
   return body;
  });
  const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ function ensureLightbox(){
+  if($('tcLightbox')) return;
+  const box=document.createElement('div');
+  box.id='tcLightbox'; box.className='tc-lightbox'; box.hidden=true;
+  box.innerHTML='<button type="button" class="tc-lightbox-close" aria-label="Fechar">×</button><figure><img alt=""><figcaption></figcaption></figure>';
+  document.body.appendChild(box);
+  box.addEventListener('click',e=>{if(e.target===box||e.target.closest('.tc-lightbox-close')) box.hidden=true;});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape') box.hidden=true;});
+ }
+ function openPhoto(url,caption,name){
+  ensureLightbox(); const box=$('tcLightbox');
+  box.querySelector('img').src=url;
+  box.querySelector('img').alt=name||'Foto do produto';
+  box.querySelector('figcaption').textContent=caption||name||'';
+  box.hidden=false;
+ }
  function renderAlbums(target, state, albums, emptyText, isGallery=false) {
   const list=$(target), msg=$(state);
   if (!Array.isArray(albums) || albums.length===0) {
@@ -23,10 +39,11 @@
    const previews=photos.map(photo=>{
     const url=escapeHtml(photo.url);
     const alt=escapeHtml(photo.name || a.album || 'Foto do produto');
-    return '<a class="tc-photo-link" href="'+url+'" target="_blank" rel="noopener"><img class="tc-photo-thumb" src="'+url+'" alt="'+alt+'" loading="lazy"></a>';
+    const caption=escapeHtml(photo.note || '');
+    return '<article class="tc-photo-card"><button class="tc-photo-open" type="button" data-photo-url="'+url+'" data-photo-caption="'+caption+'" data-photo-name="'+alt+'"><img class="tc-photo-thumb" src="'+url+'" alt="'+alt+'" loading="lazy"></button><div class="tc-photo-caption">'+(caption||'<span>Sem legenda</span>')+'</div></article>';
    }).join('');
    const action=isGallery?'':'<button class="tc-import-btn" type="button" data-import-album="'+name+'" '+(imported?'disabled':'')+'>'+(imported?'Produto criado':'Importar como produto')+'</button>';
-   return '<article class="tc-album"><h4>'+name+'</h4><p>'+count+' foto(s) recebida(s)</p><div class="tc-photo-grid">'+(previews || '<span class="tc-no-photos">Nenhuma imagem encontrada neste álbum.</span>')+'</div><span class="tc-album-tag">'+(isGallery?'NA GALERIA':(imported?'IMPORTADO':'AGUARDANDO IMPORTAÇÃO'))+'</span>'+action+'</article>';
+   return '<section class="tc-album-section"><header class="tc-album-heading"><div><h4>'+name+'</h4><p>'+count+' foto(s)</p></div><span class="tc-album-tag">'+(isGallery?'NA GALERIA':(imported?'IMPORTADO':'AGUARDANDO IMPORTAÇÃO'))+'</span></header><div class="tc-photo-grid">'+(previews || '<span class="tc-no-photos">Nenhuma imagem encontrada neste álbum.</span>')+'</div>'+action+'</section>';
   }).join('');
  }
  async function refresh(){
@@ -58,7 +75,9 @@
   }
   $('refreshBtn').disabled=false; $('refreshBtn').textContent='Atualizar dados';
  }
- $('albumsList').addEventListener('click',async event=>{
+ document.addEventListener('click',async event=>{
+  const photo=event.target.closest('[data-photo-url]');
+  if(photo){openPhoto(photo.dataset.photoUrl,photo.dataset.photoCaption,photo.dataset.photoName);return;}
   const button=event.target.closest('[data-import-album]');
   if(!button) return;
   const album=button.dataset.importAlbum;
