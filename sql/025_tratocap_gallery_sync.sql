@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS tratocap_sync_jobs (
     payload BYTEA,
     status VARCHAR(20) NOT NULL DEFAULT 'pending'
         CHECK (status IN ('pending', 'processing', 'synced')),
+    next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     attempts INTEGER NOT NULL DEFAULT 0,
     last_error TEXT,
     drive_file_id TEXT,
