@@ -8,6 +8,7 @@ const crypto = require("crypto");
 const SyncQueue = require("../services/tratocapSyncQueue.service");
 const ProductService = require("../services/productService");
 const ProductImageService = require("../services/productImageService");
+const listingPreparation = require("../services/listingPreparation.service");
 const googleDriveOAuthService = require("../services/googleDriveOAuthService").createGoogleDriveOAuthService();
 
 let syncWorkerRunning = false;
@@ -433,13 +434,22 @@ async function importAlbums(requestedAlbum = null) {
             savedImages.push(image);
         }
 
+        let preparation = null;
+        try {
+            preparation = await listingPreparation.prepare(product.id, note);
+        } catch (error) {
+            console.error("[TratoCap] Preparação automática pendente:", error.message);
+            preparation = { success: false, status: "needs_review", error: error.message };
+        }
+
         const result = {
             album,
             product_id: product.id,
             images: existingImages.length + savedImages.length,
             new_images: savedImages.length,
             imported_at: new Date().toISOString(),
-            incremental: Boolean(marker)
+            incremental: Boolean(marker),
+            preparation
         };
         fs.writeFileSync(markerPath, JSON.stringify(result, null, 2), "utf8");
         await SyncQueue.markAlbumImported(album, product.id);
