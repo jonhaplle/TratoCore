@@ -107,18 +107,22 @@ async function prepare(productId, sellerObservation = "") {
         ...(analysis.attributes || {})
     };
     let requiredMissing = [];
-    if (category && suggestedPrice > 0) {
+    if (category) {
         try {
+            const effectivePrice = Number(suggestedPrice || product.sale_price || 0);
             const currentDraft = {
-                ...product, title, description, sale_price: suggestedPrice,
+                ...product, title, description, sale_price: effectivePrice,
                 condition: "used", ml_category_id: category.id, ml_attributes: attributes
             };
-            const spec = await publicationSpecService.resolve(currentDraft);
+            let conditionalAttributes = [];
+            let prediction = null;
+            if (effectivePrice > 0) {
+                const spec = await publicationSpecService.resolve(currentDraft);
+                conditionalAttributes = spec.conditionalAttributes?.required_attributes || [];
+                prediction = spec.prediction;
+            }
             const resolved = attributeResolver.build({
-                product: currentDraft,
-                categoryAttributes: spec.attributes,
-                conditionalAttributes: spec.conditionalAttributes?.required_attributes || [],
-                prediction: spec.prediction
+                product: currentDraft, categoryAttributes, conditionalAttributes, prediction
             });
             requiredMissing = resolved.missing;
             for (const attribute of resolved.attributes) {
@@ -128,6 +132,7 @@ async function prepare(productId, sellerObservation = "") {
             console.warn("[ListingPreparation] Atributos condicionais aguardam revisão:", error.message);
         }
     }
+
     const updated = await ProductService.update(productId, {
         ...product,
         title,
