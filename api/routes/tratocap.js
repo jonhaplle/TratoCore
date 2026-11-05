@@ -442,8 +442,10 @@ async function recoverUnimportedAlbums() {
             const albumDir = path.join(albumsRoot, album);
             fs.mkdirSync(albumDir, { recursive: true });
             const target = path.join(albumDir, path.basename(job.file_name));
-            if (!fs.existsSync(target) && job.payload) {
-                fs.writeFileSync(target, job.payload);
+            if (job.payload) {
+                const needsRestore = !fs.existsSync(target) ||
+                    crypto.createHash("sha256").update(fs.readFileSync(target)).digest("hex") !== String(job.sha256 || "").trim();
+                if (needsRestore) fs.writeFileSync(target, job.payload);
             }
             const meta = {
                 album,
