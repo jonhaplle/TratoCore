@@ -124,6 +124,7 @@ async function update(id, data) {
             data.sale_price ?? atual.sale_price
         ),
         ml_attributes: data.ml_attributes ?? atual.ml_attributes ?? null,
+        ml_category_id: data.ml_category_id ?? atual.ml_category_id ?? null,
 
         quantity: Math.max(
             1,
