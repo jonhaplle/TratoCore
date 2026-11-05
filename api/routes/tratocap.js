@@ -188,7 +188,7 @@ router.post("/upload", upload.single("image"), async (req, res, next) => {
 // Galeria permanente: lista somente a pasta FOTOS selecionada e seus álbuns.
 router.get("/drive-gallery", async (req, res) => {
     const configuredKey = process.env.GOOGLE_OAUTH_ADMIN_KEY;
-    const supplied = req.get("Authorization")?.replace(/^Bearer\\s+/i, "");
+    const supplied = req.get("Authorization")?.replace(/^Bearer/i, "").trim();
     const a = Buffer.from(String(configuredKey || ""));
     const b = Buffer.from(String(supplied || ""));
     if (!configuredKey || a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
