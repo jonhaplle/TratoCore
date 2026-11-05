@@ -1,5 +1,6 @@
 const ProductService = require("../services/productService");
 const { improveListing } = require("../services/local-ai.service");
+const listingPreparation = require("../services/listingPreparation.service");
 
 // ======================================================
 // LISTAR TODOS
@@ -156,6 +157,20 @@ async function update(req, res) {
 
     }
 
+}
+
+// ======================================================
+// PREPARAR ANÚNCIO PARA REVISÃO
+// ======================================================
+
+async function prepareListing(req, res) {
+    try {
+        const result = await listingPreparation.prepare(req.params.id, req.body?.seller_observation || "");
+        return res.status(200).json(result);
+    } catch (err) {
+        console.error("ERRO AO PREPARAR ANÚNCIO:", err);
+        return res.status(422).json({ success: false, message: err.message || "Não foi possível preparar o anúncio." });
+    }
 }
 
 // ======================================================
