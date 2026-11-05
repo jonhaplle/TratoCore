@@ -26,7 +26,7 @@ function fixture(tokenResponse = { access_token: "short-lived", refresh_token: "
         async get(options) {
             calls.push({ get: options });
             if (options.alt === "media") return { data: Buffer.from(lastContent, "utf8") };
-            return { data: { id: options.fileId, name: "Produtos", mimeType: "application/vnd.google-apps.folder" } };
+            return { data: { id: options.fileId, name: "FOTOS", mimeType: "application/vnd.google-apps.folder" } };
         },
         async create(options) { calls.push({ create: options }); return { data: { id: "drive-file-1", name: options.requestBody.name, mimeType: options.media.mimeType } }; },
         async delete(options) { calls.push({ delete: options }); }
@@ -83,11 +83,11 @@ test("Picker config returns scoped short-lived access token, API key and project
     assert.ok(calls.some(call => call.credentials?.refresh_token === "refresh"), "refresh token is supplied to OAuth client for automatic access-token renewal");
 });
 
-test("only existing Produtos folder can be selected and selecting resets write verification", async () => {
+test("only existing FOTOS folder can be selected and selecting resets write verification", async () => {
     const { service, state } = fixture();
     state.refreshToken = "refresh";
     state.writeVerifiedAt = new Date();
-    assert.deepEqual(await service.selectProductsFolder("existing-products-id"), { id: "existing-products-id", name: "Produtos" });
+    assert.deepEqual(await service.selectRootFolder("existing-products-id"), { id: "existing-products-id", name: "FOTOS" });
     assert.equal(state.writeVerifiedAt, null);
 });
 
