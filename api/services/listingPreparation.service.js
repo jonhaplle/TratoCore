@@ -118,7 +118,8 @@ async function prepare(productId, sellerObservation = "") {
         color: analysis.color || product.color || "",
         condition: "used",
         ai_confidence: Number(analysis.confidence || 0),
-        ml_attributes: attributes
+        ml_attributes: attributes,
+        ml_category_id: category?.id || product.ml_category_id || null
     });
 
     return {
