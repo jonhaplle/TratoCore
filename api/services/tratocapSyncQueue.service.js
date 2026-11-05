@@ -257,7 +257,6 @@ async function getUnimportedProductImages() {
         SELECT *
         FROM tratocap_sync_jobs
         WHERE destination = 'product'
-          AND imported_product_id IS NULL
           AND payload IS NOT NULL
         ORDER BY created_at ASC
     `);
