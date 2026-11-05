@@ -88,7 +88,11 @@ async function enqueue(job) {
     );
     const row = existing.rows[0];
     if (!row) throw new Error("Não foi possível confirmar o registro de sincronização.");
-    if (String(row.sha256).trim() !== String(job.sha256).trim()) {
+    if (
+        String(row.sha256).trim() !== String(job.sha256).trim() ||
+        String(row.album_name) !== String(job.album_name) ||
+        String(row.file_name) !== String(job.file_name)
+    ) {
         const error = new Error("client_uuid já utilizado por outra imagem.");
         error.status = 409;
         error.code = "TRATOCAP_UUID_CONFLICT";
