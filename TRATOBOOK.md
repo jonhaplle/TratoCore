@@ -93,11 +93,15 @@ Servidor Node funcionando.
 
 Executável utilizado:
 
-C:\Program Files\nodejs\node.exe
+C:\Program Files
+odejs
+ode.exe
 
 Inicialização conhecida:
 
-"C:\Program Files\nodejs\node.exe" C:\TratoCore\api\server.js
+"C:\Program Files
+odejs
+ode.exe" C:\TratoCore\api\server.js
 
 Servidor:
 
@@ -276,7 +280,9 @@ storage/temp
 
 O upload.js foi validado com:
 
-"C:\Program Files\nodejs\node.exe" --check
+"C:\Program Files
+odejs
+ode.exe" --check
 C:\TratoCore\api\routes\upload.js
 
 Resultado:
@@ -1401,18 +1407,24 @@ testar navegador, quando aplicável.
 
 Verificar Node:
 
-"C:\Program Files\nodejs\node.exe" --version
+"C:\Program Files
+odejs
+ode.exe" --version
 
 
 Verificar sintaxe:
 
-"C:\Program Files\nodejs\node.exe" --check
+"C:\Program Files
+odejs
+ode.exe" --check
 "C:\TratoCore\arquivo.js"
 
 
 Iniciar servidor:
 
-"C:\Program Files\nodejs\node.exe"
+"C:\Program Files
+odejs
+ode.exe"
 "C:\TratoCore\api\server.js"
 
 
@@ -1442,7 +1454,9 @@ não foi reconhecido pelo PATH.
 
 Foi resolvido utilizando:
 
-C:\Program Files\nodejs\node.exe
+C:\Program Files
+odejs
+ode.exe
 
 
 Em algumas ocasiões:
@@ -1462,7 +1476,8 @@ também não foi reconhecido diretamente.
 
 Foi localizado:
 
-C:\Windows\System32\notepad.exe
+C:\Windows\System32
+otepad.exe
 
 
 Portanto, quando o PATH falhar, utilizar o caminho completo.
@@ -1494,7 +1509,8 @@ Para editar arquivos:
 
 usar:
 
-C:\Windows\System32\notepad.exe
+C:\Windows\System32
+otepad.exe
 C:\TratoCore\arquivo
 
 
@@ -2552,7 +2568,9 @@ SINCRONIZAÇÃO DURÁVEL:
 - Nova tabela: tratocap_sync_jobs
 - A cópia binária da imagem é guardada em PostgreSQL (BYTEA) enquanto
   a sincronização está pendente.
-- Para destino gallery, o payload é limpo após confirmação do Drive.\n- Para destino product, o payload permanece no PostgreSQL até o Drive confirmar e o álbum ser importado como produto; só então é limpo.\n- Se o Render reiniciar antes da importação, os álbuns não importados são reconstruídos a partir do payload persistido e a importação automática é reagendada.
+- Para destino gallery, o payload é limpo após confirmação do Drive.
+- Para destino product, o payload permanece no PostgreSQL até o Drive confirmar e o álbum ser importado como produto; só então é limpo.
+- Se o Render reiniciar antes da importação, os álbuns não importados são reconstruídos a partir do payload persistido e a importação automática é reagendada.
 - Worker tenta sincronizar até 10 itens por ciclo, a cada 15 segundos.
 - Jobs em estado processing há mais de 10 minutos podem ser retomados.
 - Falhas deixam a imagem pendente e preservam o payload para retry.
