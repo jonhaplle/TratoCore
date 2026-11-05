@@ -364,8 +364,9 @@ async function importAlbums(requestedAlbum = null) {
                     imageMeta.drive_web_view_link = syncJob.drive_web_view_link || null;
                     imageMeta.drive_synced_at = syncJob.synced_at || null;
                     imageMeta.drive_sync_error = null;
-                } else if (syncJob?.last_error) {
-                    imageMeta.drive_sync_error = syncJob.last_error;
+                } else if (syncJob) {
+                    imageMeta.drive_sync_status = syncJob.status;
+                    imageMeta.drive_sync_error = syncJob.last_error || null;
                 }
             }
             fs.copyFileSync(source, originalPath);
