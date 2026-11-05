@@ -67,7 +67,9 @@ function normalizeImageFields(product) {
 // LISTAR TODOS
 // ======================================================
 
-async function getAll() {\n\n    await SyncQueue.ensureSchema();
+async function getAll() {
+
+    await SyncQueue.ensureSchema();
 
     const sql = `
         SELECT
@@ -87,7 +89,8 @@ async function getAll() {\n\n    await SyncQueue.ensureSchema();
                         'thumb_url', img.thumb_url,
                         'is_main', img.is_main,
                         'sort_order', img.sort_order,
-                        'drive_file_id', img.drive_file_id,\n                        'selected_for_ml', img.selected_for_ml
+                        'drive_file_id', img.drive_file_id,
+                        'selected_for_ml', img.selected_for_ml
                     )
                     ORDER BY img.is_main DESC, img.sort_order ASC, img.id ASC
                 )
@@ -122,7 +125,9 @@ async function getAll() {\n\n    await SyncQueue.ensureSchema();
 // BUSCAR POR ID
 // ======================================================
 
-async function getById(id) {\n\n    await SyncQueue.ensureSchema();
+async function getById(id) {
+
+    await SyncQueue.ensureSchema();
 
     const sql = `
         SELECT
