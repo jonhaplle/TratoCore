@@ -4,9 +4,29 @@ const sharp = require("sharp");
 const fs = require("fs");
 const path = require("path");
 const { v4: uuidv4 } = require("uuid");
+const crypto = require("crypto");
+const SyncQueue = require("../services/tratocapSyncQueue.service");
 const ProductService = require("../services/productService");
 const ProductImageService = require("../services/productImageService");
 const googleDriveOAuthService = require("../services/googleDriveOAuthService").createGoogleDriveOAuthService();
+
+let syncWorkerRunning = false;
+async function runSyncWorker() {
+    if (syncWorkerRunning) return;
+    syncWorkerRunning = true;
+    try {
+        const result = await SyncQueue.processOne(googleDriveOAuthService);
+        if (result.processed && !result.synced) {
+            console.warn("[TratoCap Sync] Imagem permanece na fila:", result.error);
+        }
+    } catch (error) {
+        console.error("[TratoCap Sync] Falha no worker:", error.message);
+    } finally {
+        syncWorkerRunning = false;
+    }
+}
+const syncWorkerTimer = setInterval(runSyncWorker, 15000);
+if (typeof syncWorkerTimer.unref === "function") syncWorkerTimer.unref();
 
 const router = express.Router();
 
@@ -76,41 +96,77 @@ router.post("/upload", upload.single("image"), async (req, res, next) => {
         const albumDir = path.join(root, album);
         fs.mkdirSync(albumDir, { recursive: true });
         const ext = path.extname(req.file.originalname || req.file.filename).toLowerCase() || ".jpg";
-        // Se o aplicativo enviar client_uuid estável, reutilizamos o mesmo nome em tentativas.
-        // Isso reduz duplicatas quando a conexão cai depois do upload.
-        const clientId = String(req.body.client_uuid || "").trim();
-        const stableName = clientId
-            ? path.basename(clientId).replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120)
-            : "";
-        const fileName = stableName
-            ? (path.extname(stableName) ? stableName : `${stableName}${ext}`)
-            : `${Date.now()}_${uuidv4()}${ext}`;
+        const clientUuid = String(req.body.client_uuid || uuidv4()).trim();
+        const stableName = path.basename(clientUuid).replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
+        const fileName = path.extname(stableName) ? stableName : `${stableName}${ext}`;
         const target = path.join(albumDir, fileName);
-        fs.renameSync(req.file.path, target);
+        const bytes = fs.readFileSync(req.file.path);
+        const sha256 = crypto.createHash("sha256").update(bytes).digest("hex");
+
+        if (fs.existsSync(target)) {
+            let previous = {};
+            try { previous = JSON.parse(fs.readFileSync(target + ".json", "utf8")); } catch (_) {}
+            if (previous.sha256 && previous.sha256 !== sha256) {
+                fs.unlinkSync(req.file.path);
+                return res.status(409).json({ success: false, code: "TRATOCAP_UUID_CONFLICT", erro: "Este client_uuid já foi utilizado para outra imagem." });
+            }
+            fs.unlinkSync(req.file.path);
+        } else {
+            fs.renameSync(req.file.path, target);
+        }
+
         const meta = {
             album,
             destination,
             note: req.body.note || "",
-            client_uuid: req.body.client_uuid || "",
-            sha256: req.body.sha256 || "",
+            client_uuid: clientUuid,
+            sha256,
             received_at: new Date().toISOString(),
             original_name: req.file.originalname || "",
             file_name: fileName,
-            file_size: fs.statSync(target).size
+            file_size: fs.statSync(target).size,
+            drive_sync_status: "pending"
         };
-        fs.writeFileSync(target + ".json", JSON.stringify(meta, null, 2), "utf8");
 
-        // O armazenamento local é a fonte principal. O Google Drive é opcional.
-        let driveResult = null;
-        try {
-            const mimeType = req.file.mimetype || "image/jpeg";
-            driveResult = await googleDriveOAuthService.uploadFile(target, fileName, mimeType);
-            meta.drive_file_id = driveResult.id;
-            meta.drive_folder_id = driveResult.folder_id;
-            meta.drive_web_view_link = driveResult.web_view_link || null;
-            meta.drive_synced_at = new Date().toISOString();
-        } catch (driveError) {
-            console.warn("[TratoCap] Google Drive indisponível; mantendo imagem no storage local:", driveError.message);
+        let job = null;
+        if (destination === "product") {
+            await SyncQueue.ensureSchema();
+            job = await SyncQueue.enqueue({
+                client_uuid: clientUuid,
+                sha256,
+                album_name: album,
+                file_name: fileName,
+                mime_type: req.file.mimetype || "image/jpeg",
+                payload: bytes
+            });
+            // Tenta sincronizar imediatamente; se o Drive estiver indisponível,
+            // a cópia binária permanece no PostgreSQL para novas tentativas.
+            await runSyncWorker();
+            job = await SyncQueue.getByClientUuid(clientUuid);
+        } else {
+            try {
+                const driveResult = await googleDriveOAuthService.uploadBuffer(
+                    bytes, fileName, req.file.mimetype || "image/jpeg", album, clientUuid
+                );
+                meta.drive_file_id = driveResult.id;
+                meta.drive_folder_id = driveResult.folder_id;
+                meta.drive_web_view_link = driveResult.web_view_link || null;
+                meta.drive_synced_at = new Date().toISOString();
+                meta.drive_sync_status = "synced";
+            } catch (driveError) {
+                meta.drive_sync_error = driveError.message;
+                console.warn("[TratoCap] Galeria local salva; Drive aguardando configuração:", driveError.message);
+            }
+        }
+
+        if (job?.status === "synced") {
+            meta.drive_file_id = job.drive_file_id;
+            meta.drive_folder_id = job.drive_folder_id;
+            meta.drive_web_view_link = job.drive_web_view_link || null;
+            meta.drive_synced_at = job.synced_at || new Date().toISOString();
+            meta.drive_sync_status = "synced";
+        } else if (job?.last_error) {
+            meta.drive_sync_error = job.last_error;
         }
         fs.writeFileSync(target + ".json", JSON.stringify(meta, null, 2), "utf8");
 
@@ -136,6 +192,45 @@ router.post("/upload", upload.single("image"), async (req, res, next) => {
             auto_import_delay_ms: destination === "product" ? AUTO_IMPORT_DELAY_MS : null
         });
     } catch (err) { next(err); }
+});
+
+
+// Galeria permanente: lista somente a pasta FOTOS selecionada e seus álbuns.
+router.get("/drive-gallery", async (req, res) => {
+    const configuredKey = process.env.GOOGLE_OAUTH_ADMIN_KEY;
+    const supplied = req.get("Authorization")?.replace(/^Bearer\\s+/i, "");
+    const a = Buffer.from(String(configuredKey || ""));
+    const b = Buffer.from(String(supplied || ""));
+    if (!configuredKey || a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+        return res.status(401).json({ success: false, erro: "Informe a chave administrativa do Google Drive." });
+    }
+    try {
+        const folders = await googleDriveOAuthService.listAlbumFolders();
+        const gallery = [];
+        for (const folder of folders) {
+            const files = await googleDriveOAuthService.listAlbumImages(folder.id);
+            gallery.push({
+                album: folder.name,
+                folder_id: folder.id,
+                images: files.length,
+                photos: files.map(file => ({
+                    id: file.id,
+                    name: file.name,
+                    mime_type: file.mimeType,
+                    size: Number(file.size || 0),
+                    received_at: file.createdTime || null,
+                    url: "/api/product-images/drive/" + encodeURIComponent(file.id)
+                }))
+            });
+        }
+        return res.json({ success: true, root: "FOTOS", gallery });
+    } catch (error) {
+        return res.status(503).json({
+            success: false,
+            erro: "Não foi possível consultar a galeria permanente do Google Drive.",
+            detail: error.message
+        });
+    }
 });
 
 router.get("/gallery", (req, res, next) => {
