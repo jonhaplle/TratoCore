@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS tratocap_sync_jobs (
     mime_type TEXT NOT NULL,
     payload BYTEA,
     status VARCHAR(20) NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'processing', 'synced')),
+        CHECK (status IN ('pending', 'processing', 'synced', 'failed')),
     next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     attempts INTEGER NOT NULL DEFAULT 0,
     last_error TEXT,
