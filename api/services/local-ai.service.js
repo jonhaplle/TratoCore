@@ -292,7 +292,7 @@ ESTRUTURA EXATA:
   "cross_check": {"confirmed":[],"contradictions":[],"unresolved":[]},
   "confidence": {"score":0,"level":"LOW","reasons":[]},
   "catalog_input": {"search_terms":[],"product_type":"","brand":"","line":"","model":"","generation":""},
-  "attributes: {album:","artist:","manufacturer:","material:","sale_format:","units_per_pack:"},
+  "attributes": {"album":"","artist":"","manufacturer":"","material":"","sale_format":"","units_per_pack":""},
   "decision": {"status":"PROVISIONAL","reason":""},
   "listing_draft": {"title":"","description":"","suggested_price":0,"category":""}
 }
