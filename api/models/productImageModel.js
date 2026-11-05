@@ -19,6 +19,7 @@ async function create(image) {
             file_size,
             is_main,
             sort_order,
+            selected_for_ml,
             drive_file_id,
             drive_folder_id,
             drive_web_view_link,
@@ -30,7 +31,7 @@ async function create(image) {
         )
         VALUES
         (
-            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19
         )
         RETURNING *
     `;
@@ -47,6 +48,7 @@ async function create(image) {
         image.file_size,
         image.is_main,
         image.sort_order,
+        image.selected_for_ml ?? true,
         image.drive_file_id || null,
         image.drive_folder_id || null,
         image.drive_web_view_link || null,
@@ -108,31 +110,49 @@ async function getMainImage(productId) {
 // ======================================================
 
 async function setMainImage(productId, imageId) {
-
-    await db.query(
-
+    const result = await db.query(
         `
         UPDATE product_images
-        SET is_main = FALSE
+        SET
+            is_main = (id = $2),
+            selected_for_ml = CASE WHEN id = $2 THEN TRUE ELSE selected_for_ml END
         WHERE product_id = $1
+        RETURNING id
         `,
-        [productId]
-
+        [productId, imageId]
     );
+    if (!result.rows.some(row => Number(row.id) === Number(imageId))) {
+        throw new Error("Imagem não pertence ao produto informado.");
+    }
+    return true;
+}
 
-    await db.query(
+async function updateSelection(productId, selectedImageIds, mainImageId) {
+    const uniqueIds = [...new Set(selectedImageIds.map(Number))];
+    const found = await db.query(
+        `SELECT id FROM product_images WHERE product_id = $1 AND id = ANY($2::int[])`,
+        [productId, uniqueIds]
+    );
+    if (found.rows.length !== uniqueIds.length) {
+        throw new Error("Uma ou mais imagens não pertencem ao produto informado.");
+    }
 
+    const result = await db.query(
         `
         UPDATE product_images
-        SET is_main = TRUE
-        WHERE id = $1
+        SET
+            selected_for_ml = (id = ANY($2::int[])),
+            sort_order = CASE
+                WHEN id = ANY($2::int[]) THEN array_position($2::int[], id)
+                ELSE sort_order
+            END,
+            is_main = (id = $3)
+        WHERE product_id = $1
+        RETURNING id, selected_for_ml, sort_order, is_main
         `,
-        [imageId]
-
+        [productId, uniqueIds, mainImageId]
     );
-
-    return true;
-
+    return result.rows;
 }
 
 // ======================================================
