@@ -14,13 +14,15 @@
 </header>
 <main class="tc-wrap">
  <section class="tc-hero">
-  <div><span class="tc-kicker">CENTRAL DE OPERAÇÃO</span><h2>TratoCap</h2><p>Acompanhe as fotos enviadas pelo celular e a importação dos álbuns.</p></div>
+  <div><span class="tc-kicker">CENTRAL DE OPERAÇÃO</span><h2>TratoCap</h2><p>Acompanhe a captura, a sincronização permanente no Google Drive e os produtos importados.</p></div>
   <div class="tc-hero-actions"><span id="serverBadge" class="tc-badge tc-loading">Verificando servidor…</span><button id="refreshBtn" type="button">Atualizar dados</button></div>
  </section>
  <section class="tc-stats" aria-label="Resumo da sincronização">
   <article><span>Álbuns recebidos</span><strong id="albumCount">—</strong></article>
   <article><span>Fotos recebidas</span><strong id="photoCount">—</strong></article>
   <article><span>Álbuns importados</span><strong id="importedCount">—</strong></article>
+  <article><span>Aguardando Drive</span><strong id="pendingSyncCount">—</strong></article>
+  <article><span>Sincronizadas no Drive</span><strong id="syncedCount">—</strong></article>
  </section>
  <section class="tc-panel">
   <div class="tc-panel-head"><div><h3>Álbuns recebidos</h3><p>Fotos armazenadas pelo sincronizador do TratoCap.</p></div><a href="produtos.html">Ver produtos →</a></div>
@@ -28,11 +30,11 @@
   <div id="albumsList" class="tc-albums"></div>
  </section>
  <section class="tc-panel tc-gallery-panel">
-  <div class="tc-panel-head"><div><h3>Galeria TratoCore</h3><p>Álbuns enviados ao destino de galeria.</p></div></div>
-  <div id="galleryState" class="tc-state">Carregando galeria…</div>
+  <div class="tc-panel-head"><div><h3>Galeria permanente — Google Drive / FOTOS</h3><p>Visualização dos álbuns e imagens armazenados na pasta FOTOS do Drive.</p></div></div>
+  <div id="galleryState" class="tc-state">Carregando galeria do Google Drive…</div>
   <div id="galleryList" class="tc-albums"></div>
  </section>
- <p class="tc-footnote">Os indicadores mostram somente dados retornados pela API. A presença de um álbum não significa, por si só, que a análise por IA foi concluída.</p>
+ <p class="tc-footnote">Os indicadores mostram somente dados retornados pela API. As imagens ficam na fila persistente até o Drive confirmar o armazenamento. A presença de uma imagem na galeria não significa que a análise por IA foi concluída.</p>
  <a class="tc-back" href="index.html">← Voltar à página inicial</a>
 </main>
 <script src="tratocap-central.js"></script>
