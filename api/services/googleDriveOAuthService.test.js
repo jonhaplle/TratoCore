@@ -37,8 +37,8 @@ function fixture(tokenResponse = { access_token: "short-lived", refresh_token: "
         ...files,
         async create(options) {
             calls.push({ create: options });
-            if (Buffer.isBuffer(options.media.body)) lastContent = options.media.body.toString("utf8");
-            else if (options.media.body?.[Symbol.asyncIterator]) {
+            if (Buffer.isBuffer(options.media?.body)) lastContent = options.media.body.toString("utf8");
+            else if (options.media?.body?.[Symbol.asyncIterator]) {
                 for await (const chunk of options.media.body) lastContent += chunk.toString("utf8");
             }
             return { data: { id: options.requestBody.mimeType ? "album-folder-1" : "drive-file-1", name: options.requestBody.name, mimeType: options.requestBody.mimeType || options.media?.mimeType } };
