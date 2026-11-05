@@ -70,6 +70,15 @@ async function create(image) {
 // LISTAR IMAGENS DO PRODUTO
 // ======================================================
 
+
+async function getByClientUuid(clientUuid) {
+    const result = await db.query(
+        `SELECT * FROM product_images WHERE client_uuid = $1 LIMIT 1`,
+        [clientUuid]
+    );
+    return result.rows[0] || null;
+}
+
 async function getByProductId(productId) {
 
     const sql = `
@@ -186,6 +195,7 @@ module.exports = {
 
     create,
     getByProductId,
+    getByClientUuid,
     getMainImage,
     setMainImage,
     updateSelection,
