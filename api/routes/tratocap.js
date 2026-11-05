@@ -145,6 +145,10 @@ router.post("/upload", upload.single("image"), async (req, res, next) => {
             album_name: album,
             file_name: fileName,
             mime_type: req.file.mimetype || "image/jpeg",
+            destination,
+            note: meta.note,
+            original_name: meta.original_name,
+            received_at: meta.received_at,
             payload: bytes
         });
         // A fila é durável no PostgreSQL. Uma falha de rede/Drive não perde a foto.
@@ -319,7 +323,9 @@ async function importAlbums(requestedAlbum = null) {
         if (!fs.existsSync(albumDir) || !fs.statSync(albumDir).isDirectory()) continue;
         const markerPath = path.join(albumDir, ".tratocore-import.json");
         if (fs.existsSync(markerPath)) {
-            skipped.push({ album, reason: "Já importado", data: JSON.parse(fs.readFileSync(markerPath, "utf8")) });
+            const marker = JSON.parse(fs.readFileSync(markerPath, "utf8"));
+            if (marker.product_id) await SyncQueue.markAlbumImported(album, marker.product_id);
+            skipped.push({ album, reason: "Já importado", data: marker });
             continue;
         }
 
@@ -396,6 +402,7 @@ async function importAlbums(requestedAlbum = null) {
 
         const result = { album, product_id: product.id, images: savedImages.length, imported_at: new Date().toISOString() };
         fs.writeFileSync(markerPath, JSON.stringify(result, null, 2), "utf8");
+        await SyncQueue.markAlbumImported(album, product.id);
         imported.push(result);
     }
     return { success: true, imported, skipped, total_imported: imported.length };
@@ -413,6 +420,57 @@ function scheduleAutoImport(album) {
         }
     }, AUTO_IMPORT_DELAY_MS);
     importTimers.set(album, timer);
+}
+
+
+async function recoverUnimportedAlbums() {
+    try {
+        const jobs = await SyncQueue.getUnimportedProductImages();
+        const albums = new Set();
+        for (const job of jobs) {
+            const album = safeAlbumName(job.album_name);
+            const albumDir = path.join(albumsRoot, album);
+            fs.mkdirSync(albumDir, { recursive: true });
+            const target = path.join(albumDir, path.basename(job.file_name));
+            if (!fs.existsSync(target) && job.payload) {
+                fs.writeFileSync(target, job.payload);
+            }
+            const meta = {
+                album,
+                destination: "product",
+                note: job.note || "",
+                client_uuid: job.client_uuid,
+                sha256: String(job.sha256 || "").trim(),
+                received_at: job.received_at || job.created_at,
+                original_name: job.original_name || job.file_name,
+                file_name: job.file_name,
+                file_size: job.payload ? job.payload.length : 0,
+                drive_file_id: job.drive_file_id || null,
+                drive_folder_id: job.drive_folder_id || null,
+                drive_web_view_link: job.drive_web_view_link || null,
+                drive_synced_at: job.synced_at || null,
+                drive_sync_status: job.status,
+                drive_sync_error: job.last_error || null
+            };
+            fs.writeFileSync(target + ".json", JSON.stringify(meta, null, 2), "utf8");
+            albums.add(album);
+        }
+
+        for (const album of albums) {
+            const markerPath = path.join(albumsRoot, album, ".tratocore-import.json");
+            if (fs.existsSync(markerPath)) {
+                const marker = JSON.parse(fs.readFileSync(markerPath, "utf8"));
+                if (marker.product_id) await SyncQueue.markAlbumImported(album, marker.product_id);
+            } else {
+                scheduleAutoImport(album);
+            }
+        }
+        if (albums.size) {
+            console.log(`[TratoCap] Recuperação de álbuns pendentes: ${albums.size} álbum(ns).`);
+        }
+    } catch (error) {
+        console.error("[TratoCap] Falha ao recuperar álbuns persistidos:", error.message);
+    }
 }
 
 router.post("/finalize", async (req, res, next) => {
@@ -435,4 +493,4 @@ router.post("/import", async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
-module.exports = router;
+const recoveryTimer = setTimeout(recoverUnimportedAlbums, 5000);\nif (typeof recoveryTimer.unref === "function") recoveryTimer.unref();\n\nmodule.exports = router;
