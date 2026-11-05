@@ -478,6 +478,15 @@ async function recoverUnimportedAlbums() {
                     crypto.createHash("sha256").update(fs.readFileSync(target)).digest("hex") !== String(job.sha256 || "").trim();
                 if (needsRestore) fs.writeFileSync(target, job.payload);
             }
+            let importedProductId = Number(job.imported_product_id) || null;
+            if (!importedProductId && job.client_uuid) {
+                const existingImage = await ProductImageService.getByClientUuid(job.client_uuid);
+                if (existingImage?.product_id) {
+                    importedProductId = Number(existingImage.product_id);
+                    await SyncQueue.markAlbumImported(album, importedProductId);
+                }
+            }
+
             const meta = {
                 album,
                 destination: "product",
