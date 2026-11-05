@@ -7,6 +7,8 @@ const SyncQueue = require("./tratocapSyncQueue.service");
 
 async function create(data) {
 
+    await SyncQueue.ensureSchema();
+
     if (!data.product_id) {
         throw new Error("ID do produto não informado.");
     }
