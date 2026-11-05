@@ -2649,3 +2649,14 @@ TESTES ADICIONAIS:
 - api/services/tratocapSyncQueue.service.test.js
 - api/services/productImageService.selection.test.js
 - npm test executa os testes focados de Drive, fila e seleção de imagens.
+
+
+ATUALIZAÇÃO — RECUPERAÇÃO DURÁVEL DE IMPORTAÇÃO:
+- A fila guarda destination, note, original_name e received_at.
+- Para destino product, o payload BYTEA permanece até que Drive e importação
+  do produto estejam confirmados.
+- A recuperação na inicialização restaura os arquivos dos álbuns ainda não
+  importados e reagenda a importação automática.
+- Depois da confirmação de Drive e da importação, o payload é liberado.
+- Para destino gallery, o payload é liberado assim que o Drive confirma.
+- Versão do módulo TratoCap nesta branch: 2.3.
