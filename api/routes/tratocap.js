@@ -467,6 +467,7 @@ async function recoverUnimportedAlbums() {
     try {
         const jobs = await SyncQueue.getUnimportedProductImages();
         const albums = new Set();
+        const productImagesCache = new Map();
         for (const job of jobs) {
             const album = safeAlbumName(job.album_name);
             const albumDir = path.join(albumsRoot, album);
@@ -495,6 +496,33 @@ async function recoverUnimportedAlbums() {
                 drive_sync_error: job.last_error || null
             };
             fs.writeFileSync(target + ".json", JSON.stringify(meta, null, 2), "utf8");
+
+            // Se o produto já foi importado, reconstrói também os caminhos
+            // locais usados pela ficha do produto enquanto o Drive está pendente.
+            if (job.imported_product_id && job.payload) {
+                const productId = Number(job.imported_product_id);
+                if (!productImagesCache.has(productId)) {
+                    productImagesCache.set(productId, await ProductImageService.getByProductId(productId));
+                }
+                const productImage = productImagesCache.get(productId)
+                    .find(image => image.client_uuid === job.client_uuid);
+                if (productImage?.file_name) {
+                    const originalPath = path.join(originalsRoot, path.basename(productImage.file_name));
+                    let restoreOriginal = !fs.existsSync(originalPath);
+                    if (!restoreOriginal) {
+                        const localHash = crypto.createHash("sha256").update(fs.readFileSync(originalPath)).digest("hex");
+                        restoreOriginal = localHash !== String(job.sha256 || "").trim();
+                    }
+                    if (restoreOriginal) fs.writeFileSync(originalPath, job.payload);
+                    const thumbName = path.basename(String(productImage.thumb_url || ""));
+                    if (thumbName) {
+                        const thumbPath = path.join(thumbsRoot, thumbName);
+                        if (restoreOriginal || !fs.existsSync(thumbPath)) {
+                            await sharp(originalPath).rotate().resize(250, 250, { fit: "inside", withoutEnlargement: true }).webp({ quality: 75 }).toFile(thumbPath);
+                        }
+                    }
+                }
+            }
             albums.add(album);
         }
 
