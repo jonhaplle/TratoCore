@@ -15,9 +15,13 @@ async function runSyncWorker() {
     if (syncWorkerRunning) return;
     syncWorkerRunning = true;
     try {
-        const result = await SyncQueue.processOne(googleDriveOAuthService);
-        if (result.processed && !result.synced) {
-            console.warn("[TratoCap Sync] Imagem permanece na fila:", result.error);
+        for (let attempt = 0; attempt < 10; attempt++) {
+            const result = await SyncQueue.processOne(googleDriveOAuthService);
+            if (!result.processed) break;
+            if (!result.synced) {
+                console.warn("[TratoCap Sync] Imagem permanece na fila:", result.error);
+                break;
+            }
         }
     } catch (error) {
         console.error("[TratoCap Sync] Falha no worker:", error.message);
@@ -101,7 +105,7 @@ router.post("/upload", upload.single("image"), async (req, res, next) => {
         const albumDir = path.join(root, album);
         fs.mkdirSync(albumDir, { recursive: true });
         const ext = path.extname(req.file.originalname || req.file.filename).toLowerCase() || ".jpg";
-        const clientUuid = String(req.body.client_uuid || uuidv4()).trim();
+        const clientUuid = String(req.body.client_uuid || "").trim() || uuidv4();
         const stableName = path.basename(clientUuid).replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
         const fileName = path.extname(stableName) ? stableName : `${stableName}${ext}`;
         const target = path.join(albumDir, fileName);
@@ -111,7 +115,8 @@ router.post("/upload", upload.single("image"), async (req, res, next) => {
         if (fs.existsSync(target)) {
             let previous = {};
             try { previous = JSON.parse(fs.readFileSync(target + ".json", "utf8")); } catch (_) {}
-            if (previous.sha256 && previous.sha256 !== sha256) {
+            const previousHash = previous.sha256 || crypto.createHash("sha256").update(fs.readFileSync(target)).digest("hex");
+            if (previousHash !== sha256) {
                 fs.unlinkSync(req.file.path);
                 return res.status(409).json({ success: false, code: "TRATOCAP_UUID_CONFLICT", erro: "Este client_uuid já foi utilizado para outra imagem." });
             }
@@ -134,7 +139,7 @@ router.post("/upload", upload.single("image"), async (req, res, next) => {
         };
 
         await SyncQueue.ensureSchema();
-        const jobCreated = await SyncQueue.enqueue({
+        await SyncQueue.enqueue({
             client_uuid: clientUuid,
             sha256,
             album_name: album,
@@ -217,8 +222,7 @@ router.get("/drive-gallery", async (req, res) => {
     } catch (error) {
         return res.status(503).json({
             success: false,
-            erro: "Não foi possível consultar a galeria permanente do Google Drive.",
-            detail: error.message
+            erro: "Não foi possível consultar a galeria permanente do Google Drive."
         });
     }
 });
