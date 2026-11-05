@@ -131,8 +131,12 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
     // Valores informados manualmente têm prioridade sobre qualquer referência.
     const effectiveAttributeOverrides = { ...(attributeOverrides || {}) };
 
-    const pictures = await productImageService.getByProductId(productId);
-    if (!pictures || pictures.length === 0) throw new Error("O produto não possui imagens.");
+    const allPictures = await productImageService.getByProductId(productId);
+    const pictures = (allPictures || [])
+        .filter(picture => picture.selected_for_ml !== false)
+        .sort((a, b) => Number(b.is_main) - Number(a.is_main) || Number(a.sort_order || 0) - Number(b.sort_order || 0));
+    if (!pictures.length) throw new Error("Selecione ao menos uma imagem para publicar no Mercado Livre.");
+    if (pictures.length > 10) throw new Error("O Mercado Livre permite no máximo 10 imagens por anúncio.");
     console.log(`[PublishPictures] Produto ${productId}: ${pictures.length} registro(s) de imagem.`);
     console.log("[PublishPictures] Origem dos registros:", pictures.map((picture, index) => ({
         index: index + 1,
