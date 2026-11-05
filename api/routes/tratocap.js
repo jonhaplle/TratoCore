@@ -154,10 +154,16 @@ router.get("/gallery", (req, res, next) => {
                     images: files.length,
                     note,
                     destination: "gallery",
-                    photos: files.map(file => ({
-                        name: path.basename(file),
-                        url: "/storage/gallery/albums/" + encodeURIComponent(e.name) + "/" + encodeURIComponent(path.basename(file))
-                    }))
+                    photos: files.map(file => {
+                        let photoMeta = {};
+                        try { photoMeta = JSON.parse(fs.readFileSync(file + ".json", "utf8")); } catch (_) {}
+                        return {
+                            name: path.basename(file),
+                            note: photoMeta.note || "",
+                            received_at: photoMeta.received_at || null,
+                            url: "/storage/gallery/albums/" + encodeURIComponent(e.name) + "/" + encodeURIComponent(path.basename(file))
+                        };
+                    })
                 };
             });
         res.json({ success: true, gallery: albums });
@@ -193,10 +199,16 @@ router.get("/albums", (req, res, next) => {
                     images: files.length,
                     imported: fs.existsSync(marker),
                     product_id: fs.existsSync(marker) ? JSON.parse(fs.readFileSync(marker, "utf8")).product_id || null : null,
-                    photos: files.map(file => ({
-                        name: path.basename(file),
-                        url: "/storage/tratocap/albums/" + encodeURIComponent(e.name) + "/" + encodeURIComponent(path.basename(file))
-                    }))
+                    photos: files.map(file => {
+                        let photoMeta = {};
+                        try { photoMeta = JSON.parse(fs.readFileSync(file + ".json", "utf8")); } catch (_) {}
+                        return {
+                            name: path.basename(file),
+                            note: photoMeta.note || "",
+                            received_at: photoMeta.received_at || null,
+                            url: "/storage/tratocap/albums/" + encodeURIComponent(e.name) + "/" + encodeURIComponent(path.basename(file))
+                        };
+                    })
                 };
             });
         res.json({ success: true, albums });
