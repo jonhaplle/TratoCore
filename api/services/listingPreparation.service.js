@@ -5,6 +5,8 @@ const ProductImageService = require("./productImageService");
 const localAI = require("./local-ai.service");
 const { findCatalogMatch } = require("./catalog.service");
 const mlApi = require("./ml/api.service");
+const publicationSpecService = require("./ml/publicationSpec.service");
+const attributeResolver = require("./ml/attributeResolver.service");
 
 function median(values) {
     const sorted = values.filter(value => Number.isFinite(value) && value > 0).sort((a, b) => a - b);
@@ -104,6 +106,28 @@ async function prepare(productId, sellerObservation = "") {
         ...(product.ml_attributes && !Array.isArray(product.ml_attributes) ? product.ml_attributes : {}),
         ...(analysis.attributes || {})
     };
+    let requiredMissing = [];
+    if (category && suggestedPrice > 0) {
+        try {
+            const currentDraft = {
+                ...product, title, description, sale_price: suggestedPrice,
+                condition: "used", ml_category_id: category.id, ml_attributes: attributes
+            };
+            const spec = await publicationSpecService.resolve(currentDraft);
+            const resolved = attributeResolver.build({
+                product: currentDraft,
+                categoryAttributes: spec.attributes,
+                conditionalAttributes: spec.conditionalAttributes?.required_attributes || [],
+                prediction: spec.prediction
+            });
+            requiredMissing = resolved.missing;
+            for (const attribute of resolved.attributes) {
+                attributes[attribute.id] = { value_id: attribute.value_id, value_name: attribute.value_name, value_struct: attribute.value_struct };
+            }
+        } catch (error) {
+            console.warn("[ListingPreparation] Atributos condicionais aguardam revisão:", error.message);
+        }
+    }
     const updated = await ProductService.update(productId, {
         ...product,
         title,
@@ -131,6 +155,7 @@ async function prepare(productId, sellerObservation = "") {
             category_id: category?.id || null,
             category_name: category?.name || null,
             category_attributes_loaded: categoryAttributes.length,
+            required_attributes_pending: requiredMissing,
             price_research: priceResearch,
             price_requires_manual_review: !suggestedPrice,
             publication_is_manual: true
