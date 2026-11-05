@@ -150,7 +150,10 @@ test("failed read cleans up temporary file and does not mark verified", async ()
     state.selectedFolderId = "products-folder-id";
     state.selectedFolderName = "FOTOS";
     const { drive } = await service.getAuthorizedDrive();
-    drive.files.get = async () => ({ data: Buffer.from("wrong") });
-    await assert.rejects(service.verifyWrite(), /did not match/);
+    const originalGet = drive.files.get.bind(drive.files);
+    drive.files.get = async options => options.alt === "media"
+        ? ({ data: Buffer.from("wrong") })
+        : originalGet(options);
+    await assert.rejects(service.verifyWrite(), /não corresponde/);
     assert.equal(state.writeVerifiedAt, null);
 });
