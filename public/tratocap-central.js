@@ -70,6 +70,14 @@
    $('albumsList').innerHTML=''; $('albumCount').textContent='—'; $('photoCount').textContent='—'; $('importedCount').textContent='—';
   }
   try {
+   const localData=await api('gallery');
+   renderAlbums('localGalleryList','localGalleryState',localData.gallery||[],'Nenhum álbum na galeria local.',true);
+  } catch(e) {
+   $('localGalleryState').hidden=false;
+   $('localGalleryState').textContent='Não foi possível carregar a galeria local: '+e.message;
+   $('localGalleryList').innerHTML='';
+  }
+  try {
    const adminKey=sessionStorage.getItem('googleDriveAdminKey');
    if(!adminKey) throw new Error('Abra Configurar Google Drive, informe a chave administrativa e volte para esta página.');
    const response=await fetch('/api/tratocap/drive-gallery',{headers:{Accept:'application/json',Authorization:'Bearer '+adminKey}});
