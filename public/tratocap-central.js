@@ -1,6 +1,9 @@
 (() => {
  const $ = id => document.getElementById(id);
- const api = path => fetch('/api/tratocap/' + path, { headers: { Accept: 'application/json' } }).then(async r => {
+ const api = (path, options={}) => fetch('/api/tratocap/' + path, {
+  headers: { Accept: 'application/json', ...(options.body ? {'Content-Type':'application/json'} : {}) },
+  ...options
+ }).then(async r => {
   const body = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(body.erro || body.error || ('HTTP ' + r.status));
   return body;
@@ -16,7 +19,14 @@
    const name=escapeHtml(a.album || 'Álbum sem nome');
    const count=Number(a.images)||0;
    const imported=isGallery || Boolean(a.imported);
-   return '<article class="tc-album"><h4>'+name+'</h4><p>'+count+' foto(s) recebida(s)</p><span class="tc-album-tag">'+(isGallery?'NA GALERIA':(imported?'IMPORTADO':'AGUARDANDO IMPORTAÇÃO'))+'</span></article>';
+   const photos=Array.isArray(a.photos)?a.photos:[];
+   const previews=photos.map(photo=>{
+    const url=escapeHtml(photo.url);
+    const alt=escapeHtml(photo.name || a.album || 'Foto do produto');
+    return '<a class="tc-photo-link" href="'+url+'" target="_blank" rel="noopener"><img class="tc-photo-thumb" src="'+url+'" alt="'+alt+'" loading="lazy"></a>';
+   }).join('');
+   const action=isGallery?'':'<button class="tc-import-btn" type="button" data-import-album="'+name+'" '+(imported?'disabled':'')+'>'+(imported?'Produto criado':'Importar como produto')+'</button>';
+   return '<article class="tc-album"><h4>'+name+'</h4><p>'+count+' foto(s) recebida(s)</p><div class="tc-photo-grid">'+(previews || '<span class="tc-no-photos">Nenhuma imagem encontrada neste álbum.</span>')+'</div><span class="tc-album-tag">'+(isGallery?'NA GALERIA':(imported?'IMPORTADO':'AGUARDANDO IMPORTAÇÃO'))+'</span>'+action+'</article>';
   }).join('');
  }
  async function refresh(){
@@ -48,6 +58,21 @@
   }
   $('refreshBtn').disabled=false; $('refreshBtn').textContent='Atualizar dados';
  }
+ $('albumsList').addEventListener('click',async event=>{
+  const button=event.target.closest('[data-import-album]');
+  if(!button) return;
+  const album=button.dataset.importAlbum;
+  button.disabled=true; button.textContent='Importando…';
+  try {
+   const result=await api('finalize',{method:'POST',body:JSON.stringify({album})});
+   if(result.total_imported>0) alert('Produto criado com '+result.imported[0].images+' foto(s).');
+   else if(result.skipped?.length) alert('Não foi possível importar: '+result.skipped.map(x=>x.reason).join(', '));
+   await refresh();
+  } catch(e) {
+   alert('Falha ao importar o álbum: '+e.message);
+   button.disabled=false; button.textContent='Importar como produto';
+  }
+ });
  $('refreshBtn').addEventListener('click',refresh);
  refresh();
 })();
