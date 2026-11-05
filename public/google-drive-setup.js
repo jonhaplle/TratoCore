@@ -81,9 +81,16 @@
   if (sessionStorage.getItem("googleDriveAdminKey")) {
     document.getElementById("pick").disabled = false;
     api("/status").then(result => {
-      if (result.authorized) document.getElementById("pick").disabled = false;
-      if (result.folderSelected) document.getElementById("verify").disabled = false;
-      if (result.writeVerified) status.textContent = "Autorização, pasta e gravação já validadas.";
+      const rootIsFotos = result.folderSelected && result.folderName === "FOTOS";
+      document.getElementById("pick").disabled = !result.authorized;
+      document.getElementById("verify").disabled = !rootIsFotos || Boolean(result.writeVerified);
+      if (result.folderSelected && !rootIsFotos) {
+        status.textContent = "A pasta antiga está selecionada. Selecione a pasta raiz FOTOS para ativar a Galeria definitiva.";
+      } else if (result.writeVerified && rootIsFotos) {
+        status.textContent = "Google Drive autorizado. Pasta FOTOS e gravação já validadas.";
+      } else if (rootIsFotos) {
+        status.textContent = "Pasta FOTOS selecionada. Execute o teste de gravação.";
+      }
     }).catch(() => {});
   }
 })();
