@@ -31,6 +31,12 @@ router.put(
     ProductImageController.setMainImage
 );
 
+// Definir quais imagens serão enviadas ao Mercado Livre e sua ordem.
+router.put(
+    "/product/:productId/selection",
+    ProductImageController.updateSelection
+);
+
 // Remover imagem
 router.delete(
     "/:id",
