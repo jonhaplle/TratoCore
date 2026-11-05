@@ -21,7 +21,11 @@ async function create(image) {
             sort_order,
             drive_file_id,
             drive_folder_id,
-            drive_web_view_link
+            drive_web_view_link,
+            client_uuid,
+            sha256,
+            drive_sync_status,
+            drive_sync_error
         )
         VALUES
         (
@@ -44,7 +48,11 @@ async function create(image) {
         image.sort_order,
         image.drive_file_id || null,
         image.drive_folder_id || null,
-        image.drive_web_view_link || null
+        image.drive_web_view_link || null,
+        image.client_uuid || null,
+        image.sha256 || null,
+        image.drive_sync_status || (image.drive_file_id ? "synced" : "pending"),
+        image.drive_sync_error || null
 
     ];
 
