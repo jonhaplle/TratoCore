@@ -107,7 +107,7 @@ function renderImageManager(produto) {
             checkbox.type = "checkbox";
             checkbox.checked = image.selected_for_ml;
             checkbox.addEventListener("change", () => {
-                if (checkbox.checked && selectedRecords().length >= 10) {
+                if (checkbox.checked && selectedRecords().length > 10) {
                     checkbox.checked = false;
                     message.textContent = "O Mercado Livre permite no máximo 10 imagens por anúncio.";
                     return;
@@ -146,7 +146,7 @@ function renderImageManager(produto) {
             down.type = "button";
             down.textContent = "↓";
             down.title = "Mover para baixo";
-            down.disabled = index === records.length - 1;
+            down.disabled = index === records.length - 1 || Number(image.id) === mainImageId;
             down.addEventListener("click", () => {
                 const next = records[index + 1];
                 records[index + 1] = image;
