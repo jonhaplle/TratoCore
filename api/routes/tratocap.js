@@ -508,8 +508,8 @@ async function recoverUnimportedAlbums() {
 
             // Se o produto já foi importado, reconstrói também os caminhos
             // locais usados pela ficha do produto enquanto o Drive está pendente.
-            if (job.imported_product_id && job.payload) {
-                const productId = Number(job.imported_product_id);
+            if (importedProductId && job.payload) {
+                const productId = importedProductId;
                 if (!productImagesCache.has(productId)) {
                     productImagesCache.set(productId, await ProductImageService.getByProductId(productId));
                 }
