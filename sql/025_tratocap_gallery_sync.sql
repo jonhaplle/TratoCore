@@ -43,6 +43,9 @@ CREATE TABLE IF NOT EXISTS tratocap_sync_jobs (
     synced_at TIMESTAMPTZ
 );
 
+ALTER TABLE tratocap_sync_jobs
+    ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
 CREATE INDEX IF NOT EXISTS idx_tratocap_sync_jobs_pending
     ON tratocap_sync_jobs(status, updated_at)
     WHERE status IN ('pending', 'processing');
