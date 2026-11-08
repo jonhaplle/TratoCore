@@ -931,6 +931,9 @@ function newProduct() {
     editingProductId = null;
     editingProductCategoryId = null;
     editingProductAttributes = null;
+    if (window.location.search) {
+        window.history.replaceState({}, "", "index.html");
+    }
 
     if (btnAnalyze) btnAnalyze.style.display = "";
     if (photoInput) photoInput.style.display = "";
