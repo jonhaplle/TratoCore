@@ -97,7 +97,7 @@ async function prepare(productId, sellerObservation = "") {
     const description = String(
         draft.description ||
         analysis.description ||
-        [factDescription, sellerObservation].filter(Boolean).join("\\n\\n") ||
+        [factDescription, sellerObservation].filter(Boolean).join("\n\n") ||
         product.description ||
         ""
     ).trim();
