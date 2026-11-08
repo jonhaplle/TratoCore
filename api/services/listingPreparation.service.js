@@ -87,12 +87,13 @@ async function prepare(productId, sellerObservation = "") {
         identification.product_type,
         identification.color
     ].map(value => String(value || "").trim()).filter(Boolean).join(" ");
+    const hasGeneratedTitle = Boolean(draft.title || analysis.title || identifiedTitle);
     const title = String(draft.title || analysis.title || identifiedTitle || product.title || "").trim();
     const factDescription = (analysis.facts || [])
         .map(fact => typeof fact === "string" ? fact : fact?.value || fact?.description || "")
         .map(value => String(value || "").trim())
         .filter(Boolean)
-        .join("\\n");
+        .join("\n");
     const description = String(
         draft.description ||
         analysis.description ||
@@ -100,9 +101,16 @@ async function prepare(productId, sellerObservation = "") {
         product.description ||
         ""
     ).trim();
+    const hasGeneratedDescription = Boolean(draft.description || analysis.description || factDescription);
 
-    const me = await mlApi.getMe();
-    const priceResearch = await researchUsedPrice(title, me?.id);
+    let sellerId = null;
+    try {
+        const me = await mlApi.getMe();
+        sellerId = me?.id || null;
+    } catch (error) {
+        console.warn("[ListingPreparation] Conta ML indisponível para excluir anúncios próprios:", error.message);
+    }
+    const priceResearch = await researchUsedPrice(title, sellerId);
     const aiPrice = Number(draft.suggested_price || analysis.suggested_price || 0);
     const existingPrice = Number(product.sale_price || 0);
     const suggestedPrice = priceResearch.price || (aiPrice > 0 ? aiPrice : existingPrice);
@@ -190,7 +198,7 @@ async function prepare(productId, sellerObservation = "") {
         success: true,
         product: updated,
         preparation: {
-            status: title && description && suggestedPrice > 0 ? "ready_for_review" : "needs_review",
+            status: hasGeneratedTitle && hasGeneratedDescription && suggestedPrice > 0 ? "ready_for_review" : "needs_review",
             condition: "used",
             category_id: category?.id || null,
             category_name: category?.name || null,
