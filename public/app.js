@@ -932,6 +932,10 @@ function newProduct() {
     editingProductCategoryId = null;
     editingProductAttributes = null;
 
+    if (btnAnalyze) btnAnalyze.style.display = "";
+    if (photoInput) photoInput.style.display = "";
+    if (btnSave) btnSave.textContent = "Salvar Produto";
+
     uploadedPhoto = null;
     uploadedPhotos = [];
 
