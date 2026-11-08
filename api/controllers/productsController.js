@@ -257,6 +257,7 @@ module.exports = {
     create,
     update,
     remove,
-    improveWithAI
+    improveWithAI,
+    prepareListing
 
 };
