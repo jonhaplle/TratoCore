@@ -334,21 +334,7 @@ pesquisa.addEventListener("input", () => {
 // =========================================
 
 function editar(id) {
-
-    const produto = produtos.find(p => p.id == id);
-
-    if (!produto)
-        return;
-
-    editId.value = produto.id;
-    editSku.value = produto.sku || "";
-    editTitulo.value = produto.title;
-    editPreco.value = produto.sale_price;
-    editQuantidade.value = produto.quantity;
-    editStatus.value = produto.status;
-
-    modal.style.display = "flex";
-
+    window.location.href = `index.html?edit=${encodeURIComponent(id)}`;
 }
 
 // =========================================
