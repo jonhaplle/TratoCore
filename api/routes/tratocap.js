@@ -77,6 +77,32 @@ const upload = multer({
         : cb(new Error("Formato de imagem não permitido."))
 });
 
+// Limpeza administrativa: remove somente tarefas ainda pendentes; preserva produtos e imagens.
+router.post("/admin/clear-pending", async (req, res) => {
+    const configuredKey = process.env.GOOGLE_OAUTH_ADMIN_KEY;
+    const supplied = req.get("Authorization")?.replace(/^Bearer\\s*/i, "").trim();
+    const expected = Buffer.from(String(configuredKey || ""));
+    const received = Buffer.from(String(supplied || ""));
+    if (!configuredKey) {
+        return res.status(503).json({ success: false, erro: "Chave administrativa não configurada no servidor." });
+    }
+    if (expected.length !== received.length || !crypto.timingSafeEqual(expected, received)) {
+        return res.status(401).json({ success: false, erro: "Não autorizado." });
+    }
+    try {
+        const result = await SyncQueue.clearPending();
+        return res.json({
+            success: true,
+            deleted_pending: Number(result.deleted || 0),
+            remaining_pending: Number(result.remaining_pending || 0),
+            preserved: ["processing", "synced", "failed", "products", "product_images", "Mercado Livre listings"]
+        });
+    } catch (error) {
+        console.error("[TratoCap] Falha ao limpar fila pendente:", error.message);
+        return res.status(500).json({ success: false, erro: "Não foi possível limpar as tarefas pendentes." });
+    }
+});
+
 router.get("/status", async (req, res) => {
     let sync_queue = { pending: 0, processing: 0, synced: 0, failed: 0 };
     try { sync_queue = await SyncQueue.getStatus(); } catch (error) {
