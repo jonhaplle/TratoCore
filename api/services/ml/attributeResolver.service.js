@@ -28,35 +28,47 @@ function predictorMap(prediction) {
 }
 
 function productAttributeMap(product) {
-    const raw = product?.ml_attributes || product?.attributes || {};
     const map = {};
-
-    if (Array.isArray(raw)) {
-        for (const item of raw) {
-            if (item?.id) map[item.id] = item;
-        }
-    } else if (raw && typeof raw === "object") {
-        for (const [id, value] of Object.entries(raw)) {
-            if (value && typeof value === "object" && !Array.isArray(value)) {
-                map[id] = { id, ...value };
-            } else {
-                map[id] = { id, value_name: value };
+    // Mescla as duas fontes: atributos normalizados do produto e atributos ML.
+    // ml_attributes tem prioridade quando contém o mesmo ID.
+    for (const raw of [product?.attributes, product?.ml_attributes]) {
+        if (Array.isArray(raw)) {
+            for (const item of raw) {
+                if (item?.id) map[item.id] = item;
+            }
+        } else if (raw && typeof raw === "object") {
+            for (const [id, value] of Object.entries(raw)) {
+                if (value && typeof value === "object" && !Array.isArray(value)) {
+                    map[id] = { id, ...value };
+                } else if (value !== undefined && value !== null && String(value).trim()) {
+                    map[id] = { id, value_name: value };
+                }
             }
         }
     }
-
     return map;
 }
 
 function knownProductValue(product, id) {
-    const ai = product?.attributes || product?.ml_attributes || {};
-    const aiMap = { MUSIC_ARTIST_NAME: ai.artist, ALBUM_NAME: ai.album, MANUFACTURER: ai.manufacturer, SALE_FORMAT: ai.sale_format, UNITS_PER_PACK: ai.units_per_pack };
+    const ai = {
+        ...(product?.ml_attributes && !Array.isArray(product.ml_attributes) ? product.ml_attributes : {}),
+        ...(product?.attributes && !Array.isArray(product.attributes) ? product.attributes : {})
+    };
+    const aiMap = {
+        MUSIC_ARTIST_NAME: ai.artist,
+        ALBUM_NAME: ai.album,
+        MANUFACTURER: product?.manufacturer || ai.manufacturer,
+        MODEL_ALPHANUMERIC: product?.model_alphanumeric || ai.model_alphanumeric
+            || ai.MODEL_ALPHANUMERIC?.value_name,
+        SALE_FORMAT: ai.sale_format,
+        UNITS_PER_PACK: ai.units_per_pack
+    };
     if (aiMap[id] !== undefined && aiMap[id] !== null && String(aiMap[id]).trim()) return aiMap[id];
     const map = {
-        BRAND: product?.brand,
-        MODEL: product?.model,
-        LINE: product?.line,
-        COLOR: product?.color,
+        BRAND: product?.brand || ai.brand,
+        MODEL: product?.model || ai.model,
+        LINE: product?.line || ai.line,
+        COLOR: product?.color || ai.color,
         GTIN: product?.gtin,
         SALE_FORMAT: product?.sale_format,
         UNITS_PER_PACK: product?.units_per_pack,
@@ -313,7 +325,9 @@ function resolveOne(definition, product, predictorValues, overrides, options = {
     }
 
     // O predictor é auxiliar e só completa atributos obrigatórios.
-    if (required && id !== "MATERIAL") {
+    // Códigos alfanuméricos de modelo não podem ser inferidos pelo predictor:
+    // um código de outra marca/modelo (ex.: RMX... em aparelho Samsung) é perigoso.
+    if (required && id !== "MATERIAL" && id !== "MODEL_ALPHANUMERIC") {
         const predicted = predictorValues[id];
         if (predicted) {
             if (isNumberUnit) {
