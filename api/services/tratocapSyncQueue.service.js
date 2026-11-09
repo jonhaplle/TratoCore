@@ -272,6 +272,21 @@ async function getByClientUuid(clientUuid) {
     return result.rows[0] || null;
 }
 
+async function clearPending() {
+    await ensureSchema();
+    const result = await db.query(`
+        WITH deleted AS (
+            DELETE FROM tratocap_sync_jobs
+            WHERE status = 'pending'
+            RETURNING 1
+        )
+        SELECT
+            (SELECT COUNT(*)::INTEGER FROM deleted) AS deleted,
+            (SELECT COUNT(*)::INTEGER FROM tratocap_sync_jobs WHERE status = 'pending') AS remaining_pending
+    `);
+    return result.rows[0] || { deleted: 0, remaining_pending: 0 };
+}
+
 async function getStatus() {
     await ensureSchema();
     const result = await db.query(`
@@ -285,4 +300,4 @@ async function getStatus() {
     return result.rows[0] || { pending: 0, processing: 0, synced: 0 };
 }
 
-module.exports = { ensureSchema, enqueue, processOne, markAlbumImported, getUnimportedProductImages, getByClientUuid, getStatus };
+module.exports = { ensureSchema, enqueue, processOne, markAlbumImported, getUnimportedProductImages, getByClientUuid, getStatus, clearPending };
