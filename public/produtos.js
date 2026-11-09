@@ -515,8 +515,18 @@ function abrirPendenciasPublicacaoML(id, missing, message) {
     publicacaoMLId = id;
     publicacaoMLPendencias = Array.isArray(missing) ? missing : [];
 
+    const quantidadePendencias = publicacaoMLPendencias.length;
+    const tituloPendencias = modalPublicacaoML.querySelector("h2");
+    if (tituloPendencias) {
+        tituloPendencias.textContent = quantidadePendencias === 1
+            ? "Falta 1 informação para publicar"
+            : `Faltam ${quantidadePendencias} informações para publicar`;
+    }
+
     publicacaoMLMensagem.textContent = message ||
-        "O TratoCore resolveu o restante automaticamente. SÃ³ falta esta informaÃ§Ã£o para o Mercado Livre.";
+        (quantidadePendencias === 1
+            ? "O TratoCore resolveu o restante automaticamente. Confira e informe o campo abaixo."
+            : `O TratoCore resolveu o restante automaticamente. Confira os ${quantidadePendencias} campos abaixo para continuar.`);
 
     publicacaoMLCampos.innerHTML = publicacaoMLPendencias.map((attribute, index) => {
         const values = Array.isArray(attribute.values) ? attribute.values : [];

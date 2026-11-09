@@ -81,6 +81,15 @@ exports.publish = async (req, res) => {
         console.error("====================================");
 
         if (err.code === "ML_MISSING_ATTRIBUTES") {
+            console.error("[ML Publish] Atributos obrigatórios pendentes:", JSON.stringify(
+                (err.missing || []).map(attribute => ({
+                    id: attribute.id,
+                    name: attribute.name,
+                    value_type: attribute.value_type
+                })),
+                null,
+                2
+            ));
             return res.status(422).json({
                 success: false,
                 code: err.code,
