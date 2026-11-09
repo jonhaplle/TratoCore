@@ -80,7 +80,7 @@ const upload = multer({
 // Limpeza administrativa: remove somente tarefas ainda pendentes; preserva produtos e imagens.
 router.post("/admin/clear-pending", async (req, res) => {
     const configuredKey = process.env.GOOGLE_OAUTH_ADMIN_KEY;
-    const supplied = req.get("Authorization")?.replace(/^Bearer\\s*/i, "").trim();
+    const supplied = req.get("Authorization")?.replace(/^Bearer\s*/i, "").trim();
     const expected = Buffer.from(String(configuredKey || ""));
     const received = Buffer.from(String(supplied || ""));
     if (!configuredKey) {
