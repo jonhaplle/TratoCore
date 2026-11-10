@@ -9,6 +9,7 @@ const publicationSpecService = require("./publicationSpec.service");
 const attributeResolver = require("./attributeResolver.service");
 const attributeRequirements = require("./attributeRequirements.service");
 const similarPackageReference = require("./similarPackageReference.service");
+const shippingService = require("./shipping.service");
 
 function clean(value) {
     if (value === undefined || value === null) return "";
@@ -58,66 +59,6 @@ function isOnlyWarnings(error) {
     );
 }
 
-function chooseShippingMode(userPreferences, categoryPreferences) {
-    const userModes = Array.isArray(userPreferences?.modes)
-        ? userPreferences.modes.map(String)
-        : [];
-
-    const categoryModes = Array.isArray(categoryPreferences?.logistics)
-        ? categoryPreferences.logistics
-            .map(item => String(item?.mode || "").trim())
-            .filter(Boolean)
-        : [];
-
-    const allowed = new Set(categoryModes);
-    const candidates = ["me2", "me1", "not_specified", "custom"];
-
-    for (const mode of candidates) {
-        if (userModes.includes(mode) && allowed.has(mode)) {
-            return mode;
-        }
-    }
-
-    // Se a categoria não retornar logistics, a preferência da conta ainda
-    // permite uma escolha segura entre os modos que o vendedor possui.
-    if (!categoryModes.length) {
-        for (const mode of candidates) {
-            if (userModes.includes(mode)) return mode;
-        }
-    }
-
-    return null;
-}
-
-async function resolveShipping(categoryId) {
-    try {
-        const me = await apiService.getMe();
-        const userId = me?.id;
-        if (!userId) return null;
-
-        const [userPreferences, categoryPreferences] = await Promise.all([
-            apiService.getShippingPreferences(userId),
-            apiService.getCategoryShippingPreferences(categoryId)
-        ]);
-
-        const mode = chooseShippingMode(userPreferences, categoryPreferences);
-        if (!mode) {
-            console.log("SHIPPING: nenhum modo comum conta/categoria; publicação seguirá sem shipping explícito.");
-            return null;
-        }
-
-        console.log("SHIPPING RESOLVIDO:", mode);
-        return {
-            mode,
-            local_pick_up: false,
-            free_shipping: false
-        };
-    } catch (error) {
-        console.log("SHIPPING: não foi possível consultar preferências; publicação seguirá sem shipping explícito.");
-        console.log(error.response?.data || error.message || error);
-        return null;
-    }
-}
 
 module.exports.publish = async (productId, attributeOverrides = {}) => {
     console.log("========================================");
@@ -161,7 +102,7 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
 
     // Resolve a modalidade antes dos atributos: dimensões da embalagem
     // só entram como obrigatórias quando a logística escolhida for ME2.
-    const shipping = await resolveShipping(publicationSpec.category_id);
+    const shipping = await shippingService.resolveShipping(apiService, publicationSpec.category_id);
     const requirePackageDimensions = shipping?.mode === "me2";
 
     // ======================================================
