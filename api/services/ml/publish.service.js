@@ -283,7 +283,7 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
     try {
         validation = await apiService.validateItem(item);
     } catch (error) {
-        const missing = extractMissingFromValidation(error, publicationSpec);
+        const missing = extractMissingFromValidation(error, publicationSpec, product);
         if (missing.length) {
             throw missingError(missing, "O Mercado Livre ainda exige estas informações.");
         }
