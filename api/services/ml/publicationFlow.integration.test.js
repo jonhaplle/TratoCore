@@ -38,7 +38,7 @@ function missingPicturesValidationError() {
 function createBackend({ validationErrors = [
     missingValidationError("MATERIAL"),
     missingValidationError("GTIN", true)
-], uploadError = null, imageKind = "drive" } = {}) {
+], uploadError = null, imageKind = "drive", withEmptyGtinReason = false, requireConditionalGtin = false } = {}) {
     const calls = { validationPayloads: [], publishItem: 0, publishPayload: null, pictureUpload: 0, uploadInputs: [], events: [] };
     const product = {
         id: "10",
@@ -51,7 +51,25 @@ function createBackend({ validationErrors = [
     };
     const definitions = [
         { id: "MATERIAL", name: "Material", value_type: "string", tags: {}, values: [] },
-        { id: "GTIN", name: "GTIN", value_type: "string", tags: {}, values: [] }
+        {
+            id: "GTIN",
+            name: "GTIN",
+            value_type: "string",
+            tags: { conditional_required: true },
+            values: []
+        },
+        ...(withEmptyGtinReason ? [{
+            id: "EMPTY_GTIN_REASON",
+            name: "Motivo de GTIN vazio",
+            value_type: "list",
+            tags: { conditional_required: true },
+            values: [
+                { id: "17055158", name: "Artesanal" },
+                { id: "17055159", name: "Kit" },
+                { id: "17055160", name: "Não registrado" },
+                { id: "17055161", name: "Outro" }
+            ]
+        }] : [])
     ];
     const apiService = {
         async getAccessToken() {},
@@ -98,7 +116,9 @@ function createBackend({ validationErrors = [
                     category: { id: "MLB193633", name: "Acessórios" , settings: { max_title_length: 60 } },
                     listing_type: { id: "gold_pro" },
                     attributes: definitions,
-                    conditionalAttributes: { required_attributes: [] },
+                    conditionalAttributes: {
+                        required_attributes: requireConditionalGtin ? [definitions.find(attribute => attribute.id === "GTIN")] : []
+                    },
                     prediction: { attributes: [{ id: "MATERIAL", value_name: "Prata" }] }
                 };
             }
@@ -240,6 +260,49 @@ test("pendências enviam MATERIAL manual, retornam nova pendência e permitem re
     assert.equal(calls.publishItem, 0);
     assert.equal(calls.pictureUpload, 0);
     assert.deepEqual(calls.events, ["validate", "validate"]);
+});
+
+test("usado sem GTIN solicita motivo oficial quando a categoria oferece EMPTY_GTIN_REASON", async () => {
+    const { calls, controller } = createBackend({
+        withEmptyGtinReason: true,
+        requireConditionalGtin: true
+    });
+    const result = await callPublishController(controller, {});
+
+    assert.equal(result.statusCode, 422);
+    assert.equal(result.body.code, "ML_MISSING_ATTRIBUTES");
+    assert.equal(result.body.missing.length, 1);
+    assert.equal(result.body.missing[0].id, "EMPTY_GTIN_REASON");
+    assert.deepEqual(
+        result.body.missing[0].values.map(value => value.id),
+        ["17055158", "17055159", "17055160", "17055161"]
+    );
+    assert.equal(calls.publishItem, 0);
+    assert.equal(calls.pictureUpload, 0);
+});
+
+test("motivo escolhido para usado substitui GTIN condicional no payload", async () => {
+    const { calls, controller } = createBackend({
+        validationErrors: [],
+        withEmptyGtinReason: true,
+        requireConditionalGtin: true
+    });
+    const result = await callPublishController(controller, {
+        attributeOverrides: {
+            EMPTY_GTIN_REASON: {
+                value_id: "17055160",
+                value_name: "Não registrado"
+            }
+        }
+    });
+
+    assert.equal(result.statusCode, 500); // O mock interrompe antes de qualquer criação externa.
+    assert.deepEqual(
+        calls.publishPayload.attributes.find(attribute => attribute.id === "EMPTY_GTIN_REASON"),
+        { id: "EMPTY_GTIN_REASON", value_id: "17055160" }
+    );
+    assert.equal(calls.publishPayload.attributes.some(attribute => attribute.id === "GTIN"), false);
+    assert.equal(calls.publishItem, 1);
 });
 
 test("após validação aprovada, envia a imagem uma vez e passa o ID ao limite de criação", async () => {
