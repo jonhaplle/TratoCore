@@ -46,6 +46,19 @@ function productAttributeMap(product) {
             }
         }
     }
+    // Campos logísticos salvos no produto também podem alimentar os atributos
+    // oficiais do Mercado Livre, sem exigir redigitação no modal.
+    const packageFields = {
+        SELLER_PACKAGE_HEIGHT: product?.seller_package_height ?? product?.package_height,
+        SELLER_PACKAGE_WIDTH: product?.seller_package_width ?? product?.package_width,
+        SELLER_PACKAGE_LENGTH: product?.seller_package_length ?? product?.package_length,
+        SELLER_PACKAGE_WEIGHT: product?.seller_package_weight ?? product?.package_weight
+    };
+    for (const [id, value] of Object.entries(packageFields)) {
+        if (value !== undefined && value !== null && String(value).trim()) {
+            map[id] = { id, value_name: value };
+        }
+    }
     return map;
 }
 
@@ -473,12 +486,17 @@ exports.build = ({
 
     for (const definition of definitions) {
         const tags = definition.tags || {};
+        const condition = String(product?.condition || "used").toLowerCase();
+        const isNew = condition === "new";
 
         const isSellerPackageAttribute = Boolean(sellerPackageUnit(definition.id));
         const packageRequired = isSellerPackageAttribute && requirePackageDimensions;
-        if (!packageRequired && (tags.hidden || tags.read_only || tags.fixed)) continue;
+        // new_required só se aplica a itens novos. Não pode virar pendência
+        // para usados por estar presente na ficha da categoria.
+        const requiredByCondition = tags.required === true || (isNew && tags.new_required === true);
+        if (!packageRequired && (tags.read_only || tags.fixed || (tags.hidden && !requiredByCondition))) continue;
 
-        const required = packageRequired || tags.required === true;
+        const required = packageRequired || requiredByCondition;
         const resolved = resolveOne(
             definition,
             product,
