@@ -3,6 +3,22 @@ const crypto = require("crypto");
 const service = require("../services/tratoVendedor.service");
 
 const router = express.Router();
+const handoffAttempts = new Map();
+const HANDOFF_WINDOW_MS = 60 * 1000;
+const HANDOFF_MAX_ATTEMPTS = 8;
+
+function allowHandoff(ip) {
+    const now = Date.now();
+    const previous = handoffAttempts.get(ip) || [];
+    const recent = previous.filter(timestamp => now - timestamp < HANDOFF_WINDOW_MS);
+    if (recent.length >= HANDOFF_MAX_ATTEMPTS) {
+        handoffAttempts.set(ip, recent);
+        return false;
+    }
+    recent.push(now);
+    handoffAttempts.set(ip, recent);
+    return true;
+}
 
 function safeEqual(left, right) {
     const a = Buffer.from(String(left || ""));
@@ -54,6 +70,13 @@ router.get("/search", async (req, res) => {
 });
 
 router.post("/handoff", async (req, res) => {
+    const clientIp = String(req.ip || req.socket?.remoteAddress || "unknown");
+    if (!allowHandoff(clientIp)) {
+        return res.status(429).json({
+            success: false,
+            error: "Muitas solicitações em pouco tempo. Aguarde um minuto e tente novamente."
+        });
+    }
     try {
         const customerName = String(req.body?.customer_name || "").trim().slice(0, 120);
         const contact = String(req.body?.customer_contact || "").trim().slice(0, 160);
