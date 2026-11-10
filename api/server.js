@@ -54,6 +54,7 @@ if (!fs.existsSync(productsPath)) {
 // ======================================================
 
 app.use(express.static(path.join(__dirname, "../public")));
+
 app.use("/storage", express.static(storagePath));
 
 // ======================================================
@@ -61,11 +62,17 @@ app.use("/storage", express.static(storagePath));
 // ======================================================
 
 app.use("/api/products", productsRoutes);
+
 app.use("/api/upload", uploadRoutes);
+
 app.use("/api/ai", aiRoutes);
+
 app.use("/api/product-images", productImagesRoutes);
+
 app.use("/api/ml", mlRoutes);
+
 app.use("/api/tratocap", tratocapRoutes);
+
 app.use("/api/version", versionRoutes);
 
 // Módulo independente de atendimento ao cliente.
@@ -83,7 +90,9 @@ app.use("/api/google-drive/oauth", createGoogleDriveOAuthRouter());
 // ======================================================
 
 app.get("/", (req, res) => {
+
     res.sendFile(path.join(__dirname, "../public/index.html"));
+
 });
 
 // ======================================================
@@ -91,17 +100,27 @@ app.get("/", (req, res) => {
 // ======================================================
 
 app.get("/api", (req, res) => {
+
     res.json({
+
         sistema: "Trato Core",
+
         versao: "0.6.0",
+
         status: "online",
+
         banco: "PostgreSQL",
+
         upload: "ativo",
+
         ia: "OpenAI",
+
         storage: "/storage",
-        imagens: "product_images",
-        modulo_vendedor: "1.0.0"
+
+        imagens: "product_images"
+
     });
+
 });
 
 // ======================================================
@@ -109,9 +128,13 @@ app.get("/api", (req, res) => {
 // ======================================================
 
 app.use((req, res) => {
+
     res.status(404).json({
+
         erro: "Rota não encontrada."
+
     });
+
 });
 
 // ======================================================
@@ -119,15 +142,20 @@ app.use((req, res) => {
 // ======================================================
 
 app.use((err, req, res, next) => {
+
     console.error("======================================");
     console.error("ERRO");
     console.error("======================================");
     console.error(err);
 
     res.status(500).json({
+
         sucesso: false,
+
         erro: err.message || "Erro interno do servidor."
+
     });
+
 });
 
 // ======================================================
@@ -137,6 +165,7 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
+
     console.log("======================================");
     console.log("        TRATO CORE 0.6.0");
     console.log("======================================");
@@ -147,14 +176,30 @@ app.listen(PORT, () => {
     console.log("API:");
     console.log(`http://localhost:${PORT}/api`);
     console.log("");
-    console.log("Trato Vendedor IA:");
-    console.log(`http://localhost:${PORT}/vendedor.html`);
+    console.log("Produtos:");
+    console.log(`http://localhost:${PORT}/api/products`);
     console.log("");
-    console.log("API Vendedor:");
-    console.log(`http://localhost:${PORT}/api/vendedor/status`);
+    console.log("Upload:");
+    console.log(`http://localhost:${PORT}/api/upload`);
+    console.log("");
+    console.log("Imagens:");
+    console.log(`http://localhost:${PORT}/api/product-images`);
+    console.log("");
+    console.log("IA:");
+    console.log(`http://localhost:${PORT}/api/ai/analyze`);
+    console.log("");
+    console.log("TratoCap Sync:");
+    console.log(`http://localhost:${PORT}/api/tratocap/status`);
+    console.log("");
+    console.log("Google Drive:");
+    console.log(`http://localhost:${PORT}/api/drive/status`);
     console.log("");
     console.log("Storage:");
     console.log(storagePath);
     console.log("");
+    console.log("OpenAI:");
+    console.log(process.env.OPENAI_API_KEY ? "Chave carregada" : "Chave não encontrada");
+    console.log("");
     console.log("======================================");
+
 });
