@@ -25,6 +25,10 @@ function termsOf(value) {
 function publicProduct(product) {
     const images = Array.isArray(product.images) ? product.images : [];
     const main = images.find(image => image && image.is_main) || images[0] || {};
+    const imageUrl = product.thumb_url || product.original_url || main.thumb_url || main.original_url || null;
+    const safeImageUrl = imageUrl && (/^https:\/\//i.test(imageUrl) || String(imageUrl).startsWith("/"))
+        ? imageUrl
+        : null;
     return {
         id: Number(product.id),
         title: String(product.title || "").trim(),
@@ -34,7 +38,7 @@ function publicProduct(product) {
         condition: String(product.condition || "used"),
         price: Number(product.sale_price || 0),
         quantity: Number(product.quantity || 0),
-        image_url: product.thumb_url || product.original_url || main.thumb_url || main.original_url || null,
+        image_url: safeImageUrl,
         permalink: product.ml_permalink || null
     };
 }
