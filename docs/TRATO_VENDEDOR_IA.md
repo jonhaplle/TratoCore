@@ -101,10 +101,10 @@ Não reutilize a chave do Google Drive nem credenciais do Mercado Livre.
 A tabela `trato_vendedor_handoffs` é criada automaticamente na primeira solicitação de encaminhamento. Nenhuma tabela existente é alterada.
 
 ## Limites conhecidos
-- A busca é lexical, sem LLM; não interpreta intenção complexa nem responde perguntas sobre características ausentes no cadastro.
+- A busca direta do catálogo é lexical. O chat usa LLM local para interpretar perguntas e, quando identifica intenção de compra, consulta o catálogo para fundamentar dados comerciais.
 - Voz de entrada depende do suporte do navegador e normalmente exige HTTPS ou localhost.
 - Fotos servidas por proxy externo podem exigir internet mesmo quando a interface local está disponível.
 - A caixa de atendimento lista solicitações novas; atualização de status e painel operacional completo ficam para uma etapa posterior.
 
 ## Isolamento
-A integração de voz adiciona um serviço local independente e endpoints próprios no módulo Vendedor. Não altera TratoCap, publicação do Mercado Livre, cadastro de produtos, OAuth ou tabelas existentes.
+A integração adiciona serviços locais independentes de conversa e voz, além de endpoints próprios no módulo Vendedor. Não altera TratoCap, publicação do Mercado Livre, cadastro de produtos, OAuth ou tabelas existentes.
