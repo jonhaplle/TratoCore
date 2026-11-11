@@ -12,6 +12,7 @@
   let recognition = null;
   let clonedVoiceAvailable = false;
   let currentAudio = null;
+  const chatHistory = [];
 
   function money(value) {
     return Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -78,6 +79,74 @@
       toggle.disabled = true;
       toggle.checked = false;
       status.textContent = "Voz clonada indisponível; usando voz do navegador.";
+    }
+  }
+
+  function appendChatMessage(role, message) {
+    const item = document.createElement("div");
+    item.className = "chat-bubble " + (role === "user" ? "user" : "assistant");
+    item.textContent = message;
+    $("chatMessages").appendChild(item);
+    $("chatMessages").scrollTop = $("chatMessages").scrollHeight;
+    return item;
+  }
+
+  async function checkAiStatus() {
+    const status = $("aiStatus");
+    try {
+      const response = await fetch("/api/vendedor/chat/status");
+      const data = await response.json();
+      if (data.available) {
+        status.textContent = "IA local pronta · " + data.model;
+        status.classList.add("ready");
+      } else if (data.ollama_online) {
+        status.textContent = "Instale o modelo " + data.model;
+        status.classList.remove("ready");
+      } else {
+        status.textContent = "Ollama não iniciado neste computador";
+        status.classList.remove("ready");
+      }
+    } catch (_) {
+      status.textContent = "IA local indisponível";
+      status.classList.remove("ready");
+    }
+  }
+
+  async function submitChat(event) {
+    event.preventDefault();
+    const field = $("chatInput");
+    const button = $("chatSend");
+    const message = field.value.trim();
+    if (!message) return;
+
+    chatHistory.push({ role: "user", content: message });
+    while (chatHistory.length > 12) chatHistory.shift();
+    appendChatMessage("user", message);
+    field.value = "";
+    button.disabled = true;
+    button.textContent = "Pensando...";
+    const pending = appendChatMessage("assistant", "Estou pensando...");
+
+    try {
+      const response = await fetch("/api/vendedor/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: chatHistory })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || "Não foi possível responder.");
+      pending.textContent = data.answer;
+      chatHistory.push({ role: "assistant", content: data.answer });
+      while (chatHistory.length > 12) chatHistory.shift();
+      speak(data.answer);
+    } catch (error) {
+      pending.textContent = error.message;
+      pending.classList.add("chat-error");
+      chatHistory.pop();
+    } finally {
+      button.disabled = false;
+      button.textContent = "Enviar";
+      field.focus();
     }
   }
 
@@ -264,6 +333,15 @@
       output.textContent = error.message;
     }
   }
+
+  $("chatForm").addEventListener("submit", submitChat);
+  $("chatInput").addEventListener("keydown", event => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      $("chatForm").requestSubmit();
+    }
+  });
+  checkAiStatus();
 
   searchButton.addEventListener("click", () => search());
   input.addEventListener("keydown", event => {
