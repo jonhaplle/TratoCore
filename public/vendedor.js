@@ -97,7 +97,7 @@
       const response = await fetch("/api/vendedor/chat/status");
       const data = await response.json();
       if (data.available) {
-        status.textContent = "DeepSeek online · " + data.model;
+        status.textContent = "DeepSeek configurado · " + data.model;
         status.classList.add("ready");
       } else {
         status.textContent = "Configure DEEPSEEK_API_KEY no servidor";
