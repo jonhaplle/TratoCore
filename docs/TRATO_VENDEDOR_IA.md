@@ -41,7 +41,7 @@ TRATO_VENDEDOR_OLLAMA_URL=http://127.0.0.1:11434
 ### Limites desta primeira versão
 - Conversa geral com contexto curto, em português brasileiro.
 - Ainda não executa ferramentas externas. Previsão do tempo, notícias, cotações e consultas ao vivo serão conectadas separadamente.
-- O modelo não recebe automaticamente os dados do catálogo; a busca de produtos continua no fluxo próprio.
+- Quando a mensagem indica intenção de compra ou consulta de produto, o chat pesquisa o catálogo ativo e inclui até cinco resultados no contexto da IA. Preço e estoque devem ser respondidos somente com base nesses dados.
 - O modelo pode errar fatos. Não deve ser usado como fonte de confirmação de preço, estoque, condição ou especificações comerciais.
 - Em computadores com pouca memória, a geração pode ser lenta; o modelo pode ser trocado por uma variante menor usando a variável de ambiente.
 
