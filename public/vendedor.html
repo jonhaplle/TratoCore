@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <title>Trato Vendedor IA</title>
+  <link rel="stylesheet" href="/vendedor.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Voltar ao TratoCore"><span class="brand-mark">T</span><span>TRATO <b>VENDEDOR</b></span></a>
+    <span class="connection"><i></i><span id="connectionText">Conectando ao catálogo</span></span>
+  </header>
+
+  <main class="shell">
+    <section class="intro">
+      <p class="eyebrow">ATENDIMENTO DIGITAL · TRATO FEITO JOINVILLE</p>
+      <h1>Olá! O que você está procurando?</h1>
+      <p class="sub">Pesquise no catálogo da loja ou fale pelo microfone. Se precisar, nossa equipe assume o atendimento.</p>
+    </section>
+
+    <section class="assistant-panel" aria-label="Conversa com o assistente">
+      <div class="assistant-heading">
+        <div><p class="eyebrow">INTELIGÊNCIA ARTIFICIAL LOCAL</p><h2>Converse com o assistente</h2></div>
+        <span id="aiStatus" class="ai-status">Verificando IA local...</span>
+      </div>
+      <div id="chatMessages" class="chat-messages" aria-live="polite">
+        <div class="chat-bubble assistant">Olá! Posso conversar sobre diversos assuntos e ajudar você a encontrar produtos da Trato Feito. O que gostaria de saber?</div>
+      </div>
+      <form id="chatForm" class="chat-form">
+        <label class="sr-only" for="chatInput">Digite sua mensagem</label>
+        <textarea id="chatInput" rows="2" maxlength="2000" placeholder="Pergunte qualquer coisa ou peça ajuda para encontrar um produto..." required></textarea>
+        <button id="chatSend" type="submit" class="search-button">Enviar</button>
+      </form>
+      <p class="hint">O assistente usa um modelo instalado neste computador. Informações em tempo real, como clima e notícias, serão conectadas em uma próxima etapa.</p>
+    </section>
+
+    <section class="search-panel" aria-label="Pesquisar produtos">
+      <div class="search-row">
+        <label class="sr-only" for="searchInput">O que você procura?</label>
+        <input id="searchInput" type="search" maxlength="160" placeholder="Ex.: videogame PlayStation 2, relógio Orient, louça Duralex">
+        <button id="voiceButton" class="voice-button" type="button" aria-label="Pesquisar por voz" title="Pesquisar por voz"><span>🎙</span></button>
+        <button id="searchButton" class="search-button" type="button">Buscar</button>
+      </div>
+      <p id="voiceHint" class="hint" aria-live="polite">Você também pode digitar sua pesquisa.</p>
+      <div class="cloned-voice-control">
+        <label><input id="clonedVoiceToggle" type="checkbox" disabled> Usar voz clonada do Marcos</label>
+        <span id="clonedVoiceStatus" class="hint" aria-live="polite">Verificando motor de voz local...</span>
+      </div>
+      <div class="suggestions">
+        <button type="button" data-query="videogame">Videogames</button>
+        <button type="button" data-query="celular">Celulares</button>
+        <button type="button" data-query="antiguidades">Antiguidades</button>
+        <button type="button" data-query="eletrônicos">Eletrônicos</button>
+      </div>
+    </section>
+
+    <section class="results-section">
+      <div class="section-heading"><div><p class="eyebrow">CATÁLOGO DA LOJA</p><h2 id="resultsTitle">Produtos disponíveis</h2></div><span id="resultCount" class="result-count"></span></div>
+      <div id="results" class="product-grid"><div class="empty-state">Digite o nome de um produto para começar.</div></div>
+    </section>
+
+    <section class="help-card">
+      <div><p class="eyebrow">ATENDIMENTO HUMANO</p><h2>Prefere falar com o vendedor?</h2><p>Envie sua dúvida. Nossa equipe poderá continuar o atendimento.</p></div>
+      <button id="openHandoff" type="button" class="outline-button">Chamar vendedor</button>
+    </section>
+
+    <details class="staff-panel">
+      <summary>Área da equipe da loja</summary>
+      <div class="staff-tools">
+        <label for="adminKey">Chave de acesso da equipe</label>
+        <input id="adminKey" type="password" autocomplete="current-password" placeholder="TRATO_VENDEDOR_ADMIN_KEY">
+        <button id="loadHandoffs" type="button" class="outline-button">Consultar solicitações</button>
+        <div id="handoffs" class="handoffs"></div>
+      </div>
+    </details>
+  </main>
+
+  <dialog id="handoffDialog">
+    <form id="handoffForm" method="dialog" class="dialog-form">
+      <button class="dialog-close" type="button" id="closeHandoff" aria-label="Fechar">×</button>
+      <p class="eyebrow">CONTINUAR COM A EQUIPE</p>
+      <h2>Como podemos ajudar?</h2>
+      <p id="selectedProduct" class="selected-product"></p>
+      <label for="customerName">Seu nome (opcional)</label>
+      <input id="customerName" maxlength="120" placeholder="Como podemos chamar você?">
+      <label for="customerContact">Telefone ou WhatsApp (opcional)</label>
+      <input id="customerContact" maxlength="160" placeholder="(47) 99999-9999">
+      <label for="customerMessage">Sua dúvida</label>
+      <textarea id="customerMessage" maxlength="2000" rows="4" required placeholder="Escreva o que gostaria de saber..."></textarea>
+      <button class="search-button submit-button" type="submit">Enviar solicitação</button>
+      <p id="handoffStatus" class="hint" aria-live="polite"></p>
+    </form>
+  </dialog>
+
+  <script src="/vendedor.js" defer></script>
+</body>
+</html>

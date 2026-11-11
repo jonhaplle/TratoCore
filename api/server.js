@@ -14,6 +14,7 @@ const productImagesRoutes = require("./routes/productImages");
 const mlRoutes = require("./routes/ml");
 const tratocapRoutes = require("./routes/tratocap");
 const versionRoutes = require("./routes/version");
+const vendedorRoutes = require("./routes/vendedor");
 const createDriveStatusRouter = require("./routes/driveStatus");
 const googleDriveService = require("./services/googleDriveService");
 const { createGoogleDriveOAuthRouter } = require("./routes/googleDriveOAuth");
@@ -73,6 +74,9 @@ app.use("/api/ml", mlRoutes);
 app.use("/api/tratocap", tratocapRoutes);
 
 app.use("/api/version", versionRoutes);
+
+// Módulo independente de atendimento ao cliente.
+app.use("/api/vendedor", vendedorRoutes);
 
 // ======================================================
 // GOOGLE DRIVE
