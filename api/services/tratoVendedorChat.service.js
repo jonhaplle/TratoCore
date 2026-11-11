@@ -1,5 +1,6 @@
-const DEFAULT_MODEL = process.env.TRATO_VENDEDOR_LLM_MODEL || "qwen2.5:3b";
-const OLLAMA_URL = (process.env.TRATO_VENDEDOR_OLLAMA_URL || "http://127.0.0.1:11434").replace(/\/$/, "");
+const API_URL = (process.env.DEEPSEEK_API_URL || "https://api.deepseek.com").replace(/\/$/, "");
+const MODEL = process.env.TRATO_VENDEDOR_LLM_MODEL || "deepseek-flash";
+const REQUEST_TIMEOUT_MS = 60000;
 
 const SYSTEM_PROMPT = [
     "Você é o assistente virtual da Trato Feito Joinville, integrado ao TratoCore.",
@@ -15,49 +16,43 @@ const SYSTEM_PROMPT = [
     "Prefira respostas objetivas. Faça uma pergunta de esclarecimento quando isso for realmente necessário."
 ].join("\n");
 
-async function request(path, options = {}) {
-    const response = await fetch(OLLAMA_URL + path, {
-        ...options,
-        signal: AbortSignal.timeout(options.timeout || 120000)
-    });
-    if (!response.ok) {
-        const detail = await response.text().catch(() => "");
-        throw new Error("Ollama respondeu HTTP " + response.status + (detail ? ": " + detail.slice(0, 300) : ""));
-    }
-    return response.json();
+function providerError(status, detail) {
+    const error = new Error(
+        status === 401 || status === 403
+            ? "A chave da API DeepSeek foi recusada. Confira DEEPSEEK_API_KEY no Render."
+            : status === 402
+                ? "O saldo da API DeepSeek acabou. Consulte o saldo na plataforma DeepSeek."
+                : status === 429
+                    ? "A API DeepSeek está limitando as solicitações. Aguarde um pouco e tente novamente."
+                    : status >= 500
+                        ? "A API DeepSeek está temporariamente indisponível. Tente novamente."
+                        : "A API DeepSeek recusou a solicitação" + (detail ? ": " + detail.slice(0, 240) : ".")
+    );
+    error.code = status === 401 || status === 403 ? "DEEPSEEK_AUTH"
+        : status === 402 ? "DEEPSEEK_BALANCE"
+            : status === 429 ? "DEEPSEEK_RATE_LIMIT"
+                : status >= 500 ? "DEEPSEEK_UNAVAILABLE" : "DEEPSEEK_REQUEST_ERROR";
+    error.status = status === 429 ? 429 : status === 402 ? 402 : status >= 500 ? 503 : 502;
+    return error;
 }
 
-async function status() {
-    try {
-        const data = await request("/api/tags", { timeout: 3500 });
-        const models = Array.isArray(data.models) ? data.models : [];
-        const installed = models.find(item => item.name === DEFAULT_MODEL || item.model === DEFAULT_MODEL);
-        return {
-            available: Boolean(installed),
-            ollama_online: true,
-            model: DEFAULT_MODEL,
-            installed_models: models.map(item => item.name || item.model).filter(Boolean)
-        };
-    } catch (_) {
-        return {
-            available: false,
-            ollama_online: false,
-            model: DEFAULT_MODEL,
-            installed_models: []
-        };
-    }
+function status() {
+    const configured = Boolean(String(process.env.DEEPSEEK_API_KEY || "").trim());
+    return {
+        available: configured,
+        provider: "DeepSeek",
+        model: MODEL,
+        configured,
+        scope: "cloud"
+    };
 }
 
 async function chat(messages, products = []) {
-    const health = await status();
-    if (!health.ollama_online) {
-        const error = new Error("O Ollama não está iniciado neste computador.");
-        error.code = "OLLAMA_OFFLINE";
-        throw error;
-    }
-    if (!health.available) {
-        const error = new Error("O modelo " + DEFAULT_MODEL + " ainda não está instalado no Ollama.");
-        error.code = "MODEL_MISSING";
+    const apiKey = String(process.env.DEEPSEEK_API_KEY || "").trim();
+    if (!apiKey) {
+        const error = new Error("A chave DEEPSEEK_API_KEY não está configurada no ambiente do TratoCore.");
+        error.code = "DEEPSEEK_NOT_CONFIGURED";
+        error.status = 503;
         throw error;
     }
 
@@ -76,27 +71,55 @@ async function chat(messages, products = []) {
         ].filter(Boolean).join("\n")).join("\n\n")
         : "";
 
-    const data = await request("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            model: DEFAULT_MODEL,
-            stream: false,
-            messages: [
-                { role: "system", content: SYSTEM_PROMPT + productContext },
-                ...normalized
-            ],
-            options: {
-                temperature: 0.65,
-                num_ctx: 4096
-            }
-        }),
-        timeout: 180000
-    });
+    let response;
+    try {
+        response = await fetch(API_URL + "/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": "Bearer " + apiKey,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                model: MODEL,
+                messages: [
+                    { role: "system", content: SYSTEM_PROMPT + productContext },
+                    ...normalized
+                ],
+                stream: false,
+                max_tokens: 600,
+                thinking: { type: "disabled" }
+            }),
+            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+        });
+    } catch (cause) {
+        const error = new Error(cause.name === "TimeoutError"
+            ? "A API DeepSeek demorou demais para responder. Tente novamente."
+            : "Não foi possível conectar à API DeepSeek.");
+        error.code = "DEEPSEEK_CONNECTION";
+        error.status = 503;
+        throw error;
+    }
 
-    const answer = String(data.message?.content || "").trim();
-    if (!answer) throw new Error("O modelo não retornou uma resposta.");
-    return { answer, model: DEFAULT_MODEL };
+    if (!response.ok) {
+        const detail = await response.text().catch(() => "");
+        throw providerError(response.status, detail);
+    }
+
+    const data = await response.json();
+    const answer = String(data.choices?.[0]?.message?.content || "").trim();
+    if (!answer) {
+        const error = new Error("A API DeepSeek não retornou uma resposta de texto.");
+        error.code = "DEEPSEEK_EMPTY_RESPONSE";
+        error.status = 502;
+        throw error;
+    }
+
+    return {
+        answer,
+        model: MODEL,
+        provider: "DeepSeek",
+        usage: data.usage || null
+    };
 }
 
 module.exports = { status, chat };
