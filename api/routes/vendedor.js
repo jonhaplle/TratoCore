@@ -115,7 +115,16 @@ router.post("/chat", async (req, res) => {
     }
 
     try {
-        const result = await chatService.chat(safeMessages);
+        const lastUserMessage = safeMessages[safeMessages.length - 1].content;
+        let catalogProducts = [];
+        if (/\\b(tem|vende|procur|busc|pre[cç]o|estoque|produto|compr|playstation|xbox|videogame|celular|console|vinil)\\b/i.test(lastUserMessage)) {
+            try {
+                catalogProducts = await service.searchProducts(lastUserMessage, 5);
+            } catch (catalogError) {
+                console.error("[Trato Vendedor IA] Falha ao consultar catálogo para o chat:", catalogError.message);
+            }
+        }
+        const result = await chatService.chat(safeMessages, catalogProducts);
         return res.json({ success: true, answer: result.answer, model: result.model });
     } catch (error) {
         const status = error.code === "OLLAMA_OFFLINE" || error.code === "MODEL_MISSING" ? 503 : 502;
