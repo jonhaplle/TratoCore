@@ -137,6 +137,7 @@ function createBackend({ validationErrors = [
 function createModalElement() {
     return {
         style: {},
+        querySelector() { return null; },
         addEventListener() {}
     };
 }
