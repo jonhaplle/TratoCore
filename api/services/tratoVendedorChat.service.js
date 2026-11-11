@@ -66,7 +66,17 @@ async function chat(messages, products = []) {
         content: message.content
     }));
 
-    const productContext = Array.isArray(products) && products.length\n        ? "\\n\\nProdutos encontrados no catálogo oficial da loja (use somente estes dados comerciais):\\n" + products.map(product => [\n            "Produto: " + product.title,\n            "Preço: R$ " + Number(product.price).toFixed(2).replace(".", ","),\n            "Condição: " + (product.condition === "new" ? "novo" : "usado"),\n            "Quantidade disponível: " + product.quantity,\n            product.description ? "Descrição: " + product.description : ""\n        ].filter(Boolean).join("\\n")).join("\\n\\n")\n        : "";\n\n    const data = await request("/api/chat", {
+    const productContext = Array.isArray(products) && products.length
+        ? "\n\nProdutos encontrados no catálogo oficial da loja (use somente estes dados comerciais):\n" + products.map(product => [
+            "Produto: " + product.title,
+            "Preço: R$ " + Number(product.price).toFixed(2).replace(".", ","),
+            "Condição: " + (product.condition === "new" ? "novo" : "usado"),
+            "Quantidade disponível: " + product.quantity,
+            product.description ? "Descrição: " + product.description : ""
+        ].filter(Boolean).join("\n")).join("\n\n")
+        : "";
+
+    const data = await request("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
