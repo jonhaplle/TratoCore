@@ -38,6 +38,69 @@ router.get("/status", (req, res) => {
     });
 });
 
+// O motor Qwen3-TTS roda apenas no computador da loja, em loopback.
+router.get("/voice/status", async (req, res) => {
+    try {
+        const response = await fetch("http://127.0.0.1:8765/health", {
+            signal: AbortSignal.timeout(2500)
+        });
+        if (!response.ok) throw new Error("Motor de voz indisponível.");
+        const data = await response.json();
+        return res.json({
+            success: true,
+            available: Boolean(data.success && data.reference_loaded),
+            engine: data.engine || "Qwen3-TTS",
+            voice: data.voice || "Marcos",
+            scope: "local-network"
+        });
+    } catch (_) {
+        return res.json({
+            success: true,
+            available: false,
+            engine: "browser-fallback",
+            voice: null,
+            scope: "local-only"
+        });
+    }
+});
+
+router.post("/voice/speak", async (req, res) => {
+    const text = String(req.body?.text || "").trim();
+    if (!text) {
+        return res.status(400).json({ success: false, error: "Informe o texto para falar." });
+    }
+    if (text.length > 1200) {
+        return res.status(400).json({ success: false, error: "O texto deve ter no máximo 1.200 caracteres." });
+    }
+
+    try {
+        const response = await fetch("http://127.0.0.1:8765/synthesize", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text }),
+            signal: AbortSignal.timeout(180000)
+        });
+        if (!response.ok) {
+            const detail = await response.json().catch(() => ({}));
+            return res.status(response.status).json({
+                success: false,
+                error: detail.error || "O motor local não conseguiu gerar o áudio."
+            });
+        }
+        const audio = Buffer.from(await response.arrayBuffer());
+        res.setHeader("Content-Type", "audio/wav");
+        res.setHeader("Content-Length", audio.length);
+        res.setHeader("Cache-Control", "no-store");
+        return res.status(200).send(audio);
+    } catch (error) {
+        console.error("[Trato Vendedor] Erro no Qwen3-TTS local:", error.message);
+        return res.status(503).json({
+            success: false,
+            error: "Voz clonada indisponível. Verifique se o motor local está iniciado."
+        });
+    }
+});
+
 router.get("/search", async (req, res) => {
     try {
         const query = String(req.query.q || "").trim();
