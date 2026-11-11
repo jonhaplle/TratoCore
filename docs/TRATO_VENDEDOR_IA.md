@@ -8,6 +8,43 @@ Terminal web de atendimento ao cliente, disponível na rede local e remotamente 
 - Remoto: abrir `https://SEU-DOMINIO/vendedor.html`.
 - A interface usa URLs relativas e a mesma API da origem; não requer CORS adicional nem segundo servidor web.
 
+## Cérebro conversacional local — Ollama
+
+O chat usa Ollama instalado no mesmo computador que executa o TratoCore. Não utiliza chave OpenAI ou Gemini.
+
+### Requisitos e instalação
+- Instale o Ollama para Windows: https://ollama.com/download
+- Abra o CMD e baixe o modelo inicial:
+  `ollama pull qwen2.5:3b`
+- Confirme que o Ollama está ativo:
+  `ollama list`
+- Reinicie o TratoCore e abra `/vendedor.html`. O indicador da interface mostrará quando o modelo estiver pronto.
+
+### Configuração
+- Padrão: `TRATO_VENDEDOR_LLM_MODEL=qwen2.5:3b`
+- Endereço padrão: `http://127.0.0.1:11434`
+- Opcional: `TRATO_VENDEDOR_OLLAMA_URL` para alterar o endereço local.
+- Opcional: `TRATO_VENDEDOR_LLM_MODEL` para selecionar outro modelo já instalado.
+
+Exemplo de variáveis:
+```env
+TRATO_VENDEDOR_LLM_MODEL=qwen2.5:3b
+TRATO_VENDEDOR_OLLAMA_URL=http://127.0.0.1:11434
+```
+
+### Rotas do chat
+- `GET /api/vendedor/chat/status` — verifica Ollama e modelo.
+- `POST /api/vendedor/chat` — recebe até 12 mensagens de contexto e retorna a resposta do modelo.
+- Limite público: 15 mensagens por minuto por IP.
+- O serviço usa apenas loopback por padrão. A instância remota do Render não acessa o Ollama instalado no notebook.
+
+### Limites desta primeira versão
+- Conversa geral com contexto curto, em português brasileiro.
+- Ainda não executa ferramentas externas. Previsão do tempo, notícias, cotações e consultas ao vivo serão conectadas separadamente.
+- O modelo não recebe automaticamente os dados do catálogo; a busca de produtos continua no fluxo próprio.
+- O modelo pode errar fatos. Não deve ser usado como fonte de confirmação de preço, estoque, condição ou especificações comerciais.
+- Em computadores com pouca memória, a geração pode ser lenta; o modelo pode ser trocado por uma variante menor usando a variável de ambiente.
+
 ## Catálogo e atendimento
 - Pesquisa lexical no PostgreSQL com normalização de acentos e pontuação.
 - Exibe somente produtos ACTIVE, com quantidade e preço válidos.
@@ -58,7 +95,7 @@ Não reutilize a chave do Google Drive nem credenciais do Mercado Livre.
 - `GET /api/vendedor/search?q=termo`
 - `POST /api/vendedor/handoff`
 - `GET /api/vendedor/handoffs` — exige `Authorization: Bearer <TRATO_VENDEDOR_ADMIN_KEY>`
-- `GET /api/vendedor/voice/status`
+- `GET /api/vendedor/chat/status`\n- `POST /api/vendedor/chat`\n- `GET /api/vendedor/voice/status`
 - `POST /api/vendedor/voice/speak` — recebe `{"text":"..." }` e retorna `audio/wav` quando o Qwen local está ativo.
 
 A tabela `trato_vendedor_handoffs` é criada automaticamente na primeira solicitação de encaminhamento. Nenhuma tabela existente é alterada.
