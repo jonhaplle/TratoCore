@@ -48,7 +48,7 @@ async function status() {
     }
 }
 
-async function chat(messages) {
+async function chat(messages, products = []) {
     const health = await status();
     if (!health.ollama_online) {
         const error = new Error("O Ollama não está iniciado neste computador.");
@@ -66,14 +66,14 @@ async function chat(messages) {
         content: message.content
     }));
 
-    const data = await request("/api/chat", {
+    const productContext = Array.isArray(products) && products.length\n        ? "\\n\\nProdutos encontrados no catálogo oficial da loja (use somente estes dados comerciais):\\n" + products.map(product => [\n            "Produto: " + product.title,\n            "Preço: R$ " + Number(product.price).toFixed(2).replace(".", ","),\n            "Condição: " + (product.condition === "new" ? "novo" : "usado"),\n            "Quantidade disponível: " + product.quantity,\n            product.description ? "Descrição: " + product.description : ""\n        ].filter(Boolean).join("\\n")).join("\\n\\n")\n        : "";\n\n    const data = await request("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             model: DEFAULT_MODEL,
             stream: false,
             messages: [
-                { role: "system", content: SYSTEM_PROMPT },
+                { role: "system", content: SYSTEM_PROMPT + productContext },
                 ...normalized
             ],
             options: {
