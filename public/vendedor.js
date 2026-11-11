@@ -97,17 +97,14 @@
       const response = await fetch("/api/vendedor/chat/status");
       const data = await response.json();
       if (data.available) {
-        status.textContent = "IA local pronta · " + data.model;
+        status.textContent = "DeepSeek online · " + data.model;
         status.classList.add("ready");
-      } else if (data.ollama_online) {
-        status.textContent = "Instale o modelo " + data.model;
-        status.classList.remove("ready");
       } else {
-        status.textContent = "Ollama não iniciado neste computador";
+        status.textContent = "Configure DEEPSEEK_API_KEY no servidor";
         status.classList.remove("ready");
       }
     } catch (_) {
-      status.textContent = "IA local indisponível";
+      status.textContent = "DeepSeek indisponível";
       status.classList.remove("ready");
     }
   }
