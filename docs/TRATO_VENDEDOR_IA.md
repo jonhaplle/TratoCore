@@ -8,42 +8,39 @@ Terminal web de atendimento ao cliente, disponível na rede local e remotamente 
 - Remoto: abrir `https://SEU-DOMINIO/vendedor.html`.
 - A interface usa URLs relativas e a mesma API da origem; não requer CORS adicional nem segundo servidor web.
 
-## Cérebro conversacional local — Ollama
+## Cérebro conversacional na nuvem — DeepSeek
 
-O chat usa Ollama instalado no mesmo computador que executa o TratoCore. Não utiliza chave OpenAI ou Gemini.
+O chat usa a API hospedada da DeepSeek. O TratoCore no Render faz as chamadas pela internet; não precisa instalar Ollama nem baixar modelos no computador da loja.
 
-### Requisitos e instalação
-- Instale o Ollama para Windows: https://ollama.com/download
-- Abra o CMD e baixe o modelo inicial:
-  `ollama pull qwen2.5:3b`
-- Confirme que o Ollama está ativo:
-  `ollama list`
-- Reinicie o TratoCore e abra `/vendedor.html`. O indicador da interface mostrará quando o modelo estiver pronto.
+### Configuração no Render
+Cadastre a variável de ambiente:
+- `DEEPSEEK_API_KEY`: chave privada criada em https://platform.deepseek.com/
 
-### Configuração
-- Padrão: `TRATO_VENDEDOR_LLM_MODEL=qwen2.5:3b`
-- Endereço padrão: `http://127.0.0.1:11434`
-- Opcional: `TRATO_VENDEDOR_OLLAMA_URL` para alterar o endereço local.
-- Opcional: `TRATO_VENDEDOR_LLM_MODEL` para selecionar outro modelo já instalado.
+Opcional:
+- `TRATO_VENDEDOR_LLM_MODEL`: modelo. Padrão: `deepseek-flash`.
+- `DEEPSEEK_API_URL`: URL base. Padrão: `https://api.deepseek.com`.
 
-Exemplo de variáveis:
-```env
-TRATO_VENDEDOR_LLM_MODEL=qwen2.5:3b
-TRATO_VENDEDOR_OLLAMA_URL=http://127.0.0.1:11434
-```
+Não coloque a chave no código, no navegador, no GitHub ou em mensagens. Mantenha-a somente nas variáveis privadas do serviço no Render.
+
+### Funcionamento
+- Endpoint: `POST /chat/completions` da API DeepSeek, em formato compatível com OpenAI.
+- Modelo padrão: `deepseek-flash`.
+- Modo de pensamento desativado para atendimento rápido e controle de consumo.
+- Limite de saída por resposta: 600 tokens.
+- O histórico de até 12 mensagens é enviado pelo TratoCore a cada chamada; a API não mantém a sessão do cliente.
+- Limite público do endpoint TratoCore: 15 mensagens por minuto por IP.
+- O status do módulo informa se a chave está configurada; a disponibilidade real depende da conexão e do saldo da conta DeepSeek.
+
+### Custos e limites
+- A API DeepSeek é cobrada por tokens e exige saldo na plataforma.
+- O custo varia conforme tokens de entrada/saída, cache, modelo e tabela vigente da DeepSeek.
+- O limite de 600 tokens restringe a resposta, mas não estabelece um teto financeiro mensal.
+- Configure alertas e acompanhe consumo/saldo no painel DeepSeek. O limite operacional mensal deve ser acompanhado no painel; não há bloqueio financeiro automático implementado pelo TratoCore.
 
 ### Rotas do chat
-- `GET /api/vendedor/chat/status` — verifica Ollama e modelo.
+- `GET /api/vendedor/chat/status` — informa provedor, modelo e se a chave está configurada.
 - `POST /api/vendedor/chat` — recebe até 12 mensagens de contexto e retorna a resposta do modelo.
-- Limite público: 15 mensagens por minuto por IP.
-- O serviço usa apenas loopback por padrão. A instância remota do Render não acessa o Ollama instalado no notebook.
-
-### Limites desta primeira versão
-- Conversa geral com contexto curto, em português brasileiro.
-- Ainda não executa ferramentas externas. Previsão do tempo, notícias, cotações e consultas ao vivo serão conectadas separadamente.
-- Quando a mensagem indica intenção de compra ou consulta de produto, o chat pesquisa o catálogo ativo e inclui até cinco resultados no contexto da IA. Preço e estoque devem ser respondidos somente com base nesses dados.
-- O modelo pode errar fatos. Não deve ser usado como fonte de confirmação de preço, estoque, condição ou especificações comerciais.
-- Em computadores com pouca memória, a geração pode ser lenta; o modelo pode ser trocado por uma variante menor usando a variável de ambiente.
+- Erros de chave, saldo, limite e indisponibilidade são convertidos em mensagens de erro sem expor a chave.
 
 ## Catálogo e atendimento
 - Pesquisa lexical no PostgreSQL com normalização de acentos e pontuação.
@@ -77,7 +74,7 @@ Se o WAV estiver em outro local, defina a variável `TRATO_VENDEDOR_VOICE_REF` a
 - O Node/Express encaminha os pedidos de áudio por `/api/vendedor/voice/speak` e devolve WAV ao navegador.
 - O modelo é carregado uma vez e permanece na memória enquanto o terminal de voz estiver aberto. A geração é sequencial.
 - O áudio gerado é enviado em memória; não é salvo em disco.
-- A voz clonada funciona quando o TratoCore e o motor Qwen estão no computador da loja. A instância do Render não consegue acessar o Qwen instalado no notebook; no remoto, a interface mantém a voz padrão do navegador.
+- A voz clonada continua sendo local. Como o TratoCore hospedado no Render não acessa o motor Qwen em loopback no computador da loja, no acesso remoto a interface usa a voz padrão do navegador.
 - Se o motor local estiver desligado ou falhar, a interface usa automaticamente a voz do navegador.
 - A gravação de referência é pessoal e não deve ser enviada ao GitHub. O repositório contém apenas o caminho local configurável e a transcrição de referência.
 
@@ -101,7 +98,7 @@ Não reutilize a chave do Google Drive nem credenciais do Mercado Livre.
 A tabela `trato_vendedor_handoffs` é criada automaticamente na primeira solicitação de encaminhamento. Nenhuma tabela existente é alterada.
 
 ## Limites conhecidos
-- A busca direta do catálogo é lexical. O chat usa LLM local para interpretar perguntas e, quando identifica intenção de compra, consulta o catálogo para fundamentar dados comerciais.
+- A busca direta do catálogo é lexical. O chat usa a API DeepSeek para interpretar perguntas e, quando identifica intenção de compra, consulta o catálogo para fundamentar dados comerciais.
 - Voz de entrada depende do suporte do navegador e normalmente exige HTTPS ou localhost.
 - Fotos servidas por proxy externo podem exigir internet mesmo quando a interface local está disponível.
 - A caixa de atendimento lista solicitações novas; atualização de status e painel operacional completo ficam para uma etapa posterior.
