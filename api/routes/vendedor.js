@@ -65,16 +65,16 @@ router.get("/status", (req, res) => {
     });
 });
 
-// Cérebro conversacional local via Ollama.
-router.get("/chat/status", async (req, res) => {
-    const status = await chatService.status();
+// Cérebro conversacional remoto via API DeepSeek.
+router.get("/chat/status", (req, res) => {
+    const status = chatService.status();
     return res.json({
         success: true,
         available: status.available,
-        ollama_online: status.ollama_online,
+        configured: status.configured,
+        provider: status.provider,
         model: status.model,
-        installed_models: status.installed_models,
-        scope: "local-only"
+        scope: status.scope
     });
 });
 
@@ -127,8 +127,8 @@ router.post("/chat", async (req, res) => {
         const result = await chatService.chat(safeMessages, catalogProducts);
         return res.json({ success: true, answer: result.answer, model: result.model });
     } catch (error) {
-        const status = error.code === "OLLAMA_OFFLINE" || error.code === "MODEL_MISSING" ? 503 : 502;
-        console.error("[Trato Vendedor IA] Erro no chat local:", error.message);
+        const status = Number(error.status) || 502;
+        console.error("[Trato Vendedor IA] Erro no chat DeepSeek:", error.message);
         return res.status(status).json({
             success: false,
             code: error.code || "CHAT_ERROR",
