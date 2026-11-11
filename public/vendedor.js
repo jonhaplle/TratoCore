@@ -10,18 +10,75 @@
   const dialog = $("handoffDialog");
   let selectedProduct = null;
   let recognition = null;
+  let clonedVoiceAvailable = false;
+  let currentAudio = null;
 
   function money(value) {
     return Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   }
 
-  function speak(message) {
+  async function speak(message) {
+    const text = String(message || "").trim().slice(0, 1200);
+    if (!text) return;
+
+    const clonedToggle = $("clonedVoiceToggle");
+    if (clonedToggle?.checked && clonedVoiceAvailable) {
+      try {
+        if (currentAudio) {
+          currentAudio.pause();
+          currentAudio = null;
+        }
+        if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+
+        const response = await fetch("/api/vendedor/voice/speak", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text })
+        });
+        if (!response.ok) throw new Error("Não foi possível gerar a voz clonada.");
+        const audioBlob = await response.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        currentAudio = new Audio(audioUrl);
+        currentAudio.addEventListener("ended", () => {
+          URL.revokeObjectURL(audioUrl);
+          currentAudio = null;
+        }, { once: true });
+        await currentAudio.play();
+        return;
+      } catch (error) {
+        $("clonedVoiceStatus").textContent = "Falha na voz clonada; usando voz do navegador.";
+      }
+    }
+
     if (!("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(message);
+    const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "pt-BR";
     utterance.rate = 1;
     window.speechSynthesis.speak(utterance);
+  }
+
+  async function checkClonedVoice() {
+    const toggle = $("clonedVoiceToggle");
+    const status = $("clonedVoiceStatus");
+    try {
+      const response = await fetch("/api/vendedor/voice/status");
+      const data = await response.json();
+      clonedVoiceAvailable = Boolean(response.ok && data.success && data.available);
+      toggle.disabled = !clonedVoiceAvailable;
+      if (clonedVoiceAvailable) {
+        toggle.checked = true;
+        status.textContent = "Voz do Marcos disponível neste computador.";
+      } else {
+        toggle.checked = false;
+        status.textContent = "Motor local desligado. A voz padrão do navegador continuará disponível.";
+      }
+    } catch (_) {
+      clonedVoiceAvailable = false;
+      toggle.disabled = true;
+      toggle.checked = false;
+      status.textContent = "Voz clonada indisponível; usando voz do navegador.";
+    }
   }
 
   function setConnection(online, message) {
@@ -219,6 +276,7 @@
   $("closeHandoff").addEventListener("click", () => dialog.close());
   $("handoffForm").addEventListener("submit", submitHandoff);
   $("loadHandoffs").addEventListener("click", loadHandoffs);
+  checkClonedVoice();
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (SpeechRecognition) {
