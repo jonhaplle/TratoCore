@@ -1,10 +1,12 @@
 const express = require("express");
 const crypto = require("crypto");
 const service = require("../services/tratoVendedor.service");
+const chatService = require("../services/tratoVendedorChat.service");
 
 const router = express.Router();
 const handoffAttempts = new Map();
 const voiceAttempts = new Map();
+const chatAttempts = new Map();
 const HANDOFF_WINDOW_MS = 60 * 1000;
 const HANDOFF_MAX_ATTEMPTS = 8;
 
@@ -33,6 +35,18 @@ function allowVoiceSynthesis(ip) {
     return true;
 }
 
+function allowChat(ip) {
+    const now = Date.now();
+    const recent = (chatAttempts.get(ip) || []).filter(timestamp => now - timestamp < 60 * 1000);
+    if (recent.length >= 15) {
+        chatAttempts.set(ip, recent);
+        return false;
+    }
+    recent.push(now);
+    chatAttempts.set(ip, recent);
+    return true;
+}
+
 function safeEqual(left, right) {
     const a = Buffer.from(String(left || ""));
     const b = Buffer.from(String(right || ""));
@@ -49,6 +63,69 @@ router.get("/status", (req, res) => {
         voice_output: "browser-dependent",
         ai_provider_required: false
     });
+});
+
+// Cérebro conversacional local via Ollama.
+router.get("/chat/status", async (req, res) => {
+    const status = await chatService.status();
+    return res.json({
+        success: true,
+        available: status.available,
+        ollama_online: status.ollama_online,
+        model: status.model,
+        installed_models: status.installed_models,
+        scope: "local-only"
+    });
+});
+
+router.post("/chat", async (req, res) => {
+    const clientIp = String(req.ip || req.socket?.remoteAddress || "unknown");
+    if (!allowChat(clientIp)) {
+        return res.status(429).json({
+            success: false,
+            error: "Muitas mensagens em pouco tempo. Aguarde um minuto."
+        });
+    }
+
+    const messages = req.body?.messages;
+    if (!Array.isArray(messages) || messages.length < 1 || messages.length > 12) {
+        return res.status(400).json({
+            success: false,
+            error: "Envie uma conversa com até 12 mensagens."
+        });
+    }
+
+    const safeMessages = [];
+    for (const message of messages) {
+        const role = String(message?.role || "");
+        const content = String(message?.content || "").trim();
+        if (!["user", "assistant"].includes(role) || !content || content.length > 2000) {
+            return res.status(400).json({
+                success: false,
+                error: "Mensagem inválida. Cada mensagem deve ter até 2.000 caracteres."
+            });
+        }
+        safeMessages.push({ role, content });
+    }
+    if (safeMessages[safeMessages.length - 1].role !== "user") {
+        return res.status(400).json({
+            success: false,
+            error: "A última mensagem precisa ser do usuário."
+        });
+    }
+
+    try {
+        const result = await chatService.chat(safeMessages);
+        return res.json({ success: true, answer: result.answer, model: result.model });
+    } catch (error) {
+        const status = error.code === "OLLAMA_OFFLINE" || error.code === "MODEL_MISSING" ? 503 : 502;
+        console.error("[Trato Vendedor IA] Erro no chat local:", error.message);
+        return res.status(status).json({
+            success: false,
+            code: error.code || "CHAT_ERROR",
+            error: error.message || "Não foi possível gerar uma resposta."
+        });
+    }
 });
 
 // O motor Qwen3-TTS roda apenas no computador da loja, em loopback.
