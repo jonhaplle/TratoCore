@@ -20,6 +20,22 @@
       <p class="sub">Pesquise no catálogo da loja ou fale pelo microfone. Se precisar, nossa equipe assume o atendimento.</p>
     </section>
 
+    <section class="assistant-panel" aria-label="Conversa com o assistente">
+      <div class="assistant-heading">
+        <div><p class="eyebrow">INTELIGÊNCIA ARTIFICIAL LOCAL</p><h2>Converse com o assistente</h2></div>
+        <span id="aiStatus" class="ai-status">Verificando IA local...</span>
+      </div>
+      <div id="chatMessages" class="chat-messages" aria-live="polite">
+        <div class="chat-bubble assistant">Olá! Posso conversar sobre diversos assuntos e ajudar você a encontrar produtos da Trato Feito. O que gostaria de saber?</div>
+      </div>
+      <form id="chatForm" class="chat-form">
+        <label class="sr-only" for="chatInput">Digite sua mensagem</label>
+        <textarea id="chatInput" rows="2" maxlength="2000" placeholder="Pergunte qualquer coisa ou peça ajuda para encontrar um produto..." required></textarea>
+        <button id="chatSend" type="submit" class="search-button">Enviar</button>
+      </form>
+      <p class="hint">O assistente usa um modelo instalado neste computador. Informações em tempo real, como clima e notícias, serão conectadas em uma próxima etapa.</p>
+    </section>
+
     <section class="search-panel" aria-label="Pesquisar produtos">
       <div class="search-row">
         <label class="sr-only" for="searchInput">O que você procura?</label>
