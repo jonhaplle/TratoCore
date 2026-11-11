@@ -4,6 +4,7 @@ const service = require("../services/tratoVendedor.service");
 
 const router = express.Router();
 const handoffAttempts = new Map();
+const voiceAttempts = new Map();
 const HANDOFF_WINDOW_MS = 60 * 1000;
 const HANDOFF_MAX_ATTEMPTS = 8;
 
@@ -17,6 +18,18 @@ function allowHandoff(ip) {
     }
     recent.push(now);
     handoffAttempts.set(ip, recent);
+    return true;
+}
+
+function allowVoiceSynthesis(ip) {
+    const now = Date.now();
+    const recent = (voiceAttempts.get(ip) || []).filter(timestamp => now - timestamp < 60 * 1000);
+    if (recent.length >= 4) {
+        voiceAttempts.set(ip, recent);
+        return false;
+    }
+    recent.push(now);
+    voiceAttempts.set(ip, recent);
     return true;
 }
 
@@ -65,6 +78,13 @@ router.get("/voice/status", async (req, res) => {
 });
 
 router.post("/voice/speak", async (req, res) => {
+    const clientIp = String(req.ip || req.socket?.remoteAddress || "unknown");
+    if (!allowVoiceSynthesis(clientIp)) {
+        return res.status(429).json({
+            success: false,
+            error: "Limite de geração de voz atingido. Aguarde um minuto."
+        });
+    }
     const text = String(req.body?.text || "").trim();
     if (!text) {
         return res.status(400).json({ success: false, error: "Informe o texto para falar." });
