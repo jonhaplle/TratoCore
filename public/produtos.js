@@ -145,6 +145,14 @@ const originalUrl = imagemDriveUrl ||
 
                 ${botaoPublicacao}
 
+                ${jaPublicado ? "" : `
+                <button
+                    class="publicar"
+                    onclick="revisarAnuncio(${produto.id})">
+                    Revisar e publicar
+                </button>
+                `}
+
                 <button
                     class="corrigir-ia"
                     onclick="corrigirComIA(${produto.id})">
@@ -796,7 +804,7 @@ modalPublicacaoML.addEventListener("click", event => {
 });
 
 // =========================================
-// DISPONIBILIZA FUNÃƒâ€¡Ãƒâ€¢ES
+// DISPONIBILIZA FUNÇÕES
 // =========================================
 
 window.editar = editar;
@@ -804,6 +812,19 @@ window.excluirProduto = excluirProduto;
 window.publicarML = publicarML;
 window.iniciarPublicacaoSelecionados = iniciarPublicacaoSelecionados;
 window.corrigirComIA = corrigirComIA;
+
+// =========================================
+// VENDEDOR AUTOMÁTICO — REVISÃO DO ANÚNCIO
+// =========================================
+
+// Abre a tela única de revisão (anuncio.html) onde o vendedor confere e
+// aprova identificação, preço, título, descrição e atributos antes de publicar.
+// A publicação direta continua disponível em "Publicar ML".
+function revisarAnuncio(id) {
+    window.location.href = `anuncio.html?id=${encodeURIComponent(id)}`;
+}
+
+window.revisarAnuncio = revisarAnuncio;
 
 // =========================================
 

@@ -2,6 +2,7 @@ const express = require("express");
 const crypto = require("crypto");
 const service = require("../services/tratoVendedor.service");
 const chatService = require("../services/tratoVendedorChat.service");
+const sellerListing = require("../services/seller/sellerListing.service");
 
 const router = express.Router();
 const handoffAttempts = new Map();
@@ -302,6 +303,195 @@ router.get("/handoffs", async (req, res) => {
     } catch (error) {
         console.error("[Trato Vendedor] Erro ao listar atendimentos:", error.message);
         return res.status(500).json({ success: false, error: "Não foi possível consultar os atendimentos." });
+    }
+});
+
+// ======================================================
+// VENDEDOR AUTOMÁTICO — ANÚNCIO ASSISTIDO
+// ======================================================
+// Rotas ADITIVAS: convivem com o chat, a voz e o atendimento acima.
+// Nenhuma rota existente foi alterada.
+
+/**
+ * Converte os erros do serviço em respostas para a tela de revisão.
+ */
+function sendListingError(res, error, fallbackStatus = 500) {
+    if (error.code === "ML_MISSING_ATTRIBUTES") {
+        return res.status(422).json({
+            success: false,
+            code: error.code,
+            message: error.message,
+            needs_input: true,
+            missing: error.missing || [],
+            suggestions: error.suggestions || []
+        });
+    }
+
+    if (error.code === "ML_APPROVAL_REQUIRED") {
+        return res.status(428).json({
+            success: false,
+            code: error.code,
+            message: error.message
+        });
+    }
+
+    if (error.code === "ML_MISSING_PICTURES") {
+        return res.status(422).json({
+            success: false,
+            code: error.code,
+            message: error.message
+        });
+    }
+
+    // O anúncio foi criado no Mercado Livre, mas o vínculo não foi gravado.
+    if (error.ml?.id) {
+        return res.status(500).json({
+            success: false,
+            message: error.message || "Anúncio criado no Mercado Livre, mas não registrado no banco.",
+            persisted: false,
+            ml: {
+                id: error.ml.id,
+                permalink: error.ml.permalink || null,
+                status: error.ml.status || null
+            }
+        });
+    }
+
+    if (error.response) {
+        return res.status(error.response.status || fallbackStatus).json({
+            success: false,
+            message: "O Mercado Livre recusou a solicitação.",
+            error: error.response.data
+        });
+    }
+
+    return res.status(error.status || fallbackStatus).json({
+        success: false,
+        message: error.message || "Erro ao processar o anúncio."
+    });
+}
+
+// Status do Mercado Livre + estado real das IAs (nuvem e local).
+router.get("/anuncio/status", async (req, res) => {
+    let mercadoLivre = { conectado: false };
+
+    try {
+        const apiService = require("../services/ml/api.service");
+        const me = await apiService.getMe();
+
+        mercadoLivre = {
+            conectado: true,
+            user_id: me.id,
+            nickname: me.nickname,
+            site_id: me.site_id
+        };
+    } catch (_) {
+        mercadoLivre = {
+            conectado: false,
+            message: "Mercado Livre desconectado. Autorize a conta em /api/ml/login."
+        };
+    }
+
+    const { status: aiStatus } = require("../services/local-ai.service");
+    const localVision = require("../services/localVision.service");
+
+    const ia = {
+        gemini: { disponivel: false },
+        local: { disponivel: false },
+        modo: "manual"
+    };
+
+    try {
+        const gemini = await aiStatus();
+        ia.gemini = {
+            disponivel: Boolean(gemini.online && gemini.vision_ready),
+            modelo: gemini.vision_model || null,
+            chave_valida: gemini.key_valid !== false
+        };
+    } catch (_) {
+        ia.gemini = { disponivel: false };
+    }
+
+    try {
+        const local = await localVision.status();
+        ia.local = {
+            disponivel: Boolean(local.online && local.vision_ready),
+            modelo: local.vision_model || null,
+            url: local.url
+        };
+    } catch (_) {
+        ia.local = { disponivel: false };
+    }
+
+    if (ia.gemini.disponivel) ia.modo = "gemini";
+    else if (ia.local.disponivel) ia.modo = "local";
+    else ia.modo = "manual";
+
+    return res.json({
+        success: true,
+        mercado_livre: mercadoLivre,
+        ia,
+        conectado: mercadoLivre.conectado
+    });
+});
+
+// Monta o pacote de revisão (não publica nada).
+router.post("/anuncio/revisao", async (req, res) => {
+    try {
+        const body = req.body || {};
+
+        if (!body.productId) {
+            return res.status(400).json({
+                success: false,
+                message: "produto não informado (envie productId)."
+            });
+        }
+
+        const review = await sellerListing.buildReview({
+            productId: body.productId,
+            identification: body.identification || {},
+            sellerObservation: body.sellerObservation || body.observacao_vendedor || "",
+            overrides: body.overrides || {},
+            attributeOverrides: body.attributeOverrides || body.attribute_overrides || {},
+            skipAi: body.skipAi === true,
+            skipPrice: body.skipPrice === true
+        });
+
+        return res.json(review);
+    } catch (error) {
+        console.error("[Trato Vendedor] Erro na revisão do anúncio:", error.response?.data || error.message);
+        return sendListingError(res, error, 502);
+    }
+});
+
+// Publica o anúncio aprovado (exige approve: true).
+router.post("/anuncio/publicar", async (req, res) => {
+    try {
+        const body = req.body || {};
+
+        if (!body.productId) {
+            return res.status(400).json({ success: false, message: "produto não informado (envie productId)." });
+        }
+
+        const result = await sellerListing.publish({
+            productId: body.productId,
+            identification: body.identification || {},
+            overrides: body.overrides || {},
+            attributeOverrides: body.attributeOverrides || body.attribute_overrides || {},
+            approve: body.approve === true,
+            dryRun: body.dryRun === true,
+            skipValidation: body.skipValidation === true
+        });
+
+        return res.json({
+            ...result,
+            message: result.published
+                ? "Anúncio publicado no Mercado Livre."
+                : "Simulação concluída (modo de teste, nada foi publicado)."
+        });
+    } catch (error) {
+        console.error("[Trato Vendedor] Erro na publicação:", error.response?.data || error.message);
+        return sendListingError(res, error, 502);
     }
 });
 

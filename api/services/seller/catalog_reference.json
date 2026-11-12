@@ -1,0 +1,35 @@
+{
+  "updated_at": "2026-11-12",
+  "source": "Catálogo do Mercado Livre (ofertas de anúncios novos observadas via API)",
+  "note": "Faixas de produto NOVO observadas no catálogo; o usado é estimado como 70% do novo (USED_RATIO).",
+  "models": [
+    {
+      "label": "Samsung Galaxy A15",
+      "new_min": 1799,
+      "new_max": 1899,
+      "observed_offers": 2,
+      "observed_product": "Samsung Galaxy A15 256gb 8 RAM azul (MLB53360274)"
+    },
+    {
+      "label": "Samsung Galaxy A05",
+      "new_min": 1200,
+      "new_max": 1200,
+      "observed_offers": 1,
+      "observed_product": "Samsung Galaxy A05 64 GB preto 4 GB RAM (MLB29735160)"
+    },
+    {
+      "label": "Xiaomi Redmi Note 12",
+      "new_min": 1025,
+      "new_max": 1460,
+      "observed_offers": 8,
+      "observed_product": "Xiaomi Redmi Note 12 6gb 128gb azul (MLB23269758)"
+    },
+    {
+      "label": "Motorola Moto G54",
+      "new_min": 2299,
+      "new_max": 2299,
+      "observed_offers": 1,
+      "observed_product": "Motorola Moto G54 5G 128GB Grafite 4GB RAM (MLB27933361)"
+    }
+  ]
+}

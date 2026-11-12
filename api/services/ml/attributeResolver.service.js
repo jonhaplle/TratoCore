@@ -30,7 +30,7 @@ function predictorMap(prediction) {
 function productAttributeMap(product) {
     const map = {};
     // Mescla as duas fontes: atributos normalizados do produto e atributos ML.
-    // ml_attributes tem prioridade quando contém o mesmo ID.
+    // ml_attributes tem prioridade quando contÃƒÂ©m o mesmo ID.
     for (const raw of [product?.attributes, product?.ml_attributes]) {
         if (Array.isArray(raw)) {
             for (const item of raw) {
@@ -46,8 +46,8 @@ function productAttributeMap(product) {
             }
         }
     }
-    // Campos logísticos salvos no produto também podem alimentar os atributos
-    // oficiais do Mercado Livre, sem exigir redigitação no modal.
+    // Campos logÃƒÂ­sticos salvos no produto tambÃƒÂ©m podem alimentar os atributos
+    // oficiais do Mercado Livre, sem exigir redigitaÃƒÂ§ÃƒÂ£o no modal.
     const packageFields = {
         SELLER_PACKAGE_HEIGHT: product?.seller_package_height ?? product?.package_height,
         SELLER_PACKAGE_WIDTH: product?.seller_package_width ?? product?.package_width,
@@ -167,30 +167,44 @@ function extractLabeledValue(text, labels) {
 
 function extractDescriptionValue(product, definition) {
     const text = descriptionText(product);
-    if (!text) return "";
-
     const id = normalize(definition?.id);
     const name = normalize(definition?.name);
     const key = `${id} ${name}`;
 
+    // MODEL declarado pelo vendedor na observação ("Dados RPG Kit com 7 dados
+    // verdes, usados..."): é declaração, não inferência. Só é usado quando
+    // não há modelo no cadastro, o qual tem prioridade acima.
+    if (id === "model") {
+        const observation = sellerTextSources(product).map(item => item.text).join("\n");
+        if (observation) {
+            const labeled = extractLabeledValue(observation, ["modelo", "model"]);
+            if (labeled) return labeled;
+
+            const declared = extractModelFromObservation(observation, definition);
+            if (declared) return declared;
+        }
+    }
+
+    if (!text) return "";
+
     if (id === 'units_per_pack') {
-        const quantity = text.match(/(?:inclui|cont[eé]m|contendo|com|possui|composto por|formado por)\s+(\d+|um|uma|dois|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez)\s+(?:garrafas?|unidades?|pe[cç]as?|itens?)/i);
+        const quantity = text.match(/(?:inclui|cont[eÃƒÂ©]m|contendo|com|possui|composto por|formado por)\s+(\d+|um|uma|dois|duas|tr[eÃƒÂª]s|quatro|cinco|seis|sete|oito|nove|dez)\s+(?:garrafas?|unidades?|pe[cÃƒÂ§]as?|itens?)/i);
         if (quantity) {
-            const numbers = {um:1, uma:1, dois:2, duas:2, 'três':3, quatro:4, cinco:5, seis:6, sete:7, oito:8, nove:9, dez:10};
+            const numbers = {um:1, uma:1, dois:2, duas:2, 'trÃƒÂªs':3, quatro:4, cinco:5, seis:6, sete:7, oito:8, nove:9, dez:10};
             const raw = quantity[1].toLowerCase();
             return numbers[raw] || raw;
         }
     }
     const groups = [
-        { labels: ["album", "Ã¡lbum"], keys: /album|Ã¡lbum/ },
-        { labels: ["artista", "artist", "intÃ©rprete", "interprete"], keys: /artist|artista|interprete|intÃ©rprete/ },
+        { labels: ["album", "ÃƒÆ’Ã‚Â¡lbum"], keys: /album|ÃƒÆ’Ã‚Â¡lbum/ },
+        { labels: ["artista", "artist", "intÃƒÆ’Ã‚Â©rprete", "interprete"], keys: /artist|artista|interprete|intÃƒÆ’Ã‚Â©rprete/ },
         { labels: ["marca", "brand"], keys: /brand|marca/ },
         { labels: ["modelo", "model"], keys: /model|modelo/ },
         { labels: ["linha", "line"], keys: /line|linha/ },
         { labels: ["cor", "color"], keys: /color|cor/ },
         { labels: ["material"], keys: /material/ },
-        { labels: ["voltagem", "voltage", "tensÃ£o", "tensao"], keys: /voltag|tensao|tensÃ£o|voltage/ },
-        { labels: ["potÃªncia", "potencia", "power"], keys: /potenc|power/ },
+        { labels: ["voltagem", "voltage", "tensÃƒÆ’Ã‚Â£o", "tensao"], keys: /voltag|tensao|tensÃƒÆ’Ã‚Â£o|voltage/ },
+        { labels: ["potÃƒÆ’Ã‚Âªncia", "potencia", "power"], keys: /potenc|power/ },
         { labels: ["capacidade", "capacity"], keys: /capacid|capacity/ },
         { labels: ["tamanho", "size"], keys: /tamanho|size/ }
     ];
@@ -204,6 +218,373 @@ function extractDescriptionValue(product, definition) {
 
     return "";
 }
+
+// ======================================================
+// EVIDÃƒÅ NCIAS DO VENDEDOR (Vendedor AutomÃƒÂ¡tico)
+// ======================================================
+// Estas funÃƒÂ§ÃƒÂµes NÃƒÆ’O substituem a lÃƒÂ³gica de produÃƒÂ§ÃƒÂ£o: apenas fornecem
+// evidÃƒÂªncias adicionais (observaÃƒÂ§ÃƒÂ£o do vendedor, cadastro e catÃƒÂ¡logo) para
+// o resolvedor. A embalagem continua sendo responsabilidade de
+// sellerPackageUnit/estimateSellerPackage/requirePackageDimensions.
+
+function sellerTextSources(product) {
+    // A aplicaÃƒÂ§ÃƒÂ£o preenche title/description com texto produzido pela IA e nÃƒÂ£o
+    // persiste a origem de cada campo. SÃƒÂ³ seller_observation identifica hoje
+    // uma declaraÃƒÂ§ÃƒÂ£o bruta do vendedor, portanto nÃƒÂ£o inferimos atributos dos
+    // campos editoriais sem uma futura proveniÃƒÂªncia explÃƒÂ­cita.
+    const observation = clean(
+        product?.seller_observation
+        || product?.sellerObservation
+        || product?.observacao_vendedor
+        || product?.observation
+        || product?.seller_note
+    );
+
+    return observation ? [{ source: "ObservaÃƒÂ§ÃƒÂ£o do vendedor", text: observation }] : [];
+}
+
+function isDisplayOnlyMaterial(value) {
+    const text = normalize(value);
+
+    const platedFinish =
+        /\b(?:banho|banhad[oa]|folhead[oa]|revestid[oa]|imitad[oa]|imitacao)\b/.test(text) &&
+        /\bprata\b/.test(text);
+
+    return /\bpratead[oa]s?\b/.test(text) ||
+        /\b(?:cor|acabamento|tom)\s+(?:de\s+)?prata\b/.test(text) ||
+        platedFinish ||
+        /\b(?:nao informado|nao identificad[oa]|desconhecid[oa]|nao confirmado)\b/.test(text);
+}
+
+function isSellerConfirmed(product, id) {
+    const sources = product?.attribute_sources || product?.attributeSources || {};
+    const source = sources[id] || sources[id.toLowerCase()] || product?.[`${id.toLowerCase()}_source`];
+    const confirmed = product?.seller_confirmed_attributes || product?.sellerConfirmedAttributes || [];
+
+    return String(source || "").toLowerCase() === "seller" ||
+        (Array.isArray(confirmed) && confirmed.some(value => String(value).toUpperCase() === id));
+}
+
+function materialEvidenceFromText(text, source) {
+    const labeled = extractLabeledValue(text, ["material", "composicao", "composiÃƒÂ§ÃƒÂ£o"]);
+    if (labeled && !isDisplayOnlyMaterial(labeled)) {
+        return { value: labeled, source, excerpt: `Material: ${labeled}` };
+    }
+
+    const match = text.match(/\b(?:em|de)\s+(prata|a[cÃƒÂ§]o(?:\s+inox(?:id[aÃƒÂ¡]vel)?)?)\b/i);
+    if (!match || isDisplayOnlyMaterial(match[0])) return null;
+
+    const prefix = normalize(text.slice(Math.max(0, match.index - 32), match.index));
+    if (/(?:\bnao\s+(?:(?:e|eh)(?:\s+\w+){0,3}|foi(?:\s+\w+){0,2}|feito|fabricado|produzido)|\bsem|\b(?:cor|acabamento|tom|banho|banhad[oa]|revestid[oa]|folhead[oa]|imitacao|imitad[oa]|aparencia)|\bparece\s+ser|\baparenta\s+ser|\b(?:talvez|provavelmente|possivelmente))\s*$/.test(prefix)) {
+        return null;
+    }
+
+    const normalizedValue = normalize(match[1]);
+    const value = normalizedValue.startsWith("aco")
+        ? (normalizedValue.includes("inox") ? "AÃƒÂ§o inox" : "AÃƒÂ§o")
+        : "Prata";
+
+    return { value, source, excerpt: match[0] };
+}
+
+function findMaterialEvidence(product, override = null) {
+    const overrideValue = clean(override?.value_name || override?.value_id);
+    if (overrideValue && !isDisplayOnlyMaterial(overrideValue)) {
+        return { value: overrideValue, source: "Valor informado no modal", excerpt: overrideValue };
+    }
+
+    const structured = clean(product?.material);
+    if (structured && isSellerConfirmed(product, "MATERIAL") && !isDisplayOnlyMaterial(structured)) {
+        return { value: structured, source: "Campo Material confirmado pelo vendedor", excerpt: structured };
+    }
+
+    for (const item of sellerTextSources(product)) {
+        const evidence = materialEvidenceFromText(item.text, item.source);
+        if (evidence) return evidence;
+    }
+
+    return null;
+}
+
+function findAttributeEvidence(definition, product, override = null) {
+    const id = String(definition?.id || "").toUpperCase();
+    if (id === "MATERIAL") return findMaterialEvidence(product, override);
+
+    const overrideValue = clean(override?.value_name || override?.value_id);
+    if (overrideValue) {
+        return { value: overrideValue, source: "Valor informado no modal", excerpt: overrideValue };
+    }
+
+    const fields = {
+        BRAND: ["brand", "marca", "Campo Marca do cadastro"],
+        MODEL: ["model", "modelo", "Campo Modelo do cadastro"],
+        COLOR: ["color", "cor", "Campo Cor do cadastro"],
+        GTIN: ["gtin", "barcode", "CÃƒÂ³digo de barras do cadastro"]
+    };
+
+    const field = fields[id];
+    if (field) {
+        const value = clean(product?.[field[0]] || product?.[field[1]]);
+        if (value && (!["BRAND", "MODEL"].includes(id) || isSellerConfirmed(product, id))) {
+            return { value, source: field[2], excerpt: value };
+        }
+    }
+
+    const labels = {
+        BRAND: ["marca", "brand"],
+        MODEL: ["modelo", "model"],
+        COLOR: ["cor", "color"]
+    }[id];
+
+    if (!labels) return null;
+
+    for (const item of sellerTextSources(product)) {
+        if (id === "COLOR") {
+            const colorPhrase = item.text.match(/\bcor\s+(prata|pratead[oa])\b/i) ||
+                item.text.match(/\bpratead[oa]\b/i);
+            if (colorPhrase) {
+                return { value: colorPhrase[1] || colorPhrase[0], source: item.source, excerpt: colorPhrase[0] };
+            }
+        }
+
+        const value = extractLabeledValue(item.text, labels);
+        if (value) return { value, source: item.source, excerpt: `${labels[0]}: ${value}` };
+    }
+
+    return null;
+}
+
+function valueNameForEvidence(definition, evidence, resolvedValue) {
+    if (resolvedValue?.value_name) return resolvedValue.value_name;
+
+    if (resolvedValue?.value_id) {
+        const selected = (definition?.values || [])
+            .find(value => String(value.id) === String(resolvedValue.value_id));
+        if (selected?.name) return selected.name;
+    }
+
+    return evidence?.value || "";
+}
+
+/**
+ * Extrai o nome comercial declarado na observaÃƒÂ§ÃƒÂ£o do vendedor.
+ * Usa apenas a PRIMEIRA oraÃƒÂ§ÃƒÂ£o declarativa (antes da primeira vÃƒÂ­rgula) e
+ * ignora declaraÃƒÂ§ÃƒÂµes em terceira pessoa ("O vendedor declara: ...").
+ */
+function extractModelFromObservation(text, definition) {
+    const raw = clean(String(text || ""));
+    if (!raw) return "";
+
+    if (/^(?:o|a)\s+(?:vendedor|vendedora|propriet[ÃƒÂ¡a]rio|dono)\b/i.test(raw)) return "";
+    if (/^eu\s+/i.test(raw)) return "";
+
+    const firstClause = raw.split(/[,;\n.]/)[0];
+    if (!firstClause) return "";
+
+    const cleanedText = firstClause
+        .replace(/^(?:marca|brand|modelo|model)\s*[:=-]\s*/i, "")
+        .replace(/\b(?:usado|usada|novo|nova|seminovo|lacrado|defeito|funciona|testado|revisado)\b/gi, "")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    if (cleanedText.length < 3) return "";
+
+    const words = cleanedText.split(/\s+/).filter(word => /^[\p{L}]{4,}$/u.test(word));
+    if (!words.length) return "";
+
+    const limit = Number(definition?.value_max_length) || 255;
+    return cleanedText.slice(0, limit);
+}
+
+/** Valores comerciais aceitos, apenas como dica na revisÃƒÂ£o (nunca automÃƒÂ¡ticos). */
+function commercialHints() {
+    return {
+        BRAND: ["NÃƒÂ£o especificada", "GenÃƒÂ©rica"],
+        MODEL: []
+    };
+}
+
+/** Dica comercial por atributo, usada apenas como estÃƒÂ­mulo na revisÃƒÂ£o. */
+function commercialHintFor(definition) {
+    const hints = commercialHints()[definition?.id];
+    if (!Array.isArray(hints) || !hints.length) return null;
+
+    const values = hints
+        .map(name => {
+            const allowed = valueFromAllowedList(definition, name);
+            if (!allowed?.value_id) return null;
+
+            return {
+                value_id: String(allowed.value_id),
+                value_name: definition.values
+                    .find(value => String(value.id) === String(allowed.value_id))?.name || name
+            };
+        })
+        .filter(Boolean);
+
+    return values.length ? values : null;
+}
+
+exports.commercialHintFor = commercialHintFor;
+
+function conditionalRequiredIds(conditionalAttributes) {
+    const list = Array.isArray(conditionalAttributes) ? conditionalAttributes : [];
+
+    return new Set(
+        list
+            .map(item => (typeof item === "string" ? item : item?.id))
+            .filter(Boolean)
+    );
+}
+
+function requirementFor(definition, conditionalIds) {
+    const tags = definition.tags || {};
+
+    if (tags.required === true) return "required";
+    if (conditionalIds.has(definition.id)) return "conditional_required";
+    return "optional";
+}
+
+/** EvidÃƒÂªncia textual genÃƒÂ©rica por rÃƒÂ³tulo (capacidade, voltagem, tamanho...). */
+function genericEvidenceFromText(id, definition, product) {
+    const labels = {
+        CAPACITY: ["capacidade", "capacity"],
+        VOLTAGE: ["voltagem", "voltage", "tensÃƒÂ£o", "tensao"],
+        POWER: ["potÃƒÂªncia", "potencia", "power"],
+        SIZE: ["tamanho", "size", "medida", "aro"],
+        HEIGHT: ["altura", "height"],
+        WIDTH: ["largura", "width"],
+        DEPTH: ["profundidade", "depth", "comprimento"]
+    }[String(id || "").toUpperCase()];
+
+    if (!labels) return null;
+
+    for (const source of sellerTextSources(product)) {
+        const value = extractLabeledValue(source.text, labels);
+        if (value) {
+            return {
+                value,
+                source: source.source,
+                excerpt: `${labels[0]}: ${value}`
+            };
+        }
+    }
+
+    return null;
+}
+
+/** EvidÃƒÂªncia estruturada de campos numÃƒÂ©ricos do cadastro. */
+function structuredNumberEvidence(id, definition, product) {
+    const key = String(id || "").toUpperCase();
+
+    const candidates = {
+        CAPACITY: [product?.capacity, product?.capacidade],
+        VOLTAGE: [product?.voltage, product?.voltagem, product?.tensao],
+        POWER: [product?.power, product?.potencia],
+        HEIGHT: [product?.height, product?.altura],
+        WIDTH: [product?.width, product?.largura],
+        DEPTH: [product?.depth, product?.profundidade],
+        SIZE: [product?.size, product?.tamanho]
+    }[key];
+
+    if (!Array.isArray(candidates)) return null;
+
+    for (const raw of candidates) {
+        const value = clean(raw);
+        if (!value) continue;
+        if (!parseNumberUnit(value, definition)) continue;
+
+        return {
+            value,
+            source: `Campo ${definition?.name || key} do cadastro`,
+            excerpt: value
+        };
+    }
+
+    return null;
+}
+
+function valueNameOf(definition, resolved) {
+    if (!resolved) return "";
+
+    if (resolved.value_name) return String(resolved.value_name);
+
+    if (resolved.value_id) {
+        const value = (definition?.values || [])
+            .find(item => String(item.id) === String(resolved.value_id));
+        return value?.name || String(resolved.value_id);
+    }
+
+    if (resolved.value_struct?.number != null) {
+        return `${resolved.value_struct.number} ${resolved.value_struct.unit || ""}`.trim();
+    }
+
+    return "";
+}
+
+/**
+ * Resumo de exigÃƒÂªncias para a tela de revisÃƒÂ£o: quais atributos o Mercado
+ * Livre exige, quais foram preenchidos com evidÃƒÂªncia e quais faltam.
+ */
+function buildRequirements({ declared, resolvedAttributes, missing, suggestions, definitions }) {
+    const byId = new Map((definitions || []).map(item => [item.id, item]));
+    const valueById = new Map((resolvedAttributes || []).map(item => [item.id, item]));
+    const evidenceById = new Map((suggestions || []).map(item => [item.id, item]));
+
+    const describe = (entry, requirement) => {
+        const definition = byId.get(entry.id) || {};
+        const filled = valueById.get(entry.id);
+        const evidence = evidenceById.get(entry.id);
+
+        return {
+            id: entry.id,
+            name: entry.name || definition.name || entry.id,
+            value_type: entry.value_type || definition.value_type || "string",
+            value_max_length: entry.value_max_length || definition.value_max_length,
+            requirement,
+            filled: Boolean(filled),
+            value: filled ? valueNameOf(definition, filled) : "",
+            value_id: filled?.value_id ? String(filled.value_id) : null,
+            value_struct: filled?.value_struct || null,
+            evidence: evidence ? { source: evidence.source, excerpt: evidence.excerpt } : null,
+            values: (entry.values || definition.values || []).map(value => ({
+                id: String(value.id),
+                name: value.name || String(value.id)
+            }))
+        };
+    };
+
+    const required = (declared?.required || []).map(item => describe(item, "required"));
+    const conditional = (declared?.conditional_required || []).map(item => describe(item, "conditional_required"));
+
+    const autoFilled = [...valueById.keys()]
+        .filter(id => !required.some(item => item.id === id))
+        .filter(id => !conditional.some(item => item.id === id))
+        .map(id => {
+            const definition = byId.get(id) || { id };
+            return describe({
+                id,
+                name: definition.name || id,
+                value_type: definition.value_type,
+                value_max_length: definition.value_max_length,
+                values: definition.values
+            }, "evidence");
+        });
+
+    return {
+        required,
+        conditional_required: conditional,
+        auto_filled: autoFilled,
+        missing: (missing || []).map(item => describe(item, requirementFor(byId.get(item.id) || item, new Set()))),
+        optional: (declared?.optional || [])
+            .filter(item => !valueById.has(item.id))
+            .map(item => ({ id: item.id, name: item.name }))
+    };
+}
+
+// ======================================================
+// EMBALAGEM (lÃƒÂ³gica de produÃƒÂ§ÃƒÂ£o Ã¢â‚¬â€ preservada integralmente)
+// ======================================================
 
 function sellerPackageUnit(id) {
     if (id === "SELLER_PACKAGE_HEIGHT" || id === "SELLER_PACKAGE_WIDTH" || id === "SELLER_PACKAGE_LENGTH") return "cm";
@@ -220,7 +601,7 @@ function estimateSellerPackage(product) {
     ].filter(Boolean).join(" "));
 
     // Estimativa conservadora para console de videogame embalado em caixa
-    // externa com proteção. Pode ser substituída por medidas reais via override.
+    // externa com proteÃƒÂ§ÃƒÂ£o. Pode ser substituÃƒÂ­da por medidas reais via override.
     if (/console|xbox|playstation|play station|ps[1-5]|nintendo switch|videogame|video game/.test(text)) {
         return {
             SELLER_PACKAGE_HEIGHT: 20,
@@ -238,6 +619,8 @@ function resolveOne(definition, product, predictorValues, overrides, options = {
     const productMap = productAttributeMap(product);
     // MATERIAL is not inferred from AI/predictor attributes: its value must
     // come from a direct manual field/override or an explicitly labelled detail.
+    // BRAND/MODEL do cadastro sÃƒÂ£o declaraÃƒÂ§ÃƒÂ£o do vendedor (o TratoCore sÃƒÂ³ grava
+    // marca/modelo apÃƒÂ³s revisÃƒÂ£o), por isso continuam sendo fonte vÃƒÂ¡lida.
     const explicit = id === "MATERIAL" ? null : productMap[id];
     const override = overrides[id];
     const required = options.required === true;
@@ -245,9 +628,9 @@ function resolveOne(definition, product, predictorValues, overrides, options = {
 
     const directSources = [override, explicit];
 
-    // Valores reais/manualizados têm prioridade. Se não existirem, aplica
+    // Valores reais/manualizados tÃƒÂªm prioridade. Se nÃƒÂ£o existirem, aplica
     // estimativa conservadora por tipo de produto conhecido. Unidades exigidas
-    // pelo Mercado Livre: cm nas dimensões e g no peso.
+    // pelo Mercado Livre: cm nas dimensÃƒÂµes e g no peso.
     const packageUnit = sellerPackageUnit(id);
     if (packageUnit) {
         for (const source of directSources) {
@@ -270,8 +653,8 @@ function resolveOne(definition, product, predictorValues, overrides, options = {
         return null;
     }
 
-    // Atributos number_unit não aceitam value_id como valor final.
-    // Primeiro aproveita uma estrutura numérica/unidade já validada.
+    // Atributos number_unit nÃƒÂ£o aceitam value_id como valor final.
+    // Primeiro aproveita uma estrutura numÃƒÂ©rica/unidade jÃƒÂ¡ validada.
     if (isNumberUnit) {
         for (const source of directSources) {
             if (source?.value_struct?.number != null && source?.value_struct?.unit) {
@@ -291,7 +674,9 @@ function resolveOne(definition, product, predictorValues, overrides, options = {
         }
 
         // Busca a capacidade explicitamente informada no campo do produto,
-        // título ou descrição. Não converte IDs de lista em capacidade.
+        // tÃ­tulo ou descriÃ§Ã£o. NÃ£o converte IDs de lista em capacidade.
+        // MATERIAL vem da evidÃªncia estruturada (campo/observaÃ§Ã£o), nunca da
+        // descriÃ§Ã£o genÃ©rica nem do predictor.
         const known = id === "MATERIAL" ? product?.material : knownProductValue(product, id);
         const fromKnown = parseNumberUnit(known, definition);
         if (fromKnown) return { id, ...fromKnown };
@@ -337,10 +722,11 @@ function resolveOne(definition, product, predictorValues, overrides, options = {
         if (bivolt?.name) return { id, value_name: bivolt.name };
     }
 
-    // O predictor é auxiliar e só completa atributos obrigatórios.
-    // Códigos alfanuméricos de modelo não podem ser inferidos pelo predictor:
-    // um código de outra marca/modelo (ex.: RMX... em aparelho Samsung) é perigoso.
-    if (required && id !== "MATERIAL" && id !== "MODEL_ALPHANUMERIC") {
+    // O predictor ÃƒÂ© auxiliar e sÃƒÂ³ completa atributos obrigatÃƒÂ³rios.
+    // CÃƒÂ³digos alfanumÃƒÂ©ricos de modelo nÃƒÂ£o podem ser inferidos pelo predictor:
+    // um cÃƒÂ³digo de outra marca/modelo (ex.: RMX... em aparelho Samsung) ÃƒÂ© perigoso.
+    // BRAND/MODEL tambÃƒÂ©m sÃƒÂ³ entram por declaraÃƒÂ§ÃƒÂ£o explÃƒÂ­cita do vendedor.
+    if (required && !["MATERIAL", "BRAND", "MODEL", "MODEL_ALPHANUMERIC"].includes(id)) {
         const predicted = predictorValues[id];
         if (predicted) {
             if (isNumberUnit) {
@@ -392,7 +778,7 @@ function parseNumberUnit(rawValue, definition) {
         return { value_struct: { number, unit } };
     }
 
-    // Se veio apenas um número, usa a unidade padrão definida pela categoria.
+    // Se veio apenas um nÃƒÂºmero, usa a unidade padrÃƒÂ£o definida pela categoria.
     if (/^\d+(?:[.,]\d+)?$/.test(raw) && defaultUnit) {
         const number = Number(raw.replace(",", "."));
         if (Number.isFinite(number)) {
@@ -443,9 +829,9 @@ function mergeDefinitions(categoryAttributes, conditionalAttributes, requirePack
         }
     }
 
-    // Atributos de embalagem são adicionados como obrigatórios somente
-    // quando a modalidade logística escolhida exige dimensões (ME2).
-    // Se a categoria já os definir como obrigatórios, essa regra oficial
+    // Atributos de embalagem sÃƒÂ£o adicionados como obrigatÃƒÂ³rios somente
+    // quando a modalidade logÃƒÂ­stica escolhida exige dimensÃƒÂµes (ME2).
+    // Se a categoria jÃƒÂ¡ os definir como obrigatÃƒÂ³rios, essa regra oficial
     // continua prevalecendo independentemente da modalidade.
     if (requirePackageDimensions) {
         const packageDefinitions = [
@@ -476,13 +862,16 @@ exports.build = ({
     conditionalAttributes = [],
     prediction,
     overrides = {},
-    requirePackageDimensions = false
+    requirePackageDimensions = false,
+    declaredRequirements = null
 }) => {
     const attributes = [];
     const predictorValues = predictorMap(prediction);
     const overrideValues = overrideMap(overrides);
     const missing = [];
+    const suggestions = [];
     const definitions = mergeDefinitions(categoryAttributes, conditionalAttributes, requirePackageDimensions);
+    const conditionalIds = conditionalRequiredIds(conditionalAttributes);
 
     for (const definition of definitions) {
         const tags = definition.tags || {};
@@ -491,19 +880,52 @@ exports.build = ({
 
         const isSellerPackageAttribute = Boolean(sellerPackageUnit(definition.id));
         const packageRequired = isSellerPackageAttribute && requirePackageDimensions;
-        // new_required só se aplica a itens novos. Não pode virar pendência
+        // new_required sÃƒÂ³ se aplica a itens novos. NÃƒÂ£o pode virar pendÃƒÂªncia
         // para usados por estar presente na ficha da categoria.
         const requiredByCondition = tags.required === true || (isNew && tags.new_required === true);
         if (!packageRequired && (tags.read_only || tags.fixed || (tags.hidden && !requiredByCondition))) continue;
 
         const required = packageRequired || requiredByCondition;
-        const resolved = resolveOne(
+
+        let resolved = resolveOne(
             definition,
             product,
             predictorValues,
             overrideValues,
             { required }
         );
+
+        // Atributos nÃƒÂ£o exigidos tambÃƒÂ©m sÃƒÂ£o preenchidos quando existe
+        // evidÃƒÂªncia direta (observaÃƒÂ§ÃƒÂ£o do vendedor ou cadastro). O que nÃƒÂ£o
+        // existe evidÃƒÂªncia continua vazio Ã¢â‚¬â€ nunca estimado.
+        if (!resolved && !required) {
+            const evidence = findAttributeEvidence(definition, product, overrideValues[definition.id])
+                || structuredNumberEvidence(definition.id, definition, product)
+                || genericEvidenceFromText(definition.id, definition, product);
+
+            if (evidence) {
+                const value = valueFromAllowedList(definition, evidence.value);
+                if (value) {
+                    resolved = { id: definition.id, ...value };
+                }
+            }
+        }
+
+        const evidence = findAttributeEvidence(definition, product, overrideValues[definition.id])
+            || structuredNumberEvidence(definition.id, definition, product)
+            || genericEvidenceFromText(definition.id, definition, product);
+
+        if (evidence) {
+            const allowedValue = valueFromAllowedList(definition, evidence.value);
+            addUnique(suggestions, {
+                id: definition.id,
+                name: definition.name || definition.id,
+                value_name: valueNameForEvidence(definition, evidence, allowedValue),
+                source: evidence.source,
+                excerpt: evidence.excerpt,
+                accepted: Boolean(resolved)
+            });
+        }
 
         if (resolved) {
             addUnique(attributes, resolved);
@@ -513,7 +935,11 @@ exports.build = ({
                 name: definition.name,
                 value_type: definition.value_type,
                 value_max_length: definition.value_max_length,
-                values: definition.values || []
+                values: definition.values || [],
+                requirement: requirementFor(definition, conditionalIds),
+                hint: requirementFor(definition, conditionalIds) === "required"
+                    ? commercialHintFor(definition)
+                    : null
             });
         }
     }
@@ -531,5 +957,19 @@ exports.build = ({
         Boolean(sellerPackageUnit(attribute.id))
     ));
 
-    return { attributes, missing };
+    return {
+        attributes,
+        missing,
+        // Compatibilidade: a produÃƒÂ§ÃƒÂ£o usa attributes/missing; o Vendedor
+        // AutomÃƒÂ¡tico consome suggestions/requirements/definitions.
+        suggestions,
+        requirements: buildRequirements({
+            declared: declaredRequirements,
+            resolvedAttributes: attributes,
+            missing,
+            suggestions,
+            definitions
+        }),
+        definitions
+    };
 };
