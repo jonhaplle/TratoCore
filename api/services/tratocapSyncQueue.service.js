@@ -175,6 +175,43 @@ async function markSynced(job, driveFile) {
     `, [job.client_uuid, driveFile.id, driveFile.folder_id, driveFile.web_view_link || null]);
 }
 
+/**
+ * Reconcilia `product_images.drive_file_id` com os jobs JÁ sincronizados.
+ *
+ * Necessário porque a importação pode criar a linha em `product_images`
+ * DEPOIS de o job ser sincronizado — nesse caso o UPDATE do `markSynced`
+ * não encontra a linha e o vínculo com o Drive se perde.
+ *
+ * Idempotente: só toca imagens ainda sem `drive_file_id`.
+ */
+async function reconciliarImagensSemDrive({ limite = 50 } = {}) {
+    await ensureSchema();
+
+    const { rows } = await db.query(`
+        UPDATE product_images AS img
+        SET drive_file_id = job.drive_file_id,
+            drive_folder_id = job.drive_folder_id,
+            drive_web_view_link = job.drive_web_view_link,
+            drive_sync_status = 'synced',
+            drive_sync_error = NULL,
+            drive_synced_at = COALESCE(job.synced_at, NOW())
+        FROM (
+            SELECT DISTINCT ON (client_uuid)
+                   client_uuid, drive_file_id, drive_folder_id, drive_web_view_link, synced_at
+            FROM tratocap_sync_jobs
+            WHERE status = 'synced'
+              AND drive_file_id IS NOT NULL
+              AND client_uuid IS NOT NULL
+            ORDER BY client_uuid, id DESC
+        ) AS job
+        WHERE img.client_uuid = job.client_uuid
+          AND img.drive_file_id IS NULL
+        RETURNING img.id
+    `);
+
+    return { reconciliadas: rows.length };
+}
+
 async function markFailed(job, error) {
     const message = String(error?.message || error || "Falha permanente").slice(0, 2000);
     await db.query(`
@@ -300,4 +337,4 @@ async function getStatus() {
     return result.rows[0] || { pending: 0, processing: 0, synced: 0 };
 }
 
-module.exports = { ensureSchema, enqueue, processOne, markAlbumImported, getUnimportedProductImages, getByClientUuid, getStatus, clearPending };
+module.exports = { ensureSchema, enqueue, processOne, markAlbumImported, getUnimportedProductImages, getByClientUuid, getStatus, clearPending, reconciliarImagensSemDrive };

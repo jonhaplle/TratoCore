@@ -24,6 +24,19 @@ async function runSyncWorker() {
                 break;
             }
         }
+
+        // Fecha a lacuna: a importação pode criar a linha em product_images
+        // DEPOIS de o job ser sincronizado. Aqui o vínculo com o Drive é
+        // restaurado sem reenviar nada (só imagens ainda sem drive_file_id).
+        try {
+            const reconciliacao = await SyncQueue.reconciliarImagensSemDrive();
+
+            if (reconciliacao.reconciliadas > 0) {
+                console.log("[TratoCap Sync] Imagens vinculadas ao Drive:", reconciliacao.reconciliadas);
+            }
+        } catch (error) {
+            console.warn("[TratoCap Sync] Reconciliação falhou:", error.message);
+        }
     } catch (error) {
         console.error("[TratoCap Sync] Falha no worker:", error.message);
     } finally {
