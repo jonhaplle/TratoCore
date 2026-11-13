@@ -1,8 +1,64 @@
-# PROCEDIMENTO DE IMPLANTAÇÃO — Segurança da publicação
+# RESULTADO DA IMPLANTAÇÃO — Segurança da publicação
+
+**Executado em:** 2026-11-12. **Status: CONCLUÍDO COM SUCESSO — deploy em produção.**
+Nenhum anúncio foi publicado. Nenhum produto, banco, Drive ou voz foi alterado.
+
+| Etapa | Resultado |
+|---|---|
+| 1. Conferir commit `84b1f86` | ✅ confirmado |
+| 2. Push da branch | ✅ `origin/feature/integracao-vendedor-automatico` |
+| 3. Atualizar `main` | ✅ ver "Divergência resolvida" |
+| 4. Merge preservando histórico | ✅ `5c27b3c` (pais `758a6c9` + `84b1f86`) |
+| 5. Merge contém as alterações de segurança | ✅ 5 de 5 checagens |
+| 6. Push da `main` | ✅ `758a6c9..5c27b3c` |
+| 7. Deploy automático do Render | ✅ ~1 minuto |
+
+### Divergência resolvida (parada obrigatória)
+
+Antes do passo 3 a `main` local divergia: `8a1d47b` "Fix missing ml_attributes"
+vs `origin/main` `758a6c9` (88 commits à frente). Investigação: o commit local é
+**duplicado obsoleto** — a mesma correção existe no remoto como `653d36d`, e
+`origin/main:api/db.js` já contém `ml_attributes`. Nenhum trabalho exclusivo se
+perdia; a feature já estava no remoto. Ação: `git reset --hard origin/main`
+(apenas realinhar a `main` local). **Nenhum force push.**
+
+### Validação em produção (commit `5c27b3c67594d42625d1d0d87ba4f410fa55c297`)
+
+| # | Teste | Esperado | Obtido |
+|---|---|---|---|
+| 1 | `/api/version` | `5c27b3c` | **`5c27b3c`** ✅ |
+| 2 | `POST /api/ml/publish/:id` sem chave | 401 | **401** ✅ |
+| 3 | `POST /api/vendedor/anuncio/publicar` sem chave | 401 | **401** ✅ |
+| 4 | Chave incorreta (nova) | 401 | **401** ✅ |
+| 5 | Chave incorreta (antiga) | 401 | **401** ✅ |
+| 6 | CORS origem não autorizada | bloqueada | **sem allow-origin** ✅ |
+| 7 | Preflight OPTIONS origem estranha | bloqueada | **sem allow-origin** ✅ |
+
+Antes do deploy a rota antiga respondia `500` (chegava ao controller sem auth).
+**Agora responde `401`.**
+
+### Preservação
+`/anuncio/status` 200 · `/produtos.html` 200 · `/anuncio.html` 200 ·
+`/api/vendedor/voice/status` 200 · `/api/tratocap/status` 200 ·
+`APP_ORIGINS` efetiva · nenhum vazamento de chave em `/produtos.js`, `/anuncio.js`,
+`/anuncio.html` · `.env` byte-idêntico e fora dos commits.
+
+### Riscos remanescentes
+R1 `.env` no histórico (rotação pendente, operação separada) · R3 852 imagens sem
+`drive_file_id` · R4 OAuth do Drive não autorizado · R5 8 imagens sem arquivo ·
+R6 produto 112 contaminado · R7 Gemini 401 (visão local funcionando na CPU).
+
+### Rollback
+```powershell
+git switch main; git revert -m 1 5c27b3c --no-edit; git push origin main
+```
+
+---
+
+# PROCEDIMENTO ORIGINAL (histórico)
 
 Commit preparado: **`935ebdd`** (pai `a8a96e6`, base de produção `758a6c9`).
 Branch: `feature/integracao-vendedor-automatico`.
-**Nada foi enviado ao remoto. Nenhum deploy. Nenhuma publicação.**
 
 ---
 
