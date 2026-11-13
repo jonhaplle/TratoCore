@@ -5,6 +5,7 @@ const controller = require("../controllers/mlController");
 const apiService = require("../services/ml/api.service");
 const productService = require("../services/productService");
 const requireMlDiagnosticKey = require("../middleware/mlDiagnosticKeyAuth");
+const requirePublishKey = require("../middleware/publishKeyAuth");
 const { createPublicationDiagnostic } = require("../services/ml/publicationDiagnostic.service");
 const googleDriveService = require("../services/googleDriveService");
 const { createGoogleDriveProduct13Diagnostic } = require("../services/googleDriveProduct13Diagnostic.service");
@@ -64,7 +65,9 @@ router.get("/diagnostics/drive/product-13", requireMlDiagnosticKey, async (req, 
 // PUBLICAÇÃO
 // ======================================================
 
-router.post("/publish/:id", controller.publish);
+// A publicação exige autorização do servidor (mesma chave do Vendedor
+// Automático). Sem a chave configurada a rota falha fechada (503).
+router.post("/publish/:id", requirePublishKey, controller.publish);
 
 // ======================================================
 // TESTE — CATEGORY PREDICTOR

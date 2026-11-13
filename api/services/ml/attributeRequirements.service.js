@@ -108,8 +108,80 @@ function mergeRequiredDefinitions(categoryAttributes, conditionalAttributes, ext
     return [...required.values()];
 }
 
+/**
+ * Traduz os metadados oficiais da categoria do Mercado Livre para uma
+ * classificação comercial usada na tela de revisão do Vendedor Automático.
+ *
+ * Uma exigência só existe quando o próprio Mercado Livre a declara:
+ * - required: tags.required === true
+ * - conditional_required: apareceu em attributes/conditional.required_attributes
+ * - optional: existe na categoria, mas não é exigida pela API
+ *
+ * Função ADITIVA: não altera as demais funções deste módulo.
+ */
+function classifyDefinitions(categoryAttributes, conditionalAttributes) {
+    const definitions = Array.isArray(categoryAttributes) ? categoryAttributes : [];
+    const conditionalIds = new Set(
+        getConditionalRequired(conditionalAttributes)
+            .map(item => (typeof item === "string" ? item : item?.id))
+            .filter(Boolean)
+    );
+
+    return definitions
+        .filter(definition => definition?.id)
+        .map(definition => {
+            const tags = definition.tags || {};
+            let requirement = "optional";
+
+            if (tags.required === true) {
+                requirement = "required";
+            } else if (conditionalIds.has(definition.id)) {
+                requirement = "conditional_required";
+            }
+
+            return {
+                id: definition.id,
+                name: definition.name || definition.id,
+                value_type: definition.value_type || "string",
+                value_max_length: definition.value_max_length,
+                allowed_units: Array.isArray(definition.allowed_units)
+                    ? definition.allowed_units
+                    : [],
+                default_unit: definition.default_unit,
+                requirement,
+                tags: {
+                    required: tags.required === true,
+                    catalog_required: tags.catalog_required === true,
+                    allow_variations: tags.allow_variations === true,
+                    hidden: tags.hidden === true,
+                    read_only: tags.read_only === true,
+                    fixed: tags.fixed === true
+                },
+                values: Array.isArray(definition.values)
+                    ? definition.values.map(value => ({
+                        id: String(value.id),
+                        name: value.name || String(value.id)
+                    }))
+                    : []
+            };
+        });
+}
+
+/** Literal do que o Mercado Livre já exige antes de qualquer validação. */
+function declaredRequirements(categoryAttributes, conditionalAttributes) {
+    const classified = classifyDefinitions(categoryAttributes, conditionalAttributes);
+
+    return {
+        required: classified.filter(item => item.requirement === "required"),
+        conditional_required: classified.filter(item => item.requirement === "conditional_required"),
+        optional: classified.filter(item => item.requirement === "optional")
+    };
+}
+
 module.exports = {
     getConditionalRequired,
+    classifyDefinitions,
+    declaredRequirements,
     extractValidationCauses,
     extractMissingIdsFromValidation,
     buildMissing,

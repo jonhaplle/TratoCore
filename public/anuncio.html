@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Revisar e publicar — TratoCore</title>
+    <link rel="stylesheet" href="anuncio.css">
+</head>
+
+<body>
+
+<header class="topo-anuncio">
+    <div class="marca">
+        <h1>TRATO CORE</h1>
+        <p>Vendedor automático — revisão do anúncio</p>
+    </div>
+
+    <div class="topo-acoes">
+        <span id="mlStatus" class="status-pill status-neutro">Verificando Mercado Livre...</span>
+        <span id="iaStatus" class="status-pill status-neutro">Verificando IA...</span>
+        <a href="produtos.html" class="link-voltar">Meus produtos</a>
+    </div>
+</header>
+
+<main class="pagina">
+
+    <!-- ====================================================== -->
+    <!-- ETAPA 1 — SELEÇÃO DO PRODUTO                            -->
+    <!-- ====================================================== -->
+
+    <section class="cartao" id="etapaProduto">
+        <div class="cartao-head">
+            <div>
+                <span class="etapa">Etapa 1</span>
+                <h2>Escolha o produto fotografado</h2>
+                <p>Use as fotos do TratoCap. A primeira foto vira a imagem principal do anúncio.</p>
+            </div>
+            <button type="button" class="botao secundario" id="btnRecarregar">Recarregar lista</button>
+        </div>
+
+        <div class="grade-produtos" id="listaProdutos">
+            <div class="vazio">Carregando produtos...</div>
+        </div>
+
+        <div class="vazio" id="semProdutos" hidden>
+            Nenhum produto pendente de publicação. <a href="index.html">Cadastre um novo produto</a>.
+        </div>
+    </section>
+
+    <!-- ====================================================== -->
+    <!-- ETAPA 2 — OBSERVAÇÃO + ANÁLISE                          -->
+    <!-- ====================================================== -->
+
+    <section class="cartao" id="etapaObservacao" hidden>
+        <div class="cartao-head">
+            <div>
+                <span class="etapa">Etapa 2</span>
+                <h2 id="produtoSelecionadoTitulo">Produto selecionado</h2>
+                <p>Escreva o que você sabe. A IA não pode inventar estado, funcionamento ou acessórios sem esta declaração.</p>
+            </div>
+            <button type="button" class="botao secundario" id="btnTrocarProduto">Trocar produto</button>
+        </div>
+
+        <label class="campo">
+            <span>Observação do vendedor</span>
+            <textarea
+                id="observacaoVendedor"
+                rows="3"
+                placeholder="Ex.: Samsung Galaxy A15 128GB, usado, funciona bem, acompanha carregador, pequeno risco na traseira."></textarea>
+        </label>
+
+        <div class="linha-botoes">
+            <button type="button" class="botao primario" id="btnAnalisar">
+                Analisar com IA
+            </button>
+            <button type="button" class="botao secundario" id="btnSomenteManual">
+                Preencher manualmente
+            </button>
+        </div>
+
+        <div class="aviso-info" id="avisoManual" hidden>
+            A análise automática está desligada. Preencha os campos abaixo; nada será publicado sem a sua revisão.
+        </div>
+    </section>
+
+    <!-- ====================================================== -->
+    <!-- ETAPA 3 — TELA ÚNICA DE REVISÃO                         -->
+    <!-- ====================================================== -->
+
+    <section class="revisao" id="etapaRevisao" hidden>
+
+        <!-- AVISOS DA REVISÃO (âncorados; não deslocam a página) -->
+        <div class="avisos-revisao" id="avisosRevisao" hidden></div>
+
+        <!-- COLUNA ESQUERDA -->
+        <div class="coluna-esquerda">
+
+            <div class="cartao">
+                <div class="cartao-head">
+                    <div>
+                        <span class="etapa">Produto</span>
+                        <h2>Fotos e identificação</h2>
+                    </div>
+                    <span class="selo" id="confiancaIA">—</span>
+                </div>
+
+                <div class="faixa-fotos" id="fotosAnuncio"></div>
+
+                <div class="form-identificacao">
+                    <label class="campo">
+                        <span>Marca</span>
+                        <input type="text" id="campoMarca" placeholder="Ex.: Samsung">
+                        <small class="origem" id="origemMarca"></small>
+                    </label>
+
+                    <label class="campo">
+                        <span>Modelo</span>
+                        <input type="text" id="campoModelo" placeholder="Ex.: Galaxy A15">
+                        <small class="origem" id="origemModelo"></small>
+                    </label>
+
+                    <label class="campo">
+                        <span>Capacidade</span>
+                        <input type="text" id="campoCapacidade" placeholder="Ex.: 128GB">
+                        <small class="origem" id="origemCapacidade"></small>
+                    </label>
+
+                    <label class="campo">
+                        <span>Cor</span>
+                        <input type="text" id="campoCor" placeholder="Ex.: Preto">
+                        <small class="origem" id="origemCor"></small>
+                    </label>
+
+                    <div class="campo">
+                        <span>Estado</span>
+                        <div class="botoes-radio" id="grupoEstado">
+                            <label class="radio">
+                                <input type="radio" name="estado" value="used">
+                                <span>Usado</span>
+                            </label>
+                            <label class="radio">
+                                <input type="radio" name="estado" value="new">
+                                <span>Novo</span>
+                            </label>
+                        </div>
+                        <small class="origem" id="origemEstado">Nunca é deduzido das fotos: confirme.</small>
+                    </div>
+
+                    <label class="campo">
+                        <span>Quantidade disponível</span>
+                        <input type="number" id="campoQuantidade" min="1" step="1" value="1">
+                    </label>
+                </div>
+            </div>
+
+            <div class="cartao">
+                <div class="cartao-head">
+                    <div>
+                        <span class="etapa">Inteligência comercial</span>
+                        <h2>O que o sistema identificou</h2>
+                    </div>
+                </div>
+
+                <div id="blocoEvidencias"></div>
+            </div>
+
+            <div class="cartao">
+                <div class="cartao-head">
+                    <div>
+                        <span class="etapa">Pendências</span>
+                        <h2>Perguntas para você</h2>
+                    </div>
+                    <span class="selo selo-neutro" id="contadorPendencias">0</span>
+                </div>
+
+                <div id="blocoPerguntas"></div>
+            </div>
+
+        </div>
+
+        <!-- COLUNA DIREITA -->
+        <div class="coluna-direita">
+
+            <div class="cartao">
+                <div class="cartao-head">
+                    <div>
+                        <span class="etapa">Anúncio</span>
+                        <h2>Título</h2>
+                    </div>
+                    <span class="contador-caracteres" id="contadorTitulo">0/60</span>
+                </div>
+
+                <label class="campo">
+                    <span class="oculto">Título do anúncio</span>
+                    <input type="text" id="campoTitulo" maxlength="120">
+                </label>
+                <div class="dica" id="dicaTitulo"></div>
+            </div>
+
+            <div class="cartao">
+                <div class="cartao-head">
+                    <div>
+                        <span class="etapa">Descrição</span>
+                        <h2>Texto do anúncio</h2>
+                    </div>
+                </div>
+
+                <label class="campo">
+                    <span class="oculto">Descrição</span>
+                    <textarea id="campoDescricao" rows="12"></textarea>
+                </label>
+
+                <div class="linha-botoes">
+                    <button type="button" class="botao secundario" id="btnMelhorarDescricao">Melhorar com IA</button>
+                    <button type="button" class="botao secundario" id="btnRegerarDescricao">Regerar descrição</button>
+                </div>
+                <div class="dica" id="dicaDescricao"></div>
+            </div>
+
+            <div class="cartao">
+                <div class="cartao-head">
+                    <div>
+                        <span class="etapa">Preço</span>
+                        <h2>Vitrine</h2>
+                    </div>
+                    <span class="selo" id="seloPreco">—</span>
+                </div>
+
+                <div class="linha-preco">
+                    <label class="campo">
+                        <span>Preço de venda (R$)</span>
+                        <input type="number" id="campoPreco" step="0.01" min="0">
+                    </label>
+                </div>
+
+                <div class="linha-botoes">
+                    <button type="button" class="botao secundario" id="btnRecalcularPreco">Recalcular referência</button>
+                </div>
+
+                <div id="blocoPrecoReferencia"></div>
+            </div>
+
+            <div class="cartao">
+                <div class="cartao-head">
+                    <div>
+                        <span class="etapa">Mercado Livre</span>
+                        <h2>Atributos da categoria</h2>
+                    </div>
+                    <span class="selo selo-neutro" id="seloCategoria">—</span>
+                </div>
+
+                <div id="blocoAtributos"></div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- ====================================================== -->
+    <!-- BARRA DE APROVAÇÃO E PUBLICAÇÃO                         -->
+    <!-- ====================================================== -->
+
+    <section class="barra-aprovacao" id="barraAprovacao" hidden>
+        <div class="aprovacao-texto">
+            <div id="resumoAprovacao">Revise todas as informações antes de aprovar.</div>
+            <div class="bloqueios" id="bloqueios" hidden></div>
+        </div>
+
+        <div class="aprovacao-acoes">
+            <label class="aprovacao-check" id="rotuloAprovacao">
+                <input type="checkbox" id="checkAprovacao">
+                <span>Li e aprovo as informações deste anúncio</span>
+            </label>
+
+            <button type="button" class="botao primario grande" id="btnPublicar" disabled>
+                Publicar no Mercado Livre
+            </button>
+        </div>
+    </section>
+
+    <!-- ====================================================== -->
+    <!-- RESULTADO DA PUBLICAÇÃO                                 -->
+    <!-- ====================================================== -->
+
+    <section class="cartao resultado" id="resultadoPublicacao" hidden>
+        <div class="cartao-head">
+            <div>
+                <span class="etapa">Concluído</span>
+                <h2>Anúncio publicado</h2>
+            </div>
+        </div>
+
+        <div class="resultado-corpo">
+            <p class="resultado-id">Identificador: <strong id="resultadoId">—</strong></p>
+            <p class="resultado-status">Status: <strong id="resultadoStatus">—</strong></p>
+            <a class="botao primario" id="resultadoLink" href="#" target="_blank" rel="noopener noreferrer">
+                Abrir anúncio no Mercado Livre
+            </a>
+            <p class="resultado-descricao" id="resultadoDescricao"></p>
+        </div>
+    </section>
+
+    <div class="overlay-carregando" id="overlay" hidden>
+        <div class="overlay-conteudo">
+            <div class="spinner"></div>
+            <h3 id="overlayTitulo">Analisando produto</h3>
+            <p id="overlayTexto">Lendo as fotos e montando o anúncio...</p>
+        </div>
+    </div>
+
+</main>
+
+<script src="anuncio.js?v=20261112"></script>
+
+</body>
+
+</html>

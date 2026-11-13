@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trato Core - Anúncio</title>
+    <link rel="stylesheet" href="produtos.css">
+</head>
+
+<body>
+
+<header class="topo">
+    <h1>TRATO CORE</h1>
+    <nav>
+        <a href="anuncio.html" class="ativo">Anúncio</a>
+        <a href="index.html">Novo Produto</a>
+        <a href="produtos.html">Produtos</a>
+    </nav>
+</header>
+
+<main class="container">
+
+    <section class="barra">
+        <p style="margin:0;font-size:14px;color:#475569;">
+            Abrindo a tela de revisão do anúncio...
+        </p>
+    </section>
+
+</main>
+
+<script>
+    (function redirecionar() {
+        const params = new URLSearchParams(window.location.search);
+        const id = params.get("id");
+        const destino = id ? `anuncio.html?id=${encodeURIComponent(id)}` : "anuncio.html";
+        window.location.replace(destino);
+    })();
+</script>
+
+</body>
+
+</html>

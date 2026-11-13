@@ -145,6 +145,14 @@ const originalUrl = imagemDriveUrl ||
 
                 ${botaoPublicacao}
 
+                ${jaPublicado ? "" : `
+                <button
+                    class="publicar"
+                    onclick="revisarAnuncio(${produto.id})">
+                    Revisar e publicar
+                </button>
+                `}
+
                 <button
                     class="corrigir-ia"
                     onclick="corrigirComIA(${produto.id})">
@@ -668,9 +676,31 @@ async function publicarML(id, attributeOverrides = {}, options = {}) {
     try {
         const response = await fetch(`/api/ml/publish/${id}`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+                "Content-Type": "application/json",
+                // Chave de autorização digitada pelo vendedor; nunca vem do servidor.
+                ...(String(window.__chavePublicacao || "").trim()
+                    ? { Authorization: "Bearer " + String(window.__chavePublicacao).trim() }
+                    : {})
+            },
             body: JSON.stringify({ attributeOverrides })
         });
+
+        // 401/503: pede a chave e interrompe a tentativa de publicação.
+        if (response.status === 401 || response.status === 503) {
+            const erro = await response.json().catch(() => ({}));
+            const digitada = window.prompt(
+                String(erro?.error || "Autorização necessária para publicar.") +
+                "\n\nInforme a chave de autorização da publicação:",
+                ""
+            );
+
+            if (digitada && digitada.trim()) {
+                window.__chavePublicacao = digitada.trim();
+                if (botao) botao.disabled = false;
+                return;
+            }
+        }
 
         const retorno = await response.json();
 
@@ -796,7 +826,7 @@ modalPublicacaoML.addEventListener("click", event => {
 });
 
 // =========================================
-// DISPONIBILIZA FUNÃƒâ€¡Ãƒâ€¢ES
+// DISPONIBILIZA FUNÇÕES
 // =========================================
 
 window.editar = editar;
@@ -804,6 +834,19 @@ window.excluirProduto = excluirProduto;
 window.publicarML = publicarML;
 window.iniciarPublicacaoSelecionados = iniciarPublicacaoSelecionados;
 window.corrigirComIA = corrigirComIA;
+
+// =========================================
+// VENDEDOR AUTOMÁTICO — REVISÃO DO ANÚNCIO
+// =========================================
+
+// Abre a tela única de revisão (anuncio.html) onde o vendedor confere e
+// aprova identificação, preço, título, descrição e atributos antes de publicar.
+// A publicação direta continua disponível em "Publicar ML".
+function revisarAnuncio(id) {
+    window.location.href = `anuncio.html?id=${encodeURIComponent(id)}`;
+}
+
+window.revisarAnuncio = revisarAnuncio;
 
 // =========================================
 
