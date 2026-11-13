@@ -373,8 +373,30 @@ async function importAlbums(requestedAlbum = null) {
     const imported = [], skipped = [];
 
     for (const album of names) {
+        // Um álbum com problema NÃO pode interromper os demais.
+        // Os arquivos e metadados ficam intactos para a próxima tentativa.
+        try {
+            await importarAlbum(album, imported, skipped);
+        } catch (error) {
+            console.error(`[TratoCap] Erro ao importar o álbum "${album}":`, error.message);
+
+            skipped.push({
+                album,
+                reason: "erro na importação: " + String(error.message || "").slice(0, 200),
+                retry: true
+            });
+        }
+    }
+
+    return { success: true, imported, skipped, total_imported: imported.length };
+}
+
+/**
+ * Importa UM álbum. Lança em caso de erro para o chamador registrar e seguir.
+ */
+async function importarAlbum(album, imported, skipped) {
         const albumDir = path.join(albumsRoot, album);
-        if (!fs.existsSync(albumDir) || !fs.statSync(albumDir).isDirectory()) continue;
+        if (!fs.existsSync(albumDir) || !fs.statSync(albumDir).isDirectory()) return;
         const markerPath = path.join(albumDir, ".tratocore-import.json");
         let marker = null;
         let product = null;
@@ -386,7 +408,7 @@ async function importAlbums(requestedAlbum = null) {
         const files = imageFiles(albumDir);
         if (!files.length) {
             skipped.push({ album, reason: "Nenhuma imagem" });
-            continue;
+            return;
         }
 
         const existingImages = product
@@ -401,13 +423,33 @@ async function importAlbums(requestedAlbum = null) {
             try { fileMeta = JSON.parse(fs.readFileSync(file + ".json", "utf8")); } catch (_) {}
             const knownUuid = fileMeta.client_uuid && existingUuids.has(fileMeta.client_uuid);
             const knownHash = !fileMeta.client_uuid && fileMeta.sha256 && existingHashes.has(String(fileMeta.sha256).trim());
-            if (!knownUuid && !knownHash) newFiles.push({ file, fileMeta });
+
+            // O índice único `uq_product_images_client_uuid` é GLOBAL, mas o
+            // conjunto acima só cobre ESTE produto. Um client_uuid que já foi
+            // importado para outro produto (ou outro álbum) dispararia
+            // violação de unicidade. Conferimos a tabela inteira.
+            let knownGlobally = false;
+
+            if (fileMeta.client_uuid && !knownUuid) {
+                const jaExiste = await ProductImageService.getByClientUuid(fileMeta.client_uuid);
+
+                if (jaExiste?.id) {
+                    knownGlobally = true;
+                    skipped.push({
+                        album,
+                        file: path.basename(file),
+                        reason: "client_uuid já importado (produto " + jaExiste.product_id + ")"
+                    });
+                }
+            }
+
+            if (!knownUuid && !knownGlobally && !knownHash) newFiles.push({ file, fileMeta });
         }
 
         if (!newFiles.length) {
             if (product) await SyncQueue.markAlbumImported(album, product.id);
             skipped.push({ album, reason: "Nenhuma foto nova", data: marker });
-            continue;
+            return;
         }
 
         let note = "";
@@ -454,26 +496,49 @@ async function importAlbums(requestedAlbum = null) {
 
             fs.copyFileSync(source, originalPath);
             await sharp(source).rotate().resize(250, 250, { fit: "inside", withoutEnlargement: true }).webp({ quality: 75 }).toFile(thumbPath);
-            const image = await ProductImageService.create({
-                product_id: product.id,
-                file_name: originalName,
-                original_url: "/storage/originals/" + originalName,
-                thumb_url: "/storage/thumbs/" + thumbName,
-                mime_type: metadata.format ? `image/${metadata.format === "jpg" ? "jpeg" : metadata.format}` : null,
-                width: metadata.width || null,
-                height: metadata.height || null,
-                file_size: fs.statSync(source).size,
-                is_main: existingImages.length === 0 && i === 0,
-                sort_order: existingImages.length + i + 1,
-                drive_file_id: imageMeta.drive_file_id || null,
-                drive_folder_id: imageMeta.drive_folder_id || null,
-                drive_web_view_link: imageMeta.drive_web_view_link || null,
-                client_uuid: imageMeta.client_uuid || null,
-                sha256: imageMeta.sha256 || null,
-                drive_sync_status: imageMeta.drive_file_id ? "synced" : (imageMeta.drive_sync_status || "pending"),
-                drive_sync_error: imageMeta.drive_sync_error || null,
-                drive_synced_at: imageMeta.drive_synced_at || null
-            });
+
+            let image;
+
+            try {
+                image = await ProductImageService.create({
+                    product_id: product.id,
+                    file_name: originalName,
+                    original_url: "/storage/originals/" + originalName,
+                    thumb_url: "/storage/thumbs/" + thumbName,
+                    mime_type: metadata.format ? `image/${metadata.format === "jpg" ? "jpeg" : metadata.format}` : null,
+                    width: metadata.width || null,
+                    height: metadata.height || null,
+                    file_size: fs.statSync(source).size,
+                    is_main: existingImages.length === 0 && i === 0,
+                    sort_order: existingImages.length + i + 1,
+                    drive_file_id: imageMeta.drive_file_id || null,
+                    drive_folder_id: imageMeta.drive_folder_id || null,
+                    drive_web_view_link: imageMeta.drive_web_view_link || null,
+                    client_uuid: imageMeta.client_uuid || null,
+                    sha256: imageMeta.sha256 || null,
+                    drive_sync_status: imageMeta.drive_file_id ? "synced" : (imageMeta.drive_sync_status || "pending"),
+                    drive_sync_error: imageMeta.drive_sync_error || null,
+                    drive_synced_at: imageMeta.drive_synced_at || null
+                });
+            } catch (error) {
+                // Concorrência: outro import gravou o mesmo client_uuid entre a
+                // checagem e o INSERT. O índice único é a barreira atômica.
+                if (String(error?.code) === "23505" && imageMeta.client_uuid) {
+                    skipped.push({
+                        album,
+                        file: path.basename(source),
+                        reason: "client_uuid já registrado durante o import (concorrência)"
+                    });
+
+                    // Remove apenas as cópias que ESTE import acabou de criar.
+                    try { fs.rmSync(originalPath, { force: true }); } catch (_) {}
+                    try { fs.rmSync(thumbPath, { force: true }); } catch (_) {}
+
+                    return;
+                }
+                throw error;
+            }
+
             savedImages.push(image);
         }
 
@@ -497,7 +562,6 @@ async function importAlbums(requestedAlbum = null) {
         fs.writeFileSync(markerPath, JSON.stringify(result, null, 2), "utf8");
         await SyncQueue.markAlbumImported(album, product.id);
         imported.push(result);
-    }
     return { success: true, imported, skipped, total_imported: imported.length };
 }
 

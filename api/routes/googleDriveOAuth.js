@@ -5,6 +5,47 @@ const { createGoogleDriveOAuthService } = require("../services/googleDriveOAuthS
 const STATE_COOKIE = "__Host-tratocore-google-oauth-state";
 const STATE_TTL_SECONDS = 600;
 
+/**
+ * Traduz o erro real da verificação de gravação em um código seguro.
+ *
+ * O log do servidor guarda a mensagem completa (para diagnóstico técnico).
+ * A resposta HTTP NUNCA devolve token, credencial, caminho interno ou a
+ * mensagem crua do Google — só um código estável e uma dica curta.
+ */
+function codigoDiagnostico(error) {
+    const mensagem = String(error?.message || "");
+    const resposta = String(error?.response?.data?.error || "");
+
+    // Rede vem primeiro: mensagens como "ENOTFOUND oauth2.googleapis.com"
+    // contêm "oauth" e seriam classificadas errado pela regra seguinte.
+    if (/ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|ECONNREFUSED|timeout/i.test(mensagem)) {
+        return { code: "REDE_INDISPONIVEL", hint: "Falha de rede ao falar com o Google." };
+    }
+    if (/invalid_grant|invalid_client|OAuth.*required|authorization is required/i.test(mensagem)) {
+        return { code: "OAUTH_NAO_AUTORIZADO", hint: "Autorize a conta Google novamente." };
+    }
+    if (/Selecione a pasta FOTOS/i.test(mensagem)) {
+        return { code: "PASTA_NAO_SELECIONADA", hint: "Selecione a pasta FOTOS no Google Picker." };
+    }
+    if (/não é mais a pasta FOTOS/i.test(mensagem)) {
+        return { code: "PASTA_INVALIDA", hint: "A pasta configurada deixou de ser FOTOS." };
+    }
+    if (/insufficientPermissions|insufficientFilePermissions/i.test(resposta)) {
+        return { code: "SEM_PERMISSAO_ESCRITA", hint: "A conta não tem permissão de escrita na pasta FOTOS." };
+    }
+    if (/storageQuota/i.test(resposta) || /storageQuota/i.test(mensagem)) {
+        return { code: "COTA_EXCEDIDA", hint: "A cota do Google Drive foi excedida." };
+    }
+    if (/não corresponde ao original/i.test(mensagem)) {
+        return { code: "VERIFICACAO_INCONSISTENTE", hint: "O arquivo de teste não voltou idêntico." };
+    }
+    if (/não confirmou o arquivo/i.test(mensagem)) {
+        return { code: "DRIVE_SEM_RESPOSTA", hint: "O Drive não confirmou a criação do arquivo." };
+    }
+
+    return { code: "ERRO_NAO_CLASSIFICADO", hint: "Consulte os logs do servidor." };
+}
+
 function safeEqual(left, right) {
     if (typeof left !== "string" || typeof right !== "string") return false;
     const a = Buffer.from(left);
@@ -106,12 +147,23 @@ function createGoogleDriveOAuthRouter(options = {}) {
             res.set("Cache-Control", "no-store");
             return res.json(await service.verifyWrite());
         } catch (error) {
+            // Log técnico completo no servidor (não vai para o cliente).
             logger.error("[Google OAuth] Erro no teste de gravação:", error);
-            return res.status(503).json({ success: false, error: "Teste de gravação no Drive falhou; uploads continuam bloqueados." });
+
+            const diagnostico = codigoDiagnostico(error);
+
+            // Resposta segura: apenas código e dica. Nada de token, caminho
+            // interno ou mensagem crua do Google.
+            return res.status(503).json({
+                success: false,
+                error: "Teste de gravação no Drive falhou; uploads continuam bloqueados.",
+                code: diagnostico.code,
+                hint: diagnostico.hint
+            });
         }
     });
 
     return router;
 }
 
-module.exports = { createGoogleDriveOAuthRouter, safeEqual, cookieValue, STATE_COOKIE };
+module.exports = { createGoogleDriveOAuthRouter, safeEqual, cookieValue, STATE_COOKIE, codigoDiagnostico };
