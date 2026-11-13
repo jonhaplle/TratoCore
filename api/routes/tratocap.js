@@ -19,9 +19,13 @@ async function runSyncWorker() {
         for (let attempt = 0; attempt < 10; attempt++) {
             const result = await SyncQueue.processOne(googleDriveOAuthService);
             if (!result.processed) break;
+
             if (!result.synced) {
-                console.warn("[TratoCap Sync] Imagem permanece na fila:", result.error);
-                break;
+                // UM job com problema não pode bloquear os próximos.
+                // - permanente: já foi para 'failed', segue para o próximo
+                // - transitório: fica em 'pending' com backoff, segue para o próximo
+                console.warn("[TratoCap Sync] Job não sincronizou:", result.error);
+                continue;
             }
         }
 

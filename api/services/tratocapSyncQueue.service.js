@@ -249,12 +249,50 @@ async function markPending(job, error) {
     `, [job.client_uuid, message]);
 }
 
+/**
+ * Decide se um erro é PERMANENTE (não adianta tentar de novo com o mesmo
+ * estado) ou TRANSITÓRIO (rede, Drive, OAuth — pode funcionar depois).
+ */
+function ehFalhaPermanente(error) {
+    if (!error) return false;
+
+    if (error.status === 409 || error.code === "TRATOCAP_DRIVE_FILE_CONFLICT") {
+        return true;
+    }
+    if (error.code === "TRATOCAP_SEM_COPIA_DURAVEL" || error.code === "TRATOCAP_PAYLOAD_INVALIDO") {
+        return true;
+    }
+
+    return false;
+}
+
 async function processOne(driveService) {
     const job = await claimNext();
     if (!job) return { processed: false };
 
     try {
-        if (!job.payload) throw new Error("Imagem pendente sem cópia durável no PostgreSQL.");
+        // Job sem bytes no PostgreSQL nunca vai sincronizar por retry:
+        // sem a cópia durável, reenviar o arquivo é a única saída.
+        // Marcá-lo como failed evita que ele bloqueie a fila para sempre.
+        if (!job.payload) {
+            const erro = new Error(
+                "Imagem sem cópia durável no PostgreSQL. " +
+                "O arquivo precisa ser reenviado pelo TratoCap."
+            );
+            erro.code = "TRATOCAP_SEM_COPIA_DURAVEL";
+
+            await markFailed(job, erro);
+
+            return {
+                processed: true,
+                synced: false,
+                failed: true,
+                permanente: true,
+                client_uuid: job.client_uuid,
+                error: erro.message
+            };
+        }
+
         const uploaded = await driveService.uploadBuffer(
             job.payload,
             job.file_name,
@@ -265,12 +303,22 @@ async function processOne(driveService) {
         await markSynced(job, uploaded);
         return { processed: true, synced: true, client_uuid: job.client_uuid };
     } catch (error) {
-        if (error?.status === 409 || error?.code === "TRATOCAP_DRIVE_FILE_CONFLICT") {
+        const permanente = ehFalhaPermanente(error);
+
+        if (permanente) {
             await markFailed(job, error);
         } else {
             await markPending(job, error);
         }
-        return { processed: true, synced: false, failed: error?.status === 409 || error?.code === "TRATOCAP_DRIVE_FILE_CONFLICT", client_uuid: job.client_uuid, error: error.message };
+
+        return {
+            processed: true,
+            synced: false,
+            failed: permanente,
+            permanente,
+            client_uuid: job.client_uuid,
+            error: error.message
+        };
     }
 }
 
