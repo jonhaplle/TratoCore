@@ -54,6 +54,15 @@ function safeEqual(left, right) {
     return a.length > 0 && a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+/**
+ * Autorização de ações com efeito real (publicar anúncio).
+ *
+ * A implementação vive em middleware/publishKeyAuth.js e é a MESMA usada pela
+ * rota antiga /api/ml/publish/:id, para não existirem duas regras de acesso.
+ * A chave é comparada sempre no servidor e nunca é devolvida ou registrada.
+ */
+const requireAdminKey = require("../middleware/publishKeyAuth");
+
 router.get("/status", (req, res) => {
     res.json({
         success: true,
@@ -417,7 +426,10 @@ router.get("/anuncio/status", async (req, res) => {
         ia.local = {
             disponivel: Boolean(local.online && local.vision_ready),
             modelo: local.vision_model || null,
-            url: local.url
+            url: local.url,
+            // Motivo real para o vendedor entender por que a visão local
+            // não está sendo usada (modelo ausente, falha ao carregar, etc.).
+            motivo: local.motivo || null
         };
     } catch (_) {
         ia.local = { disponivel: false };
@@ -436,7 +448,7 @@ router.get("/anuncio/status", async (req, res) => {
 });
 
 // Monta o pacote de revisão (não publica nada).
-router.post("/anuncio/revisao", async (req, res) => {
+router.post("/anuncio/revisao", requireAdminKey, async (req, res) => {
     try {
         const body = req.body || {};
 
@@ -465,7 +477,8 @@ router.post("/anuncio/revisao", async (req, res) => {
 });
 
 // Publica o anúncio aprovado (exige approve: true).
-router.post("/anuncio/publicar", async (req, res) => {
+// Publica o anúncio aprovado (exige approve: true e chave de autorização).
+router.post("/anuncio/publicar", requireAdminKey, async (req, res) => {
     try {
         const body = req.body || {};
 
@@ -492,6 +505,74 @@ router.post("/anuncio/publicar", async (req, res) => {
     } catch (error) {
         console.error("[Trato Vendedor] Erro na publicação:", error.response?.data || error.message);
         return sendListingError(res, error, 502);
+    }
+});
+
+// ======================================================
+// SINCRONIZAÇÃO DAS FOTOS COM O GOOGLE DRIVE
+// ======================================================
+// O Render não tem disco persistente: sem `drive_file_id` a publicação falha
+// ao tentar enviar a foto. Estas rotas apenas operam a sincronização; a
+// integração OAuth é a MESMA do TratoCap (nenhuma segunda integração).
+
+function servicoDrive() {
+    return require("../services/googleDriveOAuthService").createGoogleDriveOAuthService();
+}
+
+// Situação atual: quantas imagens já têm Drive e quantas faltam.
+router.get("/anuncio/imagens/status", requireAdminKey, async (req, res) => {
+    try {
+        const driveImageSync = require("../services/driveImageSync.service");
+        const resumo = await driveImageSync.resumo();
+
+        let autorizado = false;
+        try {
+            const servico = servicoDrive();
+            autorizado = Boolean(servico.configured && servico.configured());
+        } catch (_) {
+            autorizado = false;
+        }
+
+        return res.json({ success: true, ...resumo, drive_autorizado: autorizado });
+    } catch (error) {
+        return res.status(500).json({ success: false, error: "Não foi possível consultar as imagens." });
+    }
+});
+
+// Envia um lote de imagens para o Drive. `dryRun` (padrão) só relata.
+router.post("/anuncio/imagens/sincronizar", requireAdminKey, async (req, res) => {
+    try {
+        const body = req.body || {};
+        const dryRun = body.dryRun !== false;
+        const limite = Math.max(1, Math.min(100, Number(body.limite) || 10));
+
+        const driveImageSync = require("../services/driveImageSync.service");
+
+        if (dryRun) {
+            const previsao = await driveImageSync.sincronizarLote({ limite, dryRun: true });
+            return res.json({ success: true, ...previsao });
+        }
+
+        const servico = servicoDrive();
+
+        if (!servico.configured || !servico.configured()) {
+            return res.status(503).json({
+                success: false,
+                code: "DRIVE_NOT_CONFIGURED",
+                error: "Google Drive não configurado neste servidor."
+            });
+        }
+
+        const resultado = await driveImageSync.sincronizarLote({
+            driveService: servico,
+            limite,
+            dryRun: false
+        });
+
+        return res.json({ success: true, ...resultado });
+    } catch (error) {
+        console.error("[Trato Vendedor] Falha ao sincronizar imagens:", String(error.message || "").slice(0, 200));
+        return res.status(500).json({ success: false, error: "Falha ao sincronizar as imagens." });
     }
 });
 

@@ -25,7 +25,31 @@ const app = express();
 // CONFIGURAÇÕES
 // ======================================================
 
-app.use(cors());
+// CORS restrito. Sem APP_ORIGINS definido, libera apenas localhost/127.0.0.1
+// (desenvolvimento) — nunca "*" em produção. Origens são comparadas exatamente.
+const ORIGENS_PERMITIDAS = [
+    ...String(process.env.APP_ORIGINS || "")
+        .split(",")
+        .map(item => item.trim().replace(/\/+$/, ""))
+        .filter(Boolean),
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:3080",
+    "http://127.0.0.1:3080"
+];
+
+app.use(cors({
+    origin(origin, callback) {
+        // Requisições sem Origin (curl, apps nativos, same-origin) passam.
+        if (!origin) return callback(null, true);
+
+        const limpa = String(origin).trim().replace(/\/+$/, "");
+        if (ORIGENS_PERMITIDAS.includes(limpa)) return callback(null, true);
+
+        return callback(null, false);
+    },
+    credentials: true
+}));
 
 app.use(express.json({ limit: "50mb" }));
 

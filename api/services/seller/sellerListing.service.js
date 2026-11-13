@@ -354,12 +354,20 @@ async function buildReview({
     // ------------------------------------------------------------------
     // 4. CATEGORIA + ATRIBUTOS OFICIAIS
     // ------------------------------------------------------------------
+    // A descrição NÃO vem do cadastro. A descrição gravada no produto pode ter
+    // sido escrita em outra época (ou por uma IA anterior) e afirmar
+    // características que o vendedor não confirmou agora. O Vendedor
+    // Automático só aceita:
+    //   1) o texto que o vendedor escreveu explicitamente nesta revisão, ou
+    //   2) a descrição montada a partir de evidências verificadas (abaixo).
+    const descriptionFromReview = clean(overrides.description);
+
     const draftProduct = {
         title: clean(overrides.title) || clean(product?.title) || listingCopy.buildTitle({
             identification: identificationMerged,
             condition: condition || "used"
         }),
-        description: clean(overrides.description) || clean(product?.description),
+        description: descriptionFromReview,
         sale_price: validSalePrice || price.value || 0,
         quantity: Math.max(1, Number(overrides.quantity || product?.quantity || DEFAULT_QUANTITY)),
         condition: condition || "used",
@@ -483,7 +491,10 @@ async function buildReview({
         { maxLength: maxTitleLength, identification: identificationMerged, condition: condition || "used" }
     );
 
-    const description = clean(overrides.description)
+    // A descrição comercial é montada SOMENTE com o que foi verificado:
+    // identificação visual, observação do vendedor e características
+    // comprovadas. O cadastro não é fonte (ver bloco 4).
+    const description = descriptionFromReview
         || listingCopy.buildDescription({
             identification: identificationMerged,
             condition,
@@ -492,6 +503,9 @@ async function buildReview({
             defects: identified.seller.defects,
             features: identified.identification.features
         });
+
+    // Texto antigo do cadastro é apenas informado ao vendedor — nunca usado.
+    const legadoIgnorado = clean(product?.description) && clean(product?.description) !== description;
 
     // ------------------------------------------------------------------
     // 6. ATRIBUTOS EXIGIDOS
@@ -647,6 +661,9 @@ async function buildReview({
         questions,
         ready_to_publish: blockingTexts.length === 0,
         blocked_by: blockingTexts,
+        // Informa (sem uso na descrição) que o cadastro tinha um texto antigo.
+        description_source: descriptionFromReview ? "revisao" : "evidencias",
+        legacy_description_ignored: Boolean(legadoIgnorado),
         ai: identified.ai,
         warnings: identified.warnings
     };
@@ -675,10 +692,16 @@ async function publish({
     const { product } = await loadProductInputs(productId);
     const condition = conditionFrom(overrides.condition) || conditionFrom(product.condition) || "used";
 
-    // 1) Persiste o que o vendedor aprovou no cadastro do produto.
+    // O que o vendedor aprovou na revisão. Nada é gravado ainda: o cadastro só
+    // é atualizado DEPOIS que a publicação der certo (ou nunca, em dry-run).
+    // A descrição só substitui a do cadastro quando o vendedor a escreveu
+    // nesta revisão; caso contrário o texto antigo permanece intocado e NÃO é
+    // enviado ao anúncio.
+    const descriptionFromReview = clean(overrides.description);
+
     const updates = {
         title: clean(overrides.title) || product.title,
-        description: clean(overrides.description) || product.description,
+        description: descriptionFromReview || product.description,
         sale_price: toMoney(overrides.sale_price) || Number(product.sale_price || 0),
         quantity: Math.max(1, Number(overrides.quantity || product.quantity || 1)),
         condition,
@@ -688,18 +711,26 @@ async function publish({
         color: clean(identification.color) || product.color
     };
 
-    await productService.update(productId, updates);
-
-    // 2) Publica.
+    // Publica (ou simula). Toda validação — atributos, embalagem, aprovação e
+    // resposta do Mercado Livre — acontece aqui. Se algo falhar, exceção sobe
+    // e o cadastro permanece exatamente como estava.
     const result = await publishSellerListing({
         productId,
         attributeOverrides: attributeOverrides || overrides.attributeOverrides || [],
+        descriptionOverride: descriptionFromReview,
         dryRun,
         skipValidation
     });
 
+    // 1) Só agora, com a publicação confirmada, persistimos o que foi aprovado.
+    // Em dry-run o resultado é apenas uma simulação: o banco não é tocado.
+    if (!dryRun && result?.published === true) {
+        await productService.update(productId, updates);
+    }
+
     return {
         ...result,
+        persisted: !dryRun && result?.published === true,
         permalink: result.ml?.permalink || null,
         item_id: result.ml?.id || null
     };

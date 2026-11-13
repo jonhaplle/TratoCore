@@ -293,15 +293,37 @@ function buildRequirements({
     const defined = new Map(definitions.map(item => [item.id, item]));
     const catalog = getCatalogEntry(identification) || {};
 
-    // Atributos ocultos da categoria só entram quando o Mercado Livre os
-    // exige de fato (dimensões/peso da embalagem).
-    const hiddenPackages = (definitions || [])
-        .filter(item => item.tags?.hidden && PACKAGE_ATTRIBUTES.includes(item.id))
-        .map(item => ({ ...item, requirement: item.requirement === "optional" ? "conditional_required" : item.requirement }));
+    // A embalagem é exigida pela API do Mercado Livre na validação (ME2),
+    // mesmo vindo com tags.hidden na categoria. Ela precisa aparecer SEMPRE
+    // na revisão como campo preenchível � senão o botão Publicar habilita
+    // sem as medidas e a publicação é recusada (missing.seller.package.dimensions).
+    const PACKAGE_DEFINICOES = {
+        SELLER_PACKAGE_HEIGHT: { name: "Altura da embalagem (cm)", unidade: "cm" },
+        SELLER_PACKAGE_WIDTH: { name: "Largura da embalagem (cm)", unidade: "cm" },
+        SELLER_PACKAGE_LENGTH: { name: "Comprimento da embalagem (cm)", unidade: "cm" },
+        SELLER_PACKAGE_WEIGHT: { name: "Peso da embalagem (g)", unidade: "g" }
+    };
+
+    const packageDefinitions = PACKAGE_ATTRIBUTES.map(id => {
+        const existente = (definitions || []).find(item => item.id === id);
+        const meta = PACKAGE_DEFINICOES[id];
+
+        return {
+            ...(existente || {}),
+            id,
+            name: existente?.name || meta.name,
+            value_type: existente?.value_type || "number_unit",
+            allowed_units: (existente?.allowed_units?.length ? existente.allowed_units : [{ id: meta.unidade }]),
+            default_unit: existente?.default_unit || meta.unidade,
+            values: [],
+            tags: { ...(existente?.tags || {}), hidden: false },
+            requirement: "conditional_required"
+        };
+    });
 
     const withPackages = [
-        ...definitions,
-        ...hiddenPackages.filter(item => !defined.has(item.id))
+        ...(definitions || []).filter(item => !PACKAGE_ATTRIBUTES.includes(item.id)),
+        ...packageDefinitions
     ];
 
     const required = withPackages.filter(item => item.requirement === "required" || item.requirement === "conditional_required");

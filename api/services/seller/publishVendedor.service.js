@@ -112,6 +112,7 @@ function normalizeOverrides(attributeOverrides) {
 async function publishSellerListing({
     productId,
     attributeOverrides = [],
+    descriptionOverride = "",
     dryRun = false,
     publicationSpec = null,
     skipValidation = false
@@ -149,15 +150,69 @@ async function publishSellerListing({
     const spec = publicationSpec || await require("../ml/publicationSpec.service").resolve(product);
     const overrides = normalizeOverrides(attributeOverrides);
 
+    // O Mercado Livre exige as medidas da embalagem em ME2. Reaproveita o MESMO
+    // serviço de referência usado pelo fluxo de produção (anúncio similar),
+    // em vez de manter uma segunda lógica no Vendedor Automático.
+    let packageOverrides = overrides;
+
+    try {
+        const apiService = require("../ml/api.service");
+        const me = await apiService.getMe();
+        const shippingPreferences = await apiService.getShippingPreferences(me?.id);
+        const modos = Array.isArray(shippingPreferences?.modes) ? shippingPreferences.modes : [];
+
+        if (modos.includes("me2")) {
+            const similarPackageReference = require("../ml/similarPackageReference.service");
+
+            // A referência exige marca e modelo. O cadastro pode estar vazio
+            // (produto fotografado sem identificação salva), então usamos a
+            // identificação confirmada na revisão, que tem prioridade.
+            const produtoParaReferencia = {
+                ...product,
+                brand: clean(product.brand) || clean(overrides.find(item => item.id === "BRAND")?.value_name),
+                model: clean(product.model) || clean(overrides.find(item => item.id === "MODEL")?.value_name)
+            };
+
+            const packageReference = await similarPackageReference.findPackageReference(
+                produtoParaReferencia,
+                spec.category_id
+            );
+
+            if (packageReference?.found && packageReference.attributes) {
+                const existentes = new Set(packageOverrides.map(item => item.id));
+
+                for (const [id, value] of Object.entries(packageReference.attributes)) {
+                    if (existentes.has(id)) continue;
+                    packageOverrides = [
+                        ...packageOverrides,
+                        { id, value_name: typeof value === "string" ? value : String(value) }
+                    ];
+                }
+
+                console.log("[Vendedor] Embalagem reaproveitada de anúncio similar:", Object.keys(packageReference.attributes));
+            }
+        }
+    } catch (error) {
+        // Falha na referência não deve impedir a publicação: a validação do ML
+        // continua sendo a fonte final de verdade.
+        console.log("[Vendedor] Referência de embalagem indisponível:", error.message);
+    }
+
     // Monta o payload sem enviar fotos. O item.service já lança
     // ML_MISSING_ATTRIBUTES quando falta algo que o ML exige.
     const item = await itemService.build(
         product,
         pictures,
         spec,
-        overrides,
+        packageOverrides,
         null,
-        { skipPictureUpload: true }
+        {
+            skipPictureUpload: true,
+            // A validação do Mercado Livre exige as medidas da embalagem.
+            // Sem isto o resolver descarta as medidas informadas pelo vendedor
+            // e o anúncio é recusado com missing.seller.package.dimensions.
+            requirePackageDimensions: true
+        }
     );
 
     if (dryRun) {
@@ -219,9 +274,13 @@ async function publishSellerListing({
     let descriptionSaved = null;
     let descriptionError = null;
 
-    if (clean(product.description)) {
+    // A descrição enviada é a APROVADA NA REVISÃO. O texto antigo do cadastro
+    // não é usado como fallback: ele pode conter afirmações não confirmadas.
+    const descricaoAprovada = clean(descriptionOverride);
+
+    if (descricaoAprovada) {
         try {
-            await apiService.createDescription(mlResponse.id, product.description);
+            await apiService.createDescription(mlResponse.id, descricaoAprovada);
             descriptionSaved = true;
         } catch (error) {
             descriptionSaved = false;

@@ -153,6 +153,44 @@ function isAccessoryProduct(name) {
     );
 }
 
+/**
+ * Remove precos absurdos que poluem a referencia.
+ *
+ * O catalogo do Mercado Livre as vezes traz ofertas com valor claramente
+ * errado (ex.: R$ 750.000 para um celular de R$ 1.300). Uma unica oferta
+ * dessas nao pode virar mediana.
+ *
+ * Estrategia conservadora: com 3+ precos validos, descarta os que ficam
+ * fora do intervalo [mediana/5, mediana*5]. Com menos de 3 nao ha como
+ * detectar outlier sem chutar, entao mantem tudo.
+ */
+function removeOutliers(prices) {
+    const validos = (prices || [])
+        .map(Number)
+        .filter(price => Number.isFinite(price) && price > 0);
+
+    if (!validos.length) return validos;
+
+    // Com 3+ precos, a propria amostra define a referencia.
+    if (validos.length >= 3) {
+        const referencia = median(validos);
+        const minimo = referencia / 5;
+        const maximo = referencia * 5;
+        const filtrados = validos.filter(price => price >= minimo && price <= maximo);
+        return filtrados.length >= 2 ? filtrados : validos;
+    }
+
+    // Com 1 ou 2 precos nao ha mediana confiavel, mas um valor pode estar
+    // ordens de grandeza acima do outro (ex.: R$ 1.299,90 e R$ 750.000,00).
+    // Nesse caso mantemos o menor  o maior e oferta inconsistente do catalogo.
+    if (validos.length === 2) {
+        const [a, b] = [...validos].sort((x, y) => x - y);
+        return b > a * 10 ? [a] : validos;
+    }
+
+    return validos;
+}
+
 function attributeValue(product, id) {
     const attribute = (product?.attributes || []).find(item => item.id === id);
     return attribute?.value_name || "";
@@ -232,8 +270,10 @@ async function catalogReference(identification) {
         product: chosen.product,
         variants_checked: usable.length,
         conditions: [...new Set(chosen.offers.map(item => item.condition).filter(Boolean))],
-        prices: pool.length >= 1 ? pool : chosen.prices,
-        offers: chosen.offers.slice(0, 10)
+        prices: removeOutliers(pool.length >= 1 ? pool : chosen.prices),
+        offers: chosen.offers
+            .filter(item => removeOutliers(pool.length >= 1 ? pool : chosen.prices).includes(Number(item.price)))
+            .slice(0, 10)
     };
 }
 
@@ -522,6 +562,7 @@ async function reference({ identification = {}, condition = "", query = "", cate
 
 module.exports = {
     reference,
+    removeOutliers,
     buildSearchTerm,
     summarize,
     median,

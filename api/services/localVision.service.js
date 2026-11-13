@@ -26,6 +26,37 @@ const LOCAL_VISION_MODEL = String(process.env.LOCAL_VISION_MODEL || "qwen3-vl:4b
 const TIMEOUT_MS = Number(process.env.LOCAL_VISION_TIMEOUT_MS || 300000);
 const ENABLED = String(process.env.LOCAL_VISION_ENABLED || "true").toLowerCase() !== "false";
 
+/**
+ * Camadas offloaded para a GPU. Padrão 0 (CPU pura) porque o backend Vulkan
+ * desta máquina derruba o llama-server no warmup. Ajustável por ambiente.
+ */
+const LOCAL_VISION_GPU_LAYERS = Number(process.env.LOCAL_VISION_GPU_LAYERS || 0);
+
+/**
+ * Modelos que o Ollama tem instalados mas cujo servidor nativo (llama-server)
+ * falha ao carregar — tipicamente crash 0xc0000005 em máquinas sem AVX2.
+ * Ficam marcados aqui para não prometer visão que não funciona.
+ *
+ * Declarados no TOPO porque `const` não sofre hoisting: usar antes da
+ * declaração lança ReferenceError e a falha passa despercebida.
+ */
+const falhasConhecidas = new Map();
+const FALHA_TTL_MS = 10 * 60 * 1000;
+
+function marcarFalha(model, motivo) {
+    falhasConhecidas.set(model, { motivo, em: Date.now() });
+}
+
+function falhaRecente(model) {
+    const registro = falhasConhecidas.get(model);
+    if (!registro) return null;
+    if (Date.now() - registro.em > FALHA_TTL_MS) {
+        falhasConhecidas.delete(model);
+        return null;
+    }
+    return registro;
+}
+
 const PROMPT = `Você analisa a FOTO de um produto para o TratoCore (anúncios no Mercado Livre).
 
 REGRAS OBRIGATÓRIAS:
@@ -181,23 +212,42 @@ async function analyzeImage(imagePath, sellerObservation = "") {
     const payload = imagePayload(absolute);
     const prompt = PROMPT.replace("{{OBSERVACAO}}", String(sellerObservation || "nenhuma"));
 
-    const response = await axios.post(
-        `${OLLAMA_URL}/api/chat`,
-        {
-            model,
-            messages: [{
-                role: "user",
-                content: prompt,
-                images: [payload.data]
-            }],
-            stream: false,
-            options: {
-                temperature: 0.1,
-                num_predict: 700
-            }
-        },
-        { timeout: TIMEOUT_MS }
-    );
+    let response;
+
+    try {
+        response = await axios.post(
+            `${OLLAMA_URL}/api/chat`,
+            {
+                model,
+                messages: [{
+                    role: "user",
+                    content: prompt,
+                    images: [payload.data]
+                }],
+                stream: false,
+                options: {
+                    temperature: 0.1,
+                    num_predict: 700,
+                    // Executa na CPU. O backend Vulkan desta máquina (AMD Radeon
+                    // R7 200, driver 2020) faz o llama-server crashar com
+                    // 0xc0000005 durante o warmup, antes mesmo de gerar texto.
+                    // Na CPU o modelo carrega e responde normalmente.
+                    num_gpu: LOCAL_VISION_GPU_LAYERS
+                }
+            },
+            { timeout: TIMEOUT_MS }
+        );
+    } catch (error) {
+        // Registra que este modelo não carrega, para o status não anunciar
+        // visão disponível e a tela avisar o vendedor com o motivo real.
+        const detalhe = String(error.response?.data?.error || error.message || "");
+
+        if (/terminated|0xc0000005|out of memory|failed to load/i.test(detalhe)) {
+            marcarFalha(model, "o servidor nativo de inferência encerrou ao carregar o modelo");
+        }
+
+        throw error;
+    }
 
     const text = response.data?.message?.content || response.data?.response || "";
     const parsed = extractJson(text);
@@ -223,18 +273,45 @@ async function status() {
             online: false,
             url: OLLAMA_URL,
             vision_model: LOCAL_VISION_MODEL,
-            vision_ready: false
+            vision_ready: false,
+            motivo: "Ollama não está respondendo."
         };
     }
 
     const model = await pickVisionModel();
 
+    // Ter o modelo INSTALADO não significa que ele carrega. Se o servidor
+    // nativo falhou recentemente, não anunciamos visão pronta.
+    const falha = model ? falhaRecente(model) : null;
+
+    if (!model) {
+        return {
+            enabled: ENABLED,
+            online: true,
+            url: OLLAMA_URL,
+            vision_model: LOCAL_VISION_MODEL,
+            vision_ready: false,
+            motivo: "Nenhum modelo multimodal instalado no Ollama."
+        };
+    }
+
+    if (falha) {
+        return {
+            enabled: ENABLED,
+            online: true,
+            url: OLLAMA_URL,
+            vision_model: model,
+            vision_ready: false,
+            motivo: `O modelo "${model}" está instalado mas falha ao carregar (${falha.motivo}).`
+        };
+    }
+
     return {
         enabled: ENABLED,
         online: true,
         url: OLLAMA_URL,
-        vision_model: model || LOCAL_VISION_MODEL,
-        vision_ready: Boolean(model),
+        vision_model: model,
+        vision_ready: true,
         configured_model: LOCAL_VISION_MODEL
     };
 }
@@ -252,6 +329,8 @@ module.exports = {
     pickVisionModel,
     extractJson,
     toAnalysis,
+    marcarFalha,
+    falhaRecente,
     OLLAMA_URL,
     LOCAL_VISION_MODEL
 };

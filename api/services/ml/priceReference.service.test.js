@@ -231,3 +231,23 @@ test("resumo ignora amostras insuficientes", () => {
     const service = loadWith({ async getAccessToken() { return "token"; } });
     assert.equal(service.summarize([100]), null);
 });
+
+test("descarta oferta com valor absurdo antes de calcular a mediana", () => {
+    const service = loadWith({ async getAccessToken() { return "token"; } });
+
+    // Uma oferta de R$ 750.000 nao pode virar mediana de um celular de R$ 1.300.
+    assert.deepEqual(
+        service.removeOutliers([1299.9, 750000, 1249.9]),
+        [1299.9, 1249.9]
+    );
+
+    assert.deepEqual(
+        service.removeOutliers([1000, 1200, 1100]),
+        [1000, 1200, 1100]
+    );
+
+    // Com apenas 2 precos, um deles 10x acima do outro e oferta inconsistente.
+    assert.deepEqual(service.removeOutliers([100, 5000]), [100]);
+    // Precos proximos (2 ofertas reais) sao preservados.
+    assert.deepEqual(service.removeOutliers([1200, 1300]), [1200, 1300]);
+});

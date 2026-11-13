@@ -676,9 +676,31 @@ async function publicarML(id, attributeOverrides = {}, options = {}) {
     try {
         const response = await fetch(`/api/ml/publish/${id}`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+                "Content-Type": "application/json",
+                // Chave de autorização digitada pelo vendedor; nunca vem do servidor.
+                ...(String(window.__chavePublicacao || "").trim()
+                    ? { Authorization: "Bearer " + String(window.__chavePublicacao).trim() }
+                    : {})
+            },
             body: JSON.stringify({ attributeOverrides })
         });
+
+        // 401/503: pede a chave e interrompe a tentativa de publicação.
+        if (response.status === 401 || response.status === 503) {
+            const erro = await response.json().catch(() => ({}));
+            const digitada = window.prompt(
+                String(erro?.error || "Autorização necessária para publicar.") +
+                "\n\nInforme a chave de autorização da publicação:",
+                ""
+            );
+
+            if (digitada && digitada.trim()) {
+                window.__chavePublicacao = digitada.trim();
+                if (botao) botao.disabled = false;
+                return;
+            }
+        }
 
         const retorno = await response.json();
 

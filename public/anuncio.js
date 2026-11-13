@@ -61,8 +61,17 @@ function dinheiro(value) {
 }
 
 async function requisicao(url, options = {}) {
+    // A chave de autorização é digitada pelo vendedor e vai apenas no header
+    // desta requisição. Ela não é servida pelo servidor, não fica em
+    // localStorage e não é exibida de volta na tela.
+    const chave = String(window.__chavePublicacao || "").trim();
+
     const response = await fetch(url, {
-        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+        headers: {
+            "Content-Type": "application/json",
+            ...(chave ? { Authorization: "Bearer " + chave } : {}),
+            ...(options.headers || {})
+        },
         ...options
     });
 
@@ -73,7 +82,25 @@ async function requisicao(url, options = {}) {
         json = null;
     }
 
+    // 401/503: pede a chave em vez de mostrar erro técnico ao vendedor.
+    if (response.status === 401 || response.status === 503) {
+        pedirChavePublicacao(json?.error || "Autorização necessária para publicar.");
+    }
+
     return { ok: response.ok, status: response.status, json: json || {} };
+}
+
+/** Solicita a chave de autorização (mantida apenas em memória). */
+function pedirChavePublicacao(mensagem) {
+    const digitada = window.prompt(
+        String(mensagem || "Autorização necessária.") +
+        "\n\nInforme a chave de autorização da publicação:",
+        ""
+    );
+
+    if (digitada && digitada.trim()) {
+        window.__chavePublicacao = digitada.trim();
+    }
 }
 
 function mostrarOverlay(titulo, texto) {

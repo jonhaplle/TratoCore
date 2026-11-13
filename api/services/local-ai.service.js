@@ -1,4 +1,4 @@
-﻿const fs = require('fs');
+const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 
@@ -392,23 +392,32 @@ async function status() {
 
   let model = getGeminiModel();
   let modelsCount = null;
+  let keyValid = null;
+
   try {
     const available = await listAvailableModels();
     modelsCount = available.length;
+    keyValid = true;
     const selected = [model, ...MODEL_CANDIDATES].find(m => available.includes(m));
     if (selected) {
       model = selected;
       resolvedModelCache = selected;
     }
-  } catch (_) {}
+  } catch (_) {
+    // Listar os modelos exige a mesma chave usada para gerar conteúdo.
+    // Se o Google recusar a chave, a IA não está realmente pronta.
+    keyValid = false;
+    modelsCount = null;
+  }
 
   return {
     online: true,
+    key_valid: keyValid,
     provider: 'Gemini API',
     model,
     vision_model: model,
     copywriter_model: model,
-    vision_ready: true,
+    vision_ready: keyValid === true,
     configured: true,
     models_available: modelsCount
   };
