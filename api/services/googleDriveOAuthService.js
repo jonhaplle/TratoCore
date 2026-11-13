@@ -99,16 +99,24 @@ function createGoogleDriveOAuthService(options = {}) {
     const selectProductsFolder = selectRootFolder;
 
     async function getSelectedRoot(drive, saved) {
-        if (!saved?.selectedFolderId || saved.selectedFolderName !== FOTOS_FOLDER_NAME) {
+        // Só o ID é obrigatório. O nome gravado no banco NÃO é exigido: ele pode
+        // estar nulo ou desatualizado em registros antigos, enquanto o ID
+        // continua apontando para a pasta correta. A API do Drive é a fonte
+        // final de verdade e é consultada logo abaixo.
+        if (!saved?.selectedFolderId) {
             throw new Error("Selecione a pasta FOTOS no Google Picker antes de sincronizar.");
         }
+
         const response = await drive.files.get({
             fileId: saved.selectedFolderId,
             fields: "id,name,mimeType"
         });
+
+        // A pasta precisa continuar sendo FOTOS, mesmo que o cadastro diga outra coisa.
         if (response.data?.mimeType !== FOLDER_MIME_TYPE || response.data?.name !== FOTOS_FOLDER_NAME) {
             throw new Error("A pasta raiz configurada não é mais a pasta FOTOS.");
         }
+
         return response.data;
     }
 
