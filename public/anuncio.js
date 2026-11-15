@@ -1449,6 +1449,7 @@ document.addEventListener("change", event => {
         registrarEdicaoDeAtributo(alvo);
         const linha = alvo.closest(".atributo");
         if (linha && String(alvo.value || "").trim()) linha.classList.add("respondido");
+        analisar({ apenasManual: true });
         return;
     }
 
@@ -1464,6 +1465,7 @@ document.addEventListener("change", event => {
         }
 
         atualizarAprovacao();
+        analisar({ apenasManual: true });
         return;
     }
 
