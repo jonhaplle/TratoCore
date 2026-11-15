@@ -145,7 +145,11 @@ test("quando tudo tem valor, ready fica verdadeiro", () => {
         overrides: {
             CARRIER: "Desbloqueado",
             CELLPHONES_ANATEL_HOMOLOGATION_NUMBER: "1234567890",
-            ALPHANUMERIC_MODELS: "SM-A155M"
+            ALPHANUMERIC_MODELS: "SM-A155M",
+            SELLER_PACKAGE_HEIGHT: "6 cm",
+            SELLER_PACKAGE_WIDTH: "16 cm",
+            SELLER_PACKAGE_LENGTH: "22 cm",
+            SELLER_PACKAGE_WEIGHT: "450 g"
         }
     });
 
