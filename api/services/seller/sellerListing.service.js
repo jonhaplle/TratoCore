@@ -551,6 +551,25 @@ async function buildReview({
         });
     }
 
+    // Hipóteses do catálogo e medidas sugeridas nunca são tratadas como fatos.
+    // Cada uma vira uma pergunta explícita; só sai da pendência quando o
+    // vendedor confirma/corrige o valor e a revisão é recalculada.
+    for (const hypothesis of requirements?.hypotheses || []) {
+        questions.push({
+            field: `confirm_attribute:${hypothesis.id}`,
+            question: `Confirme ou corrija: ${hypothesis.name || hypothesis.id}.`,
+            attribute_id: hypothesis.id,
+            suggested: {
+                value_id: hypothesis.value_id || null,
+                value_name: hypothesis.value_name || "",
+                value_struct: hypothesis.value_struct || null
+            },
+            source: hypothesis.origin || "catalog_hypothesis",
+            confidence: hypothesis.confidence || "hypothesis",
+            note: hypothesis.note || ""
+        });
+    }
+
     if (!price.value) {
         questions.push({ field: "sale_price", question: "Qual é o preço de venda?", options: [] });
     }
@@ -573,6 +592,10 @@ async function buildReview({
     if (!pictures.length) blocking.push("O produto precisa de ao menos uma foto.");
     if (requirements && !requirements.ready) {
         blocking.push(`Faltam ${requirements.pending.length} atributo(s) exigido(s) pelo Mercado Livre.`);
+    }
+    const unconfirmedHypotheses = requirements?.hypotheses || [];
+    if (unconfirmedHypotheses.length) {
+        blocking.push(`Confirme ou corrija ${unconfirmedHypotheses.length} sugestão(ões) antes de continuar.`);
     }
     const hasAutoBrand = requirements?.hypotheses?.some(item => item.origin === "commercial_hint");
     if (hasAutoBrand) {
@@ -659,6 +682,33 @@ async function buildReview({
             ready: requirements.ready
         } : null,
         questions,
+        // JSON estruturado da entrevista: cada valor mantém sua origem,
+        // hipótese/confirmado e estado de validação para auditoria do anúncio.
+        interview: {
+            version: 1,
+            category_id: spec?.category_id || null,
+            fields: (requirements?.attributes || []).map(item => ({
+                id: item.id,
+                name: item.name || item.id,
+                value_id: item.value_id || null,
+                value_name: item.value_name || "",
+                value_struct: item.value_struct || null,
+                source: item.origin || "unknown",
+                confidence: item.confidence || "unknown",
+                confirmed: item.confidence !== "hypothesis" && item.origin !== "catalog_hypothesis" && item.origin !== "package_suggestion"
+            })),
+            unresolved: (requirements?.pending || []).map(item => ({
+                id: item.id, name: item.name || item.id, reason: "required_attribute_missing"
+            })),
+            awaiting_confirmation: unconfirmedHypotheses.map(item => ({
+                id: item.id, name: item.name || item.id, suggested_value: item.value_name || null,
+                source: item.origin || "catalog_hypothesis"
+            })),
+            validation: {
+                ready: blockingTexts.length === 0,
+                blocked_by: blockingTexts
+            }
+        },
         ready_to_publish: blockingTexts.length === 0,
         blocked_by: blockingTexts,
         // Informa (sem uso na descrição) que o cadastro tinha um texto antigo.
