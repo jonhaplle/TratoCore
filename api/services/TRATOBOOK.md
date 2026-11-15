@@ -92,7 +92,7 @@ O JSON final de publicação deve usar os IDs e formatos aceitos pela categoria 
 - Consultar atributos da categoria e atributos condicionais em tempo real.
 - Não preencher automaticamente atributos `hidden`, `read_only` ou `fixed`, exceto regras logísticas explícitas e validadas.
 - Respeitar condição novo/usado e dependências condicionais.
-- Validar dimensões/peso da embalagem conforme modalidade logística e retorno atual do Mercado Livre. Sugestões de embalagem não são medidas confirmadas.
+- Validar dimensões/peso da embalagem conforme modalidade logística e retorno atual do Mercado Livre. Dimensões/peso de embalagem não são inferidos de fotos nem preenchidos com medidas padrão; o vendedor informa os valores reais.
 - Não habilitar publicação enquanto houver atributo obrigatório pendente, hipótese aguardando confirmação, erro de categoria, preço inválido ou ausência de fotos.
 - Revalidar no servidor imediatamente antes de publicar.
 - A aprovação explícita do vendedor continua obrigatória. A entrevista nunca publica sozinha.
@@ -105,7 +105,8 @@ Branch: `feature/entrevista-inteligente-json-anuncio`
 Arquivos alterados:
 - `api/services/seller/sellerListing.service.js`
   - converte hipóteses de atributos em perguntas explícitas de confirmação;
-  - bloqueia a prontidão enquanto houver hipóteses sem confirmação;
+  - exige as quatro medidas reais de embalagem, sem pré-preencher estimativas genéricas;
+  - bloqueia a prontidão enquanto houver hipóteses sem confirmação ou medidas logísticas obrigatórias ausentes;
   - inclui o objeto estruturado `interview` na resposta da revisão.
 - `public/anuncio.js`
   - não envia hipóteses como se já fossem respostas do vendedor;
