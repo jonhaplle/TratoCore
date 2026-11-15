@@ -120,8 +120,7 @@ function overrideValue(definition, override) {
 
         if (values.length) {
             const exact = values.find(item => normalize(item.name) === normalize(text));
-            if (exact) return { value_id: String(exact.id) };
-            return { value_name: text };
+            return exact ? { value_id: String(exact.id) } : null;
         }
 
         if (type === "boolean") {
@@ -159,7 +158,10 @@ function overrideValue(definition, override) {
     }
 
     if (override.value_id !== undefined && override.value_id !== null && clean(override.value_id)) {
-        return { value_id: clean(override.value_id) };
+        const valueId = clean(override.value_id);
+        const values = Array.isArray(definition.values) ? definition.values : [];
+        if (values.length && !values.some(item => String(item.id) === valueId)) return null;
+        return { value_id: valueId };
     }
 
     if (override.value_name !== undefined) {
@@ -174,6 +176,8 @@ function overrideValue(definition, override) {
         const partial = values.find(item => normalize(item.name).includes(normalize(override.value_name)));
         if (partial) return { value_id: String(partial.id) };
 
+        // Se a categoria oferece uma lista fechada, nunca enviar valor livre.
+        if (values.length) return null;
         return { value_name: clean(override.value_name) };
     }
 
