@@ -1419,8 +1419,8 @@ document.addEventListener("click", event => {
         if (entrada.tagName === "SELECT") {
             const opcao = entrada.options[entrada.selectedIndex];
             estado.atributos[id] = { value_id: valor, value_name: opcao?.dataset?.nome || opcao?.textContent?.trim() || valor, origin: "seller" };
-        } else if (String(entrada.value).match(/^\\d+(?:[.,]\\d+)?\\s*[a-z]{1,4}$/i)) {
-            const match = valor.match(/^(\\d+(?:[.,]\\d+)?)\\s*([a-z]{1,4})$/i);
+        } else if (String(entrada.value).match(/^\d+(?:[.,]\d+)?\s*[a-z]{1,4}$/i)) {
+            const match = valor.match(/^(\d+(?:[.,]\d+)?)\s*([a-z]{1,4})$/i);
             estado.atributos[id] = { value_name: valor, value_struct: { number: Number(match[1].replace(",", ".")), unit: match[2] }, origin: "seller" };
         } else {
             estado.atributos[id] = { value_name: valor, origin: "seller" };
