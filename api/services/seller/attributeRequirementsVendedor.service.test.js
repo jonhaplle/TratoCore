@@ -71,6 +71,18 @@ test("valor confirmado pelo vendedor vence a hipótese", () => {
     assert.ok(!result.pending.some(item => item.id === "CARRIER"));
 });
 
+test("valor fora da lista oficial do ML continua pendente", () => {
+    const result = buildRequirements({
+        definitions,
+        identification: { brand: "Samsung", model: "Galaxy A15" },
+        seller: { condition: "used" },
+        overrides: { CARRIER: "Operadora inventada" }
+    });
+
+    assert.ok(result.pending.some(item => item.id === "CARRIER"));
+    assert.ok(!result.attributes.some(item => item.id === "CARRIER"));
+});
+
 test("id de lista enviado pela tela continua sendo usado como value_id", () => {
     const result = buildRequirements({
         definitions,
