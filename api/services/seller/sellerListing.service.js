@@ -564,6 +564,7 @@ async function buildReview({
                 value_name: hypothesis.value_name || "",
                 value_struct: hypothesis.value_struct || null
             },
+            values: (spec?.attributes || []).find(definition => definition.id === hypothesis.id)?.values || [],
             source: hypothesis.origin || "catalog_hypothesis",
             confidence: hypothesis.confidence || "hypothesis",
             note: hypothesis.note || ""
