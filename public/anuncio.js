@@ -446,6 +446,12 @@ function aplicarRevisaoNoFormulario(revisao) {
     // menos hipóteses (que aguardam confirmação explícita).
     estado.atributos = {};
     for (const atributo of revisao.attributes?.filled || []) {
+        // Sugestões do catálogo/embalagem não são respostas do vendedor.
+        // Mantê-las fora de attributeOverrides impede confirmação silenciosa.
+        if (atributo.confidence === "hypothesis" ||
+            ["catalog_hypothesis", "package_suggestion", "commercial_hint"].includes(atributo.origin)) {
+            continue;
+        }
         estado.atributos[atributo.id] = {
             value_id: atributo.value_id || undefined,
             value_name: atributo.value_name,
@@ -622,8 +628,39 @@ function renderPerguntas(revisao) {
 
         if (atributoId) {
             const definicao = pendentesAtributos.find(item => item.id === atributoId) || {};
+            const sugestao = pergunta.suggested || null;
 
-            if (Array.isArray(definicao.values) && definicao.values.length) {
+            if (sugestao) {
+                const lista = Array.isArray(pergunta.values) && pergunta.values.length
+                    ? pergunta.values
+                    : Array.isArray(definicao.values) ? definicao.values : [];
+                if (lista.length) {
+                    entrada = `
+                        <select data-entrevista-valor="${escapeHtml(atributoId)}">
+                            <option value="">Selecione o valor correto</option>
+                            ${lista.map(valor => `
+                                <option value="${escapeHtml(valor.id)}"
+                                    data-nome="${escapeHtml(valor.name)}"
+                                    ${String(valor.id) === String(sugestao.value_id || "") ? "selected" : ""}>
+                                    ${escapeHtml(valor.name)}
+                                </option>
+                            `).join("")}
+                        </select>
+                    `;
+                } else {
+                    entrada = `
+                        <input type="text" data-entrevista-valor="${escapeHtml(atributoId)}"
+                            value="${escapeHtml(sugestao.value_name || "")}"
+                            placeholder="Confirme ou corrija o valor">
+                    `;
+                }
+                entrada += `
+                    <button type="button" class="botao secundario"
+                        data-confirmar-hipotese="${escapeHtml(atributoId)}">
+                        Confirmar este valor
+                    </button>
+                `;
+            } else if (Array.isArray(definicao.values) && definicao.values.length) {
                 entrada = `
                     <select data-atributo="${escapeHtml(atributoId)}" data-campo="${escapeHtml(campo)}">
                         <option value="">Selecione ${escapeHtml(definicao.name || atributoId)}</option>
@@ -1371,6 +1408,29 @@ document.addEventListener("click", event => {
         return;
     }
 
+    const confirmarHipotese = event.target.closest("[data-confirmar-hipotese]");
+    if (confirmarHipotese) {
+        const id = confirmarHipotese.getAttribute("data-confirmar-hipotese");
+        const entrada = confirmarHipotese.parentElement.querySelector("[data-entrevista-valor]");
+        const valor = String(entrada?.value || "").trim();
+        if (!valor) {
+            aviso("Informe ou selecione o valor antes de confirmar.", confirmarHipotese.parentElement);
+            return;
+        }
+
+        if (entrada.tagName === "SELECT") {
+            const opcao = entrada.options[entrada.selectedIndex];
+            estado.atributos[id] = { value_id: valor, value_name: opcao?.dataset?.nome || opcao?.textContent?.trim() || valor, origin: "seller" };
+        } else if (String(entrada.value).match(/^\d+(?:[.,]\d+)?\s*[a-z]{1,4}$/i)) {
+            const match = valor.match(/^(\d+(?:[.,]\d+)?)\s*([a-z]{1,4})$/i);
+            estado.atributos[id] = { value_name: valor, value_struct: { number: Number(match[1].replace(",", ".")), unit: match[2] }, origin: "seller" };
+        } else {
+            estado.atributos[id] = { value_name: valor, origin: "seller" };
+        }
+        analisar({ apenasManual: true });
+        return;
+    }
+
     const botaoPergunta = event.target.closest("[data-pergunta]");
     if (botaoPergunta) {
         responderPergunta(botaoPergunta);
@@ -1391,6 +1451,7 @@ document.addEventListener("change", event => {
         registrarEdicaoDeAtributo(alvo);
         const linha = alvo.closest(".atributo");
         if (linha && String(alvo.value || "").trim()) linha.classList.add("respondido");
+        analisar({ apenasManual: true });
         return;
     }
 
@@ -1406,6 +1467,7 @@ document.addEventListener("change", event => {
         }
 
         atualizarAprovacao();
+        analisar({ apenasManual: true });
         return;
     }
 
