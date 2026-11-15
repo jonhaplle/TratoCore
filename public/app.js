@@ -20,6 +20,9 @@ let aiVersion = "";
 let aiColor = "";
 let aiCondition = "used";
 let aiConfidence = 0;
+let editingProductId = new URLSearchParams(window.location.search).get("edit");
+let editingProductCategoryId = null;
+let editingProductAttributes = null;
 
 // ======================================================
 // ELEMENTOS
@@ -743,79 +746,36 @@ async function saveProduct() {
             return;
         }
 
-        const response = await fetch(API_PRODUCTS, {
+        const payload = {
+            sku: sku?.value || "",
+            barcode: barcode?.value || "",
+            title: title.value.trim(),
+            description: description?.value || "",
+            sale_price: Number(salePrice?.value || 0),
+            quantity: Math.max(1, Number(quantity?.value || 1)),
+            product_type: aiProductType,
+            brand: aiBrand || brand?.value || "",
+            line: aiLine,
+            model: model?.value || "",
+            generation: aiGeneration,
+            version: aiVersion,
+            color: aiColor,
+            condition: aiCondition,
+            ai_confidence: aiConfidence,
+            ml_category_id: editingProductCategoryId,
+            ml_attributes: editingProductAttributes
+        };
 
-            method: "POST",
-
-            headers: {
-                "Content-Type": "application/json"
-            },
-
-            body: JSON.stringify({
-
-                sku:
-                    sku?.value ||
-                    "",
-
-                barcode:
-                    barcode?.value ||
-                    "",
-
-                title:
-                    title.value,
-
-                description:
-                    description?.value ||
-                    "",
-
-                sale_price:
-                    Number(
-                        salePrice?.value ||
-                        0
-                    ),
-
-                quantity:
-                    Math.max(
-                        1,
-                        Number(
-                            quantity?.value ||
-                            1
-                        )
-                    ),
-
-                product_type:
-                    aiProductType,
-
-                brand:
-                    aiBrand ||
-                    brand?.value ||
-                    "",
-
-                line:
-                    aiLine,
-
-                model:
-                    model?.value ||
-                    "",
-
-                generation:
-                    aiGeneration,
-
-                version:
-                    aiVersion,
-
-                color:
-                    aiColor,
-
-                condition:
-                    aiCondition,
-
-                ai_confidence:
-                    aiConfidence
-
-            })
-
-        });
+        const response = await fetch(
+            editingProductId
+                ? `${API_PRODUCTS}/${encodeURIComponent(editingProductId)}`
+                : API_PRODUCTS,
+            {
+                method: editingProductId ? "PUT" : "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            }
+        );
 
         const json = await response.json();
 
@@ -848,7 +808,7 @@ async function saveProduct() {
         // SALVAR IMAGENS DO PRODUTO
         // ==================================================
 
-        if (uploadedPhotos.length) {
+        if (uploadedPhotos.length && !editingProductId) {
 
             for (
                 let index = 0;
@@ -939,10 +899,13 @@ async function saveProduct() {
 
         }
 
-        alert(
-            "Produto salvo com sucesso."
-        );
+        if (editingProductId) {
+            alert("Alterações salvas com sucesso.");
+            window.location.href = "produtos.html";
+            return;
+        }
 
+        alert("Produto salvo com sucesso.");
         newProduct();
 
     }
@@ -964,6 +927,17 @@ async function saveProduct() {
 // ======================================================
 
 function newProduct() {
+
+    editingProductId = null;
+    editingProductCategoryId = null;
+    editingProductAttributes = null;
+    if (window.location.search) {
+        window.history.replaceState({}, "", "index.html");
+    }
+
+    if (btnAnalyze) btnAnalyze.style.display = "";
+    if (photoInput) photoInput.style.display = "";
+    if (btnSave) btnSave.textContent = "Salvar Produto";
 
     uploadedPhoto = null;
     uploadedPhotos = [];
@@ -1033,6 +1007,67 @@ function newProduct() {
 // ======================================================
 // EVENTOS
 // ======================================================
+
+async function carregarProdutoParaEdicao() {
+    if (!editingProductId) return;
+
+    try {
+        const response = await fetch(`${API_PRODUCTS}/${encodeURIComponent(editingProductId)}`);
+        const json = await response.json();
+        if (!response.ok) throw new Error(json.message || json.error || "Não foi possível carregar o produto.");
+
+        const product = json.data || json.product || json;
+        sku.value = product.sku || "";
+        barcode.value = product.barcode || "";
+        title.value = product.title || "";
+        brand.value = product.brand || "";
+        model.value = product.model || "";
+        category.value = product.ml_attributes?._preparation?.category_name || product.ml_category_id || "";
+        salePrice.value = Number(product.sale_price || 0) ? Number(product.sale_price).toFixed(2) : "";
+        quantity.value = Math.max(1, Number(product.quantity || 1));
+        description.value = product.description || "";
+        aiProductType = product.product_type || "";
+        aiBrand = product.brand || "";
+        aiLine = product.line || "";
+        aiGeneration = product.generation || "";
+        aiVersion = product.version || "";
+        aiColor = product.color || "";
+        aiCondition = product.condition || "used";
+        aiConfidence = Number(product.ai_confidence || 0);
+        editingProductCategoryId = product.ml_category_id || null;
+        editingProductAttributes = product.ml_attributes || null;
+
+        if (observacaoVendedor) {
+            observacaoVendedor.value = product.seller_observation || "";
+        }
+
+        const mainImage = Array.isArray(product.images)
+            ? product.images.find(image => image.is_main) || product.images[0]
+            : null;
+        const imageUrl = mainImage?.original_url || product.original_url || "";
+        if (preview && imageUrl) {
+            preview.innerHTML = "";
+            const image = document.createElement("img");
+            image.src = imageUrl;
+            image.alt = "Foto do produto";
+            image.style.width = "100%";
+            image.style.maxHeight = "300px";
+            image.style.objectFit = "contain";
+            preview.appendChild(image);
+        }
+
+        if (btnAnalyze) btnAnalyze.style.display = "none";
+        if (photoInput) photoInput.style.display = "none";
+        if (btnImproveAI) btnImproveAI.style.display = "block";
+        if (btnSave) btnSave.textContent = "Salvar alterações";
+        const heading = document.querySelector(".form-panel");
+        if (heading) heading.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (error) {
+        console.error("Erro ao carregar produto para edição:", error);
+        alert(error.message || "Erro ao carregar produto para edição.");
+        window.location.href = "produtos.html";
+    }
+}
 
 if (btnAnalyze) {
     btnAnalyze.addEventListener(
@@ -1208,3 +1243,6 @@ async function atualizarStatusIALocal() {
 }
 
 window.addEventListener("DOMContentLoaded", atualizarStatusIALocal);
+
+// Carrega os dados existentes quando a edição é iniciada pela lista de produtos.
+document.addEventListener("DOMContentLoaded", carregarProdutoParaEdicao);

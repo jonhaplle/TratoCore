@@ -79,11 +79,47 @@ async function prepare(productId, sellerObservation = "") {
         sellerObservation
     });
 
-    const title = String(draft.title || analysis.title || product.title || "").trim();
-    const description = String(draft.description || analysis.description || sellerObservation || "").trim();
-    const me = await mlApi.getMe();
-    const priceResearch = await researchUsedPrice(title, me?.id);
-    const suggestedPrice = priceResearch.price;
+    const identifiedTitle = [
+        identification.brand,
+        identification.line,
+        identification.model,
+        identification.generation,
+        identification.product_type,
+        identification.color
+    ].map(value => String(value || "").trim()).filter(Boolean).join(" ");
+    const hasGeneratedTitle = Boolean(draft.title || analysis.title || identifiedTitle);
+    const title = String(draft.title || analysis.title || identifiedTitle || product.title || "").trim();
+    const factDescription = (analysis.facts || [])
+        .map(fact => typeof fact === "string" ? fact : fact?.value || fact?.description || "")
+        .map(value => String(value || "").trim())
+        .filter(Boolean)
+        .join("\n");
+    const description = String(
+        draft.description ||
+        analysis.description ||
+        [factDescription, sellerObservation].filter(Boolean).join("\n\n") ||
+        product.description ||
+        ""
+    ).trim();
+    const hasGeneratedDescription = Boolean(draft.description || analysis.description || factDescription);
+
+    let sellerId = null;
+    try {
+        const me = await mlApi.getMe();
+        sellerId = me?.id || null;
+    } catch (error) {
+        console.warn("[ListingPreparation] Conta ML indisponível para excluir anúncios próprios:", error.message);
+    }
+    const priceResearch = await researchUsedPrice(title, sellerId);
+    const aiPrice = Number(draft.suggested_price || analysis.suggested_price || 0);
+    const existingPrice = Number(product.sale_price || 0);
+    const suggestedPrice = priceResearch.price || (aiPrice > 0 ? aiPrice : existingPrice);
+    priceResearch.recommended_price = suggestedPrice;
+    if (!priceResearch.price && aiPrice > 0) {
+        priceResearch.basis = "ai_estimate_fallback";
+    } else if (!priceResearch.price && existingPrice > 0) {
+        priceResearch.basis = "existing_product_price_fallback";
+    }
 
     let category = null;
     let categoryAttributes = [];
@@ -144,7 +180,7 @@ async function prepare(productId, sellerObservation = "") {
         ...product,
         title,
         description,
-        sale_price: suggestedPrice || product.sale_price || 0,
+        sale_price: suggestedPrice || 0,
         product_type: analysis.product_type || product.product_type || "",
         brand: analysis.brand || product.brand || "",
         line: analysis.line || product.line || "",
@@ -162,7 +198,7 @@ async function prepare(productId, sellerObservation = "") {
         success: true,
         product: updated,
         preparation: {
-            status: title && description ? "ready_for_review" : "needs_review",
+            status: hasGeneratedTitle && hasGeneratedDescription && suggestedPrice > 0 ? "ready_for_review" : "needs_review",
             condition: "used",
             category_id: category?.id || null,
             category_name: category?.name || null,
@@ -170,6 +206,7 @@ async function prepare(productId, sellerObservation = "") {
             required_attributes_pending: requiredMissing,
             price_research: priceResearch,
             price_requires_manual_review: !suggestedPrice,
+            price_source: priceResearch.basis,
             publication_is_manual: true
         },
         analysis: {
