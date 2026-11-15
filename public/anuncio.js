@@ -631,7 +631,9 @@ function renderPerguntas(revisao) {
             const sugestao = pergunta.suggested || null;
 
             if (sugestao) {
-                const lista = Array.isArray(definicao.values) ? definicao.values : [];
+                const lista = Array.isArray(pergunta.values) && pergunta.values.length
+                    ? pergunta.values
+                    : Array.isArray(definicao.values) ? definicao.values : [];
                 if (lista.length) {
                     entrada = `
                         <select data-entrevista-valor="${escapeHtml(atributoId)}">
