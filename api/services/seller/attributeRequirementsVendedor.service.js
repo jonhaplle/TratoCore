@@ -1,21 +1,21 @@
 // ======================================================
-// TRATOCORE — REQUISITOS DE ATRIBUTOS PARA A REVISÃO
+// TRATOCORE â€” REQUISITOS DE ATRIBUTOS PARA A REVISÃƒO
 // ======================================================
 //
 // Preenche os atributos que o Mercado Livre realmente exige na categoria,
-// usando evidência (fotos, observação, identificação) e, quando falta algo
-// que é padrão do próprio fabricante, uma HIPÓTESE explícita que o vendedor
-// confirma na revisão.
+// usando evidÃªncia (fotos, observaÃ§Ã£o, identificaÃ§Ã£o) e, quando falta algo
+// que Ã© padrÃ£o do prÃ³prio fabricante, uma HIPÃ“TESE explÃ­cita que o vendedor
+// confirma na revisÃ£o.
 //
-// Nada é publicado sem passar pela revisão: este módulo só monta sugestões.
+// Nada Ã© publicado sem passar pela revisÃ£o: este mÃ³dulo sÃ³ monta sugestÃµes.
 
 const { commercialHintFor } = require("../ml/attributeResolver.service");
 const { getCatalogEntry, getReferencePrice } = require("./productCatalog.service");
 
-// O Mercado Livre passou a exigir as dimensões/peso da embalagem no
+// O Mercado Livre passou a exigir as dimensÃµes/peso da embalagem no
 // /items/validate, mesmo sem marcar o atributo como required na categoria
-// (eles vêm com tags.hidden). Este conjunto garante que eles entram na
-// revisão em vez de derrubar a publicação em silêncio.
+// (eles vÃªm com tags.hidden). Este conjunto garante que eles entram na
+// revisÃ£o em vez de derrubar a publicaÃ§Ã£o em silÃªncio.
 const PACKAGE_ATTRIBUTES = [
     "SELLER_PACKAGE_HEIGHT",
     "SELLER_PACKAGE_WIDTH",
@@ -23,8 +23,8 @@ const PACKAGE_ATTRIBUTES = [
     "SELLER_PACKAGE_WEIGHT"
 ];
 
-// Medidas padrão de embalagem de celular (aproximadas). NÃO são enviadas
-// automaticamente: entram como sugestão explícita que o vendedor confirma.
+// Medidas padrÃ£o de embalagem de celular (aproximadas). NÃƒO sÃ£o enviadas
+// automaticamente: entram como sugestÃ£o explÃ­cita que o vendedor confirma.
 const PACKAGE_SUGGESTIONS = {
     SELLER_PACKAGE_HEIGHT: { number: 5, unit: "cm" },
     SELLER_PACKAGE_WIDTH: { number: 15, unit: "cm" },
@@ -50,7 +50,7 @@ function normalize(value) {
         .toLowerCase();
 }
 
-/** Atalhos para atributos que a identificação já resolve. */
+/** Atalhos para atributos que a identificaÃ§Ã£o jÃ¡ resolve. */
 function identificationValue(id, identification, seller) {
     const map = {
         BRAND: identification.brand,
@@ -91,14 +91,14 @@ function findAllowedValue(definition, raw) {
 
 function numberUnitValue(definition, raw) {
     const text = clean(raw);
-    const match = text.match(/(\d+(?:[.,]\d+)?)\s*([A-Za-zÇÃÁÉÍÓÚ]{1,6})?/);
+    const match = text.match(/(\d+(?:[.,]\d+)?)\s*([A-Za-zÃ‡ÃƒÃÃ‰ÃÃ“Ãš]{1,6})?/);
     if (!match) return null;
 
     const allowed = (definition.allowed_units || []).map(unit => clean(unit.id || unit.name).toUpperCase());
     const given = (match[2] || "").toUpperCase();
 
     // O Mercado Livre espera a unidade exatamente como declarada na
-    // categoria ("g" e não "G", "cm" e não "CM").
+    // categoria ("g" e nÃ£o "G", "cm" e nÃ£o "CM").
     const unit = normalizeUnit(given, definition);
 
     if (!unit) return null;
@@ -123,14 +123,14 @@ function normalizeUnit(raw, definition) {
 
 /**
  * Converte o valor confirmado pelo vendedor no formato aceito pelo ML.
- * Quando o vendedor escolhe uma opção da lista, priorizamos value_id; para
- * number_unit só existe value_struct.
+ * Quando o vendedor escolhe uma opÃ§Ã£o da lista, priorizamos value_id; para
+ * number_unit sÃ³ existe value_struct.
  */
 function overrideValue(definition, override) {
     const type = normalize(definition.value_type);
 
     if (typeof override !== "object" || override === null) {
-        // Texto puro (ex.: "Branco"): resolve contra as opções aceitas.
+        // Texto puro (ex.: "Branco"): resolve contra as opÃ§Ãµes aceitas.
         const values = Array.isArray(definition.values) ? definition.values : [];
         const text = clean(override);
 
@@ -179,7 +179,7 @@ function overrideValue(definition, override) {
     }
 
     if (override.value_name !== undefined) {
-        // A tela envia o nome exibido. Para listas usamos a opção
+        // A tela envia o nome exibido. Para listas usamos a opÃ§Ã£o
         // correspondente; para texto livre mantemos o nome.
         const values = Array.isArray(definition.values) ? definition.values : [];
         if (values.length) {
@@ -216,14 +216,14 @@ function valueFor(definition, raw, { booleans = {} } = {}) {
         if (value === undefined || value === null) return null;
 
         const values = Array.isArray(definition.values) ? definition.values : [];
-        const match = values.find(item => normalize(item.name) === normalize(value === true ? "sim" : "não"));
+        const match = values.find(item => normalize(item.name) === normalize(value === true ? "sim" : "nÃ£o"));
 
-        return match ? { value_id: String(match.id) } : { value_name: value === true ? "Sim" : "Não" };
+        return match ? { value_id: String(match.id) } : { value_name: value === true ? "Sim" : "NÃ£o" };
     }
 
     if (type === "number") {
-        // Número da Anatel não pode ser inventado: só aceita o que o
-        // vendedor digitar (11 dígitos) e o Mercado Livre validar.
+        // NÃºmero da Anatel nÃ£o pode ser inventado: sÃ³ aceita o que o
+        // vendedor digitar (11 dÃ­gitos) e o Mercado Livre validar.
         return /^\d{8,15}$/.test(text) ? { value_name: text } : null;
     }
 
@@ -244,7 +244,7 @@ function labelForValue(definition, value) {
 }
 
 function describe(definition, raw, origin, extra = {}) {
-    // Um valor sem value_id nem value_name é descartado silenciosamente
+    // Um valor sem value_id nem value_name Ã© descartado silenciosamente
     // pelo Mercado Livre ("attribute was dropped"). Nunca enviamos isso.
     const value = extra.value_struct
         ? { value_struct: extra.value_struct }
@@ -280,7 +280,7 @@ function describe(definition, raw, origin, extra = {}) {
  * @param {object[]} params.definitions  atributos classificados da categoria
  * @param {object}   params.identification
  * @param {object}   params.seller        condition, working, accessories, defects
- * @param {object}   params.overrides     valores já confirmados pelo vendedor
+ * @param {object}   params.overrides     valores jÃ¡ confirmados pelo vendedor
  * @param {object}   params.booleans      respostas booleanas do vendedor
  */
 function buildRequirements({
@@ -293,10 +293,10 @@ function buildRequirements({
     const defined = new Map(definitions.map(item => [item.id, item]));
     const catalog = getCatalogEntry(identification) || {};
 
-    // A embalagem é exigida pela API do Mercado Livre na validação (ME2),
+    // A embalagem Ã© exigida pela API do Mercado Livre na validaÃ§Ã£o (ME2),
     // mesmo vindo com tags.hidden na categoria. Ela precisa aparecer SEMPRE
-    // na revisão como campo preenchível � senão o botão Publicar habilita
-    // sem as medidas e a publicação é recusada (missing.seller.package.dimensions).
+    // na revisÃ£o como campo preenchÃ­vel â¬ senÃ£o o botÃ£o Publicar habilita
+    // sem as medidas e a publicaÃ§Ã£o Ã© recusada (missing.seller.package.dimensions).
     const PACKAGE_DEFINICOES = {
         SELLER_PACKAGE_HEIGHT: { name: "Altura da embalagem (cm)", unidade: "cm" },
         SELLER_PACKAGE_WIDTH: { name: "Largura da embalagem (cm)", unidade: "cm" },
@@ -335,7 +335,7 @@ function buildRequirements({
     const requiredList = [];
 
     const resolveDefinition = definition => {
-        // 1) O vendedor já confirmou o valor na revisão.
+        // 1) O vendedor jÃ¡ confirmou o valor na revisÃ£o.
         const override = overrides[definition.id];
         if (override !== undefined && override !== null && clean(override) !== "") {
             const converted = overrideValue(definition, override);
@@ -358,25 +358,13 @@ function buildRequirements({
             }
         }
 
-        // 2) Medidas de embalagem: sugestão explícita, nunca automática.
+        // 2) Medidas da embalagem: nunca estimar. O vendedor precisa
+        // informar as dimensões/peso reais do pacote já preparado para envio.
         if (PACKAGE_ATTRIBUTES.includes(definition.id)) {
-            const suggestion = PACKAGE_SUGGESTIONS[definition.id];
-            if (!suggestion) return null;
-
-            const described = describe(definition, "", "package_suggestion", {
-                confidence: "hypothesis",
-                value_name: `${suggestion.number} ${suggestion.unit}`,
-                value_struct: suggestion,
-                note: `${PACKAGE_LABELS[definition.id]} — medida padrão sugerida. Ajuste se sua embalagem for diferente.`
-            });
-            if (described) {
-                hypotheses.push(described);
-                return described;
-            }
             return null;
         }
 
-        // 3) Evidência da identificação (fotos + observação).
+        // 3) EvidÃªncia da identificaÃ§Ã£o (fotos + observaÃ§Ã£o).
         const fromIdentification = identificationValue(definition.id, identification, seller);
         if (fromIdentification) {
             const described = describe(definition, fromIdentification, "identification", {
@@ -391,7 +379,7 @@ function buildRequirements({
             return null;
         }
 
-        // 5) Padrões do fabricante para o modelo (hipótese explícita).
+        // 5) PadrÃµes do fabricante para o modelo (hipÃ³tese explÃ­cita).
         const catalogValue = catalog[definition.id] ?? catalog[normalize(definition.id).replace(/_/g, "")]
             ?? (definition.id === "IS_DUAL_SIM" ? catalog.is_dual_sim : undefined)
             ?? (definition.id === "MANUFACTURER" ? catalog.manufacturer : undefined);
@@ -399,7 +387,7 @@ function buildRequirements({
         if (catalogValue !== undefined && catalogValue !== null && clean(catalogValue) !== "") {
             const described = describe(definition, catalogValue, "catalog_hypothesis", {
                 confidence: "hypothesis",
-                note: catalog._reason || "Padrão desta linha; confirme se corresponde ao seu produto."
+                note: catalog._reason || "PadrÃ£o desta linha; confirme se corresponde ao seu produto."
             });
             if (described) {
                 hypotheses.push(described);
@@ -407,7 +395,7 @@ function buildRequirements({
             }
         }
 
-        // 6) Dica comercial aceita pelo ML (ex.: marca "Não especificada").
+        // 6) Dica comercial aceita pelo ML (ex.: marca "NÃ£o especificada").
         if (definition.id === "BRAND" || definition.id === "MANUFACTURER") {
             const hints = commercialHintFor({
                 ...definition,
@@ -422,7 +410,7 @@ function buildRequirements({
                     value_name: hints[0].value_name,
                     origin: "commercial_hint",
                     confidence: "hypothesis",
-                    note: "Marca não identificada. Se o produto realmente não tem marca, confirme esta opção."
+                    note: "Marca nÃ£o identificada. Se o produto realmente nÃ£o tem marca, confirme esta opÃ§Ã£o."
                 };
                 hypotheses.push(described);
                 return described;
@@ -452,8 +440,8 @@ function buildRequirements({
         }
     }
 
-    // Opcionais só entram quando há evidência ou padrão do catálogo; nunca
-    // são exigidos do vendedor.
+    // Opcionais sÃ³ entram quando hÃ¡ evidÃªncia ou padrÃ£o do catÃ¡logo; nunca
+    // sÃ£o exigidos do vendedor.
     const optionalFilled = [];
     for (const definition of optional) {
         const override = overrides[definition.id];
@@ -465,8 +453,8 @@ function buildRequirements({
 
         const origin = override !== undefined ? "seller" : fromIdentification ? "identification" : "catalog_hypothesis";
 
-        // Opcionais vindos só do catálogo não são hipóteses obrigatórias:
-        // entram como preenchidos para enriquecer o anúncio.
+        // Opcionais vindos sÃ³ do catÃ¡logo nÃ£o sÃ£o hipÃ³teses obrigatÃ³rias:
+        // entram como preenchidos para enriquecer o anÃºncio.
         const described = describe(definition, raw, origin, {
             confidence: origin === "catalog_hypothesis" ? "hypothesis" : "inferred",
             note: origin === "catalog_hypothesis" ? (catalog._reason || "") : ""
