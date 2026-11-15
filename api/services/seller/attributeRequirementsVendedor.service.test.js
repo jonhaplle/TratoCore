@@ -85,7 +85,7 @@ test("id de lista enviado pela tela continua sendo usado como value_id", () => {
     assert.equal(carrier.value_name, "Claro");
 });
 
-test("medidas da embalagem entram como sugestão confirmável", () => {
+test("medidas reais da embalagem ficam pendentes e nunca recebem estimativa", () => {
     const withPackage = classifyDefinitions([
         ...cellphoneAttributes,
         { id: "SELLER_PACKAGE_WEIGHT", name: "Peso da embalagem", value_type: "number_unit", tags: { hidden: true }, allowed_units: [{ id: "g" }], values: [] },
@@ -98,30 +98,27 @@ test("medidas da embalagem entram como sugestão confirmável", () => {
         seller: { condition: "used" }
     });
 
-    // O ML só exige as 4 medidas juntas; aqui só 2 estão na categoria.
-    const weight = result.attributes.find(item => item.id === "SELLER_PACKAGE_WEIGHT");
+    const packagePending = result.pending.filter(item => item.id.startsWith("SELLER_PACKAGE_"));
+    assert.equal(packagePending.length, 4);
+    assert.equal(result.hypotheses.some(item => item.id.startsWith("SELLER_PACKAGE_")), false);
 
-    if (weight) {
-        assert.equal(weight.value_struct.unit, "g");
-        assert.equal(weight.confidence, "hypothesis");
+    const overridden = buildRequirements({
+        definitions: withPackage,
+        identification: { brand: "Samsung", model: "Galaxy A15" },
+        seller: { condition: "used" },
+        overrides: {
+            SELLER_PACKAGE_WEIGHT: "450 g",
+            SELLER_PACKAGE_HEIGHT: "6 cm",
+            SELLER_PACKAGE_WIDTH: "16 cm",
+            SELLER_PACKAGE_LENGTH: "22 cm"
+        }
+    });
 
-        const overridden = buildRequirements({
-            definitions: withPackage,
-            identification: { brand: "Samsung", model: "Galaxy A15" },
-            seller: { condition: "used" },
-            overrides: { SELLER_PACKAGE_WEIGHT: "450 g" }
-        });
-
-        const custom = overridden.attributes.find(item => item.id === "SELLER_PACKAGE_WEIGHT");
-
-        assert.equal(custom.value_struct.number, 450);
-        assert.equal(custom.origin, "seller");
-    } else {
-        // Sem as 4 medidas a API recusa o conjunto; o serviço não sugere
-        // parcialmente. Nesse caso não é criada uma hipótese inútil.
-        const hypotheses = result.hypotheses.filter(item => item.id.startsWith("SELLER_PACKAGE"));
-        assert.equal(hypotheses.length, 0);
-    }
+    const weight = overridden.attributes.find(item => item.id === "SELLER_PACKAGE_WEIGHT");
+    assert.equal(weight.value_struct.number, 450);
+    assert.equal(weight.value_struct.unit, "g");
+    assert.equal(weight.origin, "seller");
+    assert.equal(overridden.pending.some(item => item.id.startsWith("SELLER_PACKAGE_")), false);
 });
 
 test("estado ausente mantém ITEM_CONDITION pendente", () => {
