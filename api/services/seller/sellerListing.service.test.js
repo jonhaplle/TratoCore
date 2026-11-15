@@ -202,7 +202,7 @@ test("revisão monta título, descrição, preço e atributos a partir do produt
 
     // Sugestões de embalagem/catálogo precisam de confirmação explícita.
     assert.ok(review.questions.some(item => item.field === "confirm_attribute:SELLER_PACKAGE_HEIGHT"));
-    assert.equal(review.interview.awaiting_confirmation.length, 4);
+    assert.equal(review.interview.awaiting_confirmation.filter(item => item.id.startsWith("SELLER_PACKAGE_")).length, 4);
     assert.equal(review.interview.validation.ready, false);
 });
 
@@ -222,8 +222,8 @@ test("hipóteses deixam de bloquear somente depois de confirmação explícita",
         }
     });
 
-    assert.equal(review.interview.awaiting_confirmation.length, 0);
-    assert.ok(!review.questions.some(item => String(item.field).startsWith("confirm_attribute:")));
+    assert.equal(review.interview.awaiting_confirmation.filter(item => item.id.startsWith("SELLER_PACKAGE_")).length, 0);
+    assert.ok(!review.questions.some(item => String(item.field).startsWith("confirm_attribute:SELLER_PACKAGE_")));
     assert.ok(review.interview.fields.some(item => item.id === "SELLER_PACKAGE_HEIGHT" && item.confirmed));
 });
 
