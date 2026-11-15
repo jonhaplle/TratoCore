@@ -19,5 +19,15 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+      - name: Check seller listing interview syntax
+        run: |
+          node --check api/services/seller/sellerListing.service.js
+          node --check api/services/seller/sellerListing.service.test.js
+          node --check public/anuncio.js
       - name: Run Mercado Livre publication tests
         run: node --test api/services/ml/*.test.js
+      - name: Run seller listing interview tests
+        run: |
+          node --test api/services/seller/sellerListing.service.test.js
+          node --test api/services/seller/attributeRequirementsVendedor.service.test.js
+          node --test api/services/seller/packageRequirement.test.js
