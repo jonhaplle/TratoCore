@@ -9,6 +9,7 @@ const publicationSpecService = require("./publicationSpec.service");
 const attributeResolver = require("./attributeResolver.service");
 const attributeRequirements = require("./attributeRequirements.service");
 const similarPackageReference = require("./similarPackageReference.service");
+const shippingService = require("./shipping.service");
 
 function clean(value) {
     if (value === undefined || value === null) return "";
@@ -19,10 +20,67 @@ function getConditionalRequired(publicationSpec) {
     return attributeRequirements.getConditionalRequired(publicationSpec);
 }
 
-function extractMissingFromValidation(error, publicationSpec) {
+function isUsedProduct(product) {
+    return String(product?.condition || "used").toLowerCase() !== "new";
+}
+
+function emptyGtinReasonDefinition(publicationSpec) {
+    return (publicationSpec?.attributes || []).find(attribute =>
+        attribute?.id === "EMPTY_GTIN_REASON" &&
+        Array.isArray(attribute.values) &&
+        attribute.values.length > 0
+    ) || null;
+}
+
+function shouldOfferEmptyGtinReason(product, publicationSpec) {
+    if (!isUsedProduct(product)) return false;
+
+    const gtin = (publicationSpec?.attributes || []).find(attribute => attribute?.id === "GTIN");
+    if (!gtin || gtin.tags?.required === true) return false;
+
+    const isConditional = gtin.tags?.conditional_required === true ||
+        getConditionalRequired(publicationSpec).some(attribute =>
+            (typeof attribute === "string" ? attribute : attribute?.id) === "GTIN"
+        );
+
+    return isConditional && Boolean(emptyGtinReasonDefinition(publicationSpec));
+}
+
+function mapMissingIdsForUsedProduct(ids, product, publicationSpec) {
+    if (!ids.includes("GTIN") || !shouldOfferEmptyGtinReason(product, publicationSpec)) {
+        return ids;
+    }
+
+    return [...new Set(ids.map(id => id === "GTIN" ? "EMPTY_GTIN_REASON" : id))];
+}
+
+function publicationSpecForOverrides(publicationSpec, product, overrides) {
+    const hasReason = Boolean(overrides?.EMPTY_GTIN_REASON?.value_id ||
+        clean(overrides?.EMPTY_GTIN_REASON?.value_name));
+
+    if (!hasReason || !shouldOfferEmptyGtinReason(product, publicationSpec)) {
+        return publicationSpec;
+    }
+
+    const conditional = publicationSpec.conditionalAttributes || {};
+    const required = getConditionalRequired(publicationSpec).filter(attribute =>
+        (typeof attribute === "string" ? attribute : attribute?.id) !== "GTIN"
+    );
+
+    return {
+        ...publicationSpec,
+        conditionalAttributes: {
+            ...(Array.isArray(conditional) ? {} : conditional),
+            required_attributes: required
+        }
+    };
+}
+
+function extractMissingFromValidation(error, publicationSpec, product) {
+    const ids = attributeRequirements.extractMissingIdsFromValidation(error);
     return attributeRequirements.buildMissing(
         publicationSpec,
-        attributeRequirements.extractMissingIdsFromValidation(error)
+        mapMissingIdsForUsedProduct(ids, product, publicationSpec)
     );
 }
 
@@ -58,66 +116,6 @@ function isOnlyWarnings(error) {
     );
 }
 
-function chooseShippingMode(userPreferences, categoryPreferences) {
-    const userModes = Array.isArray(userPreferences?.modes)
-        ? userPreferences.modes.map(String)
-        : [];
-
-    const categoryModes = Array.isArray(categoryPreferences?.logistics)
-        ? categoryPreferences.logistics
-            .map(item => String(item?.mode || "").trim())
-            .filter(Boolean)
-        : [];
-
-    const allowed = new Set(categoryModes);
-    const candidates = ["me2", "me1", "not_specified", "custom"];
-
-    for (const mode of candidates) {
-        if (userModes.includes(mode) && allowed.has(mode)) {
-            return mode;
-        }
-    }
-
-    // Se a categoria não retornar logistics, a preferência da conta ainda
-    // permite uma escolha segura entre os modos que o vendedor possui.
-    if (!categoryModes.length) {
-        for (const mode of candidates) {
-            if (userModes.includes(mode)) return mode;
-        }
-    }
-
-    return null;
-}
-
-async function resolveShipping(categoryId) {
-    try {
-        const me = await apiService.getMe();
-        const userId = me?.id;
-        if (!userId) return null;
-
-        const [userPreferences, categoryPreferences] = await Promise.all([
-            apiService.getShippingPreferences(userId),
-            apiService.getCategoryShippingPreferences(categoryId)
-        ]);
-
-        const mode = chooseShippingMode(userPreferences, categoryPreferences);
-        if (!mode) {
-            console.log("SHIPPING: nenhum modo comum conta/categoria; publicação seguirá sem shipping explícito.");
-            return null;
-        }
-
-        console.log("SHIPPING RESOLVIDO:", mode);
-        return {
-            mode,
-            local_pick_up: false,
-            free_shipping: false
-        };
-    } catch (error) {
-        console.log("SHIPPING: não foi possível consultar preferências; publicação seguirá sem shipping explícito.");
-        console.log(error.response?.data || error.message || error);
-        return null;
-    }
-}
 
 module.exports.publish = async (productId, attributeOverrides = {}) => {
     console.log("========================================");
@@ -161,7 +159,7 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
 
     // Resolve a modalidade antes dos atributos: dimensões da embalagem
     // só entram como obrigatórias quando a logística escolhida for ME2.
-    const shipping = await resolveShipping(publicationSpec.category_id);
+    const shipping = await shippingService.resolveShipping(apiService, publicationSpec.category_id);
     const requirePackageDimensions = shipping?.mode === "me2";
 
     // ======================================================
@@ -193,20 +191,36 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
         console.warn("[PackageReference] Falha não bloqueante:", referenceError.message);
     }
 
+    // Para usados sem GTIN, a categoria pode permitir EMPTY_GTIN_REASON.
+    // Nesse caso, o motivo oficial substitui a pendência condicional de GTIN.
+    const buildSpec = publicationSpecForOverrides(
+        publicationSpec,
+        product,
+        effectiveAttributeOverrides
+    );
+
     // ======================================================
     // ETAPA 2 — RESOLVER ATRIBUTOS ANTES DE FAZER UPLOAD
     // ======================================================
     const resolved = attributeResolver.build({
         product,
-        categoryAttributes: publicationSpec.attributes,
-        conditionalAttributes: getConditionalRequired(publicationSpec),
+        categoryAttributes: buildSpec.attributes,
+        conditionalAttributes: getConditionalRequired(buildSpec),
         prediction: publicationSpec.prediction,
         overrides: effectiveAttributeOverrides,
         requirePackageDimensions
     });
 
     if (resolved.missing.length) {
-        throw missingError(resolved.missing);
+        const missing = attributeRequirements.buildMissing(
+            buildSpec,
+            mapMissingIdsForUsedProduct(
+                resolved.missing.map(attribute => attribute.id),
+                product,
+                publicationSpec
+            )
+        );
+        throw missingError(missing);
     }
 
     // ======================================================
@@ -218,7 +232,7 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
     const attributePreflight = await itemService.build(
         product,
         pictures,
-        publicationSpec,
+        buildSpec,
         effectiveAttributeOverrides,
         shipping,
         { skipPictureUpload: true, requirePackageDimensions }
@@ -226,7 +240,7 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
     try {
         await apiService.validateItem(attributePreflight);
     } catch (error) {
-        const missing = extractMissingFromValidation(error, publicationSpec);
+        const missing = extractMissingFromValidation(error, publicationSpec, product);
         if (missing.length) {
             throw missingError(missing, "O Mercado Livre ainda exige estas informações.");
         }
@@ -238,7 +252,7 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
     const item = await itemService.build(
         product,
         pictures,
-        publicationSpec,
+        buildSpec,
         effectiveAttributeOverrides,
         shipping,
         { requirePackageDimensions }
@@ -269,7 +283,7 @@ module.exports.publish = async (productId, attributeOverrides = {}) => {
     try {
         validation = await apiService.validateItem(item);
     } catch (error) {
-        const missing = extractMissingFromValidation(error, publicationSpec);
+        const missing = extractMissingFromValidation(error, publicationSpec, product);
         if (missing.length) {
             throw missingError(missing, "O Mercado Livre ainda exige estas informações.");
         }

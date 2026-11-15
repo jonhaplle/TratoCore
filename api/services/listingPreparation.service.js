@@ -7,6 +7,7 @@ const { findCatalogMatch } = require("./catalog.service");
 const mlApi = require("./ml/api.service");
 const publicationSpecService = require("./ml/publicationSpec.service");
 const attributeResolver = require("./ml/attributeResolver.service");
+const shippingService = require("./ml/shipping.service");
 
 function median(values) {
     const sorted = values.filter(value => Number.isFinite(value) && value > 0).sort((a, b) => a - b);
@@ -87,19 +88,25 @@ async function prepare(productId, sellerObservation = "") {
 
     let category = null;
     let categoryAttributes = [];
-    try {
-        const predictions = await mlApi.predictCategory(title);
-        for (const candidate of predictions || []) {
-            if (!candidate?.category_id) continue;
-            const candidateCategory = await mlApi.getCategory(candidate.category_id);
-            if (!Array.isArray(candidateCategory.children_categories) || candidateCategory.children_categories.length === 0) {
-                category = candidateCategory;
-                categoryAttributes = await mlApi.getCategoryAttributes(candidateCategory.id);
-                break;
-            }
+    let publicationSpec = null;
+    let shipping = null;
+    const effectivePrice = Number(suggestedPrice || product.sale_price || 0);
+    const currentDraft = {
+        ...product, title, description, sale_price: effectivePrice,
+        condition: "used"
+    };
+
+    if (effectivePrice > 0) {
+        try {
+            // A preparação usa a mesma especificação oficial da publicação:
+            // categoria folha, atributos e exigências condicionais do Mercado Livre.
+            publicationSpec = await publicationSpecService.resolve(currentDraft);
+            category = publicationSpec.category;
+            categoryAttributes = publicationSpec.attributes || [];
+            shipping = await shippingService.resolveShipping(mlApi, category.id);
+        } catch (error) {
+            console.warn("[ListingPreparation] Especificação oficial ainda pendente:", error.message);
         }
-    } catch (error) {
-        console.warn("[ListingPreparation] Categoria/atributos ainda pendentes:", error.message);
     }
 
     const attributes = {
@@ -114,22 +121,19 @@ async function prepare(productId, sellerObservation = "") {
         }
     };
     let requiredMissing = [];
-    if (category) {
+    if (category && publicationSpec) {
         try {
-            const effectivePrice = Number(suggestedPrice || product.sale_price || 0);
-            const currentDraft = {
-                ...product, title, description, sale_price: effectivePrice,
-                condition: "used", ml_category_id: category.id, ml_attributes: attributes
+            const productForResolution = {
+                ...currentDraft, ml_category_id: category.id, ml_attributes: attributes
             };
-            let conditionalAttributes = [];
-            let prediction = null;
-            if (effectivePrice > 0) {
-                const spec = await publicationSpecService.resolve(currentDraft);
-                conditionalAttributes = spec.conditionalAttributes?.required_attributes || [];
-                prediction = spec.prediction;
-            }
+            const conditionalAttributes = publicationSpec.conditionalAttributes?.required_attributes || [];
+            const requirePackageDimensions = shipping?.mode === "me2";
             const resolved = attributeResolver.build({
-                product: currentDraft, categoryAttributes, conditionalAttributes, prediction
+                product: productForResolution,
+                categoryAttributes,
+                conditionalAttributes,
+                prediction: publicationSpec.prediction,
+                requirePackageDimensions
             });
             requiredMissing = resolved.missing;
             for (const attribute of resolved.attributes) {
