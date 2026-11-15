@@ -199,6 +199,32 @@ test("revisão monta título, descrição, preço e atributos a partir do produt
     assert.ok(review.attributes.pending.some(item => item.id === "CARRIER"));
     assert.equal(review.ready_to_publish, false);
     assert.ok(review.blocked_by.some(text => /atributo/.test(text)));
+
+    // Sugestões de embalagem/catálogo precisam de confirmação explícita.
+    assert.ok(review.questions.some(item => item.field === "confirm_attribute:SELLER_PACKAGE_HEIGHT"));
+    assert.equal(review.interview.awaiting_confirmation.length, 4);
+    assert.equal(review.interview.validation.ready, false);
+});
+
+test("hipóteses deixam de bloquear somente depois de confirmação explícita", async () => {
+    const { stubs, itemStub } = makeStubs();
+    const { seller } = load(stubs, itemStub);
+
+    const review = await seller.buildReview({
+        productId: 901,
+        sellerObservation: "Samsung Galaxy A15 usado, funciona",
+        overrides: { condition: "used", brand: "Samsung", model: "Galaxy A15" },
+        attributeOverrides: {
+            SELLER_PACKAGE_HEIGHT: { value_name: "5 cm", value_struct: { number: 5, unit: "cm" } },
+            SELLER_PACKAGE_WIDTH: { value_name: "15 cm", value_struct: { number: 15, unit: "cm" } },
+            SELLER_PACKAGE_LENGTH: { value_name: "20 cm", value_struct: { number: 20, unit: "cm" } },
+            SELLER_PACKAGE_WEIGHT: { value_name: "400 g", value_struct: { number: 400, unit: "g" } }
+        }
+    });
+
+    assert.equal(review.interview.awaiting_confirmation.length, 0);
+    assert.ok(!review.questions.some(item => String(item.field).startsWith("confirm_attribute:")));
+    assert.ok(review.interview.fields.some(item => item.id === "SELLER_PACKAGE_HEIGHT" && item.confirmed));
 });
 
 test("publicar sem aprovação explícita é recusado", async () => {
