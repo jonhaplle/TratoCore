@@ -23,22 +23,6 @@ const PACKAGE_ATTRIBUTES = [
     "SELLER_PACKAGE_WEIGHT"
 ];
 
-// Medidas padrÃ£o de embalagem de celular (aproximadas). NÃƒO sÃ£o enviadas
-// automaticamente: entram como sugestÃ£o explÃ­cita que o vendedor confirma.
-const PACKAGE_SUGGESTIONS = {
-    SELLER_PACKAGE_HEIGHT: { number: 5, unit: "cm" },
-    SELLER_PACKAGE_WIDTH: { number: 15, unit: "cm" },
-    SELLER_PACKAGE_LENGTH: { number: 20, unit: "cm" },
-    SELLER_PACKAGE_WEIGHT: { number: 400, unit: "g" }
-};
-
-const PACKAGE_LABELS = {
-    SELLER_PACKAGE_HEIGHT: "Altura da embalagem (cm)",
-    SELLER_PACKAGE_WIDTH: "Largura da embalagem (cm)",
-    SELLER_PACKAGE_LENGTH: "Comprimento da embalagem (cm)",
-    SELLER_PACKAGE_WEIGHT: "Peso da embalagem (g)"
-};
-
 function clean(value) {
     return String(value ?? "").trim();
 }
