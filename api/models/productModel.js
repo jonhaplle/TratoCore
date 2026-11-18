@@ -290,8 +290,9 @@ async function update(id, product) {
             condition=$15,
             ai_confidence=$16,
             ml_attributes=$17,
-            ml_category_id=$18
-        WHERE id=$19
+            ml_category_id=$18,
+            seller_observation=$19
+        WHERE id=$20
         RETURNING *
     `;
 
@@ -314,6 +315,7 @@ async function update(id, product) {
         Number(product.ai_confidence || 0),
         product.ml_attributes || product.attributes || null,
         product.ml_category_id || null,
+        product.seller_observation ?? null,
         id
     ];
 

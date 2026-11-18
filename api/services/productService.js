@@ -141,6 +141,7 @@ async function update(id, data) {
         version: data.version ?? atual.version ?? "",
         color: data.color ?? atual.color ?? "",
         condition: data.condition ?? atual.condition ?? "used",
+        seller_observation: data.seller_observation ?? atual.seller_observation ?? null,
         ai_confidence: Number(
             data.ai_confidence ?? atual.ai_confidence ?? 0
         )
