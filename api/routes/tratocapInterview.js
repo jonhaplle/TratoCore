@@ -460,33 +460,88 @@ router.post("/devices/pair", async (req, res) => {
 /**
  * GET /api/tratocap/devices/me
  *
- * Informa ao PRÓPRIO aparelho se a sua autorização continua válida.
+ * Informa ao PRÓPRIO aparelho se a sua autorização continua válida, com
+ * status HTTP que o app consiga distinguir sem ambiguidade:
  *
- * Usa exatamente o mesmo middleware das demais rotas protegidas
- * (`requireSyncKey`), que já valida o token contra `tratocap_devices`
- * e preenche `req.dispositivo` com { id, apelido }.
+ *   200  — token individual válido          (modo: "dispositivo")
+ *   200  — chave compartilhada válida       (modo: "chave_compartilhada")
+ *   401  — credencial ausente
+ *   401  — token individual inválido/revogado (code: "REVOGADO")
+ *   500  — falha interna / banco indisponível
  *
- * Respostas:
- *   200 — autorização válida
- *   401 — token inválido, revogado ou ausente
- *   500 — falha interna
+ * Por que não usa `requireSyncKey` diretamente:
+ * aquele middleware, quando a credencial não casa com nenhum dispositivo,
+ * cai no fallback da TRATOCAP_SYNC_KEY e responde 503 quando ela não está
+ * configurada. Para o app, 503 significaria "não foi possível verificar",
+ * e a revogação jamais seria detectada. Aqui a classificação é explícita,
+ * MAS a validação continua sendo a mesma função (validarToken) e o mesmo
+ * helper de comparação (esperadaCompleta) — nada de autenticação paralela.
  *
- * NUNCA devolve o token, o hash ou qualquer segredo: apenas o que o
- * aparelho já sabe sobre si mesmo.
+ * NUNCA devolve token, hash ou qualquer segredo.
  */
-router.get("/devices/me", requireSyncKey, async (req, res) => {
+router.get("/devices/me", async (req, res) => {
     try {
-        const dispositivo = req.dispositivo;
+        const enviada = extrairCredencial(req);
 
-        // Se o middleware autenticou por TRATOCAP_SYNC_KEY (legado), não há
-        // dispositivo associado. Ainda assim a autorização é válida.
-        return res.json({
-            success: true,
-            autorizado: true,
-            dispositivo: dispositivo
-                ? { id: dispositivo.id, apelido: dispositivo.apelido }
-                : null,
-            modo: dispositivo ? "dispositivo" : "chave_compartilhada"
+        // 1) Sem credencial: não há como autenticar.
+        if (!enviada) {
+            return res.status(401).json({
+                success: false,
+                code: "UNAUTHORIZED",
+                error: "Informe o token do dispositivo."
+            });
+        }
+
+        // 2) Token de dispositivo pareado (mesma validação das demais rotas).
+        let dispositivo = null;
+        let falhaAoValidar = null;
+
+        try {
+            dispositivo = await tratocapDevice.validarToken(enviada);
+        } catch (error) {
+            // Banco indisponível NÃO significa token revogado.
+            falhaAoValidar = error;
+        }
+
+        if (dispositivo) {
+            return res.json({
+                success: true,
+                autorizado: true,
+                dispositivo: { id: dispositivo.id, apelido: dispositivo.apelido },
+                modo: "dispositivo"
+            });
+        }
+
+        // 3) Chave compartilhada (compatibilidade), quando configurada.
+        const esperada = process.env.TRATOCAP_SYNC_KEY;
+
+        if (esperada && esperadaCompleta(esperada, enviada)) {
+            return res.json({
+                success: true,
+                autorizado: true,
+                dispositivo: null,
+                modo: "chave_compartilhada"
+            });
+        }
+
+        // 4) A validação falhou por problema interno: não é revogação.
+        if (falhaAoValidar) {
+            console.error(
+                "[Entrevista] Falha ao validar dispositivo em /devices/me:",
+                String(falhaAoValidar.message || "").slice(0, 160)
+            );
+            return res.status(500).json({
+                success: false,
+                code: "VERIFICACAO_INDISPONIVEL",
+                error: "Não foi possível verificar a autorização agora."
+            });
+        }
+
+        // 5) Chegou aqui: a credencial existe e não é válida.
+        return res.status(401).json({
+            success: false,
+            code: "REVOGADO",
+            error: "A autorização deste aparelho não é mais válida."
         });
     } catch (error) {
         console.error("[Entrevista] Falha ao consultar /devices/me:", String(error.message || "").slice(0, 160));
