@@ -49,6 +49,11 @@ async function requireSyncKey(req, res, next) {
     }
 
     // 1) Token de dispositivo pareado.
+    //
+    // Uma EXCEÇÃO aqui significa "não foi possível verificar" (banco fora,
+    // timeout de query, SSL), e NÃO "credencial inválida". Os dois casos
+    // exigem respostas diferentes: confundir um com o outro fazia o app
+    // orientar o vendedor a reparear um aparelho que estava correto.
     try {
         const dispositivo = await tratocapDevice.validarToken(enviada);
 
@@ -57,22 +62,44 @@ async function requireSyncKey(req, res, next) {
             return next();
         }
     } catch (error) {
-        console.warn("[Entrevista] Falha ao validar dispositivo:", String(error.message || "").slice(0, 120));
+        console.error(
+            "[Entrevista] Falha ao validar dispositivo:",
+            String(error.message || "").slice(0, 160)
+        );
+
+        return res.status(503).json({
+            success: false,
+            code: "VERIFICACAO_INDISPONIVEL",
+            error: "Não foi possível verificar a autorização do aparelho agora. Tente novamente."
+        });
     }
 
     // 2) Chave global (compatibilidade temporária).
+    //
+    // ATENÇÃO à classificação: o cliente JÁ enviou uma credencial (checado
+    // no início). Logo, não havendo dispositivo correspondente, essa
+    // credencial é inválida — e a resposta correta é 401, não 503.
+    //
+    // O 503 fica reservado à ausência total de credencial (ver início),
+    // que é o único caso em que o aparelho realmente "não está ativado".
+    // Mascarar credencial inválida como 503 impedia o app de detectar
+    // revogação e de orientar o vendedor a parear novamente.
     const esperada = process.env.TRATOCAP_SYNC_KEY;
 
     if (!esperada) {
-        return res.status(503).json({
+        return res.status(401).json({
             success: false,
-            code: "ATIVACAO_PENDENTE",
-            error: "Nenhum dispositivo pareado e TRATOCAP_SYNC_KEY não configurada."
+            code: "REVOGADO",
+            error: "A autorização deste aparelho não é mais válida. Informe um novo código."
         });
     }
 
     if (!esperadaCompleta(esperada, enviada)) {
-        return res.status(401).json({ success: false, code: "UNAUTHORIZED", error: "Chave inválida." });
+        return res.status(401).json({
+            success: false,
+            code: "REVOGADO",
+            error: "A autorização deste aparelho não é mais válida. Informe um novo código."
+        });
     }
 
     if (req.body && Object.hasOwn(req.body, "syncKey")) delete req.body.syncKey;
