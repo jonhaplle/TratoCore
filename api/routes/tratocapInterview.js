@@ -457,6 +457,46 @@ router.post("/devices/pair", async (req, res) => {
     }
 });
 
+/**
+ * GET /api/tratocap/devices/me
+ *
+ * Informa ao PRÓPRIO aparelho se a sua autorização continua válida.
+ *
+ * Usa exatamente o mesmo middleware das demais rotas protegidas
+ * (`requireSyncKey`), que já valida o token contra `tratocap_devices`
+ * e preenche `req.dispositivo` com { id, apelido }.
+ *
+ * Respostas:
+ *   200 — autorização válida
+ *   401 — token inválido, revogado ou ausente
+ *   500 — falha interna
+ *
+ * NUNCA devolve o token, o hash ou qualquer segredo: apenas o que o
+ * aparelho já sabe sobre si mesmo.
+ */
+router.get("/devices/me", requireSyncKey, async (req, res) => {
+    try {
+        const dispositivo = req.dispositivo;
+
+        // Se o middleware autenticou por TRATOCAP_SYNC_KEY (legado), não há
+        // dispositivo associado. Ainda assim a autorização é válida.
+        return res.json({
+            success: true,
+            autorizado: true,
+            dispositivo: dispositivo
+                ? { id: dispositivo.id, apelido: dispositivo.apelido }
+                : null,
+            modo: dispositivo ? "dispositivo" : "chave_compartilhada"
+        });
+    } catch (error) {
+        console.error("[Entrevista] Falha ao consultar /devices/me:", String(error.message || "").slice(0, 160));
+        return res.status(500).json({
+            success: false,
+            error: "Não foi possível verificar a autorização."
+        });
+    }
+});
+
 /** Lista dispositivos (sem tokens). */
 router.get("/devices", requireAdmin, async (req, res) => {
     try {
