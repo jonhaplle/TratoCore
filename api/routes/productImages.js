@@ -4,6 +4,19 @@ function createProductImagesRouter(options = {}) {
 const ProductImageController = options.controller || require("../controllers/productImageController");
 const legacyDrive = options.legacyDrive || require('../services/googleDriveService');
 const googleDriveOAuthService = options.oauthService || require('../services/googleDriveOAuthService').createGoogleDriveOAuthService();
+
+// Autorização para operações de ESCRITA.
+//
+// Mesmo middleware que já protege a API de produtos (compara
+// TRATO_VENDEDOR_ADMIN_KEY com timingSafeEqual e falha fechado).
+//
+// LEITURA continua pública: o catálogo, as miniaturas e o proxy do Drive
+// são consumidos por telas e pelo próprio Mercado Livre.
+//
+// O TratoCap NÃO passa por aqui: ele cria imagens pelo
+// ProductImageService diretamente, na importação de álbuns.
+const requireAdminKey = require("../middleware/publishKeyAuth");
+
 const router = express.Router();
 
 // ======================================================
@@ -11,7 +24,7 @@ const router = express.Router();
 // ======================================================
 
 // Cadastrar imagem
-router.post("/", ProductImageController.create);
+router.post("/", requireAdminKey, ProductImageController.create);
 
 // Listar imagens de um produto
 router.get(
@@ -28,18 +41,21 @@ router.get(
 // Definir imagem principal
 router.put(
     "/product/:productId/main/:imageId",
+    requireAdminKey,
     ProductImageController.setMainImage
 );
 
 // Definir quais imagens serão enviadas ao Mercado Livre e sua ordem.
 router.put(
     "/product/:productId/selection",
+    requireAdminKey,
     ProductImageController.updateSelection
 );
 
 // Remover imagem
 router.delete(
     "/:id",
+    requireAdminKey,
     ProductImageController.remove
 );
 

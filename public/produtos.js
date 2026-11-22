@@ -8,6 +8,52 @@ let publicacaoMassaEmAndamento = false;
 let filaPublicacaoMassa = [];
 let indiceFilaPublicacaoMassa = 0;
 
+// ======================================================
+// CHAVE ADMINISTRATIVA (somente em memória)
+// ======================================================
+//
+// Toda escrita na API de produtos exige a chave.
+//
+// IMPORTANTE: index.html -> produtos.html é navegação de DOCUMENTO COMPLETO
+// (link <a href>), não SPA. Isso recria o objeto `window`, então uma
+// variável em window NÃO sobrevive à troca de página. Por isso cada página
+// tem o seu próprio campo de chave, e a chave é digitada aqui quando
+// necessário. Ela nunca vai para localStorage nem sessionStorage.
+function chaveAdmin() {
+    const campo = document.getElementById("adminKey");
+    return campo ? campo.value.trim() : "";
+}
+
+/** Mantém o campo local pronto para uso. */
+function ligarCampoChave() {
+    const campo = document.getElementById("adminKey");
+    if (!campo) return;
+
+    // Ao trocar de página a chave é digitada novamente — é o comportamento
+    // seguro. Aqui apenas garante que o campo está limpo e focável.
+    campo.addEventListener("input", () => {
+        if (campo.value.trim()) {
+            document.getElementById("avisoChave")?.remove();
+        }
+    });
+}
+
+/** Cabeçalhos para escrita. Sem chave, avisa antes de chamar o servidor. */
+function cabecalhosEscrita() {
+    const chave = chaveAdmin();
+
+    if (!chave) {
+        throw new Error("Informe a chave administrativa para editar ou excluir produtos.");
+    }
+
+    return {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${chave}`
+    };
+}
+
+
+
 const modal = document.getElementById("modalEditar");
 
 const editId = document.getElementById("editId");
@@ -395,9 +441,7 @@ btnSalvar.onclick = async () => {
 
             method: "PUT",
 
-            headers: {
-                "Content-Type": "application/json"
-            },
+            headers: cabecalhosEscrita(),
 
             body: JSON.stringify(dados)
 
@@ -459,7 +503,9 @@ async function excluirProduto(id) {
 
         const response = await fetch(`/api/products/${id}`, {
 
-            method: "DELETE"
+            method: "DELETE",
+
+            headers: cabecalhosEscrita()
 
         });
 
@@ -638,7 +684,7 @@ async function corrigirComIA(id) {
     try {
         const response = await fetch(`/api/products/${id}/improve-ai`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" }
+            headers: cabecalhosEscrita()
         });
 
         const retorno = await response.json();
@@ -850,6 +896,7 @@ window.revisarAnuncio = revisarAnuncio;
 
 // =========================================
 
+ligarCampoChave();
 carregarProdutos();
 
 tbody.addEventListener("click", function(event) {

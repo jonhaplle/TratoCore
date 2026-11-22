@@ -1,4 +1,7 @@
-﻿const Product = require("../models/productModel");
+const Product = require("../models/productModel");
+
+const { ValidationError, NotFoundError } = require("../errors");
+
 
 // ======================================================
 // LISTAR TODOS
@@ -17,7 +20,7 @@ async function getAll() {
 async function getById(id) {
 
     if (!id) {
-        throw new Error("ID do produto nÃ£o informado.");
+        throw new ValidationError("ID do produto não informado.");
     }
 
     const product = await Product.getById(id);
@@ -56,7 +59,7 @@ async function getById(id) {
 async function create(data) {
 
     if (!data.title || data.title.trim() === "") {
-        throw new Error("TÃ­tulo obrigatÃ³rio.");
+        throw new ValidationError("Título obrigatório.");
     }
 
     const product = {
@@ -101,13 +104,13 @@ async function create(data) {
 async function update(id, data) {
 
     if (!id) {
-        throw new Error("ID invÃ¡lido.");
+        throw new ValidationError("ID inválido.");
     }
 
     const atual = await Product.getById(id);
 
     if (!atual) {
-        throw new Error("Produto nÃ£o encontrado.");
+        throw new NotFoundError("Produto não encontrado.");
     }
 
     const product = {
@@ -159,7 +162,7 @@ async function update(id, data) {
 async function remove(id) {
 
     if (!id) {
-        throw new Error("ID invÃ¡lido.");
+        throw new ValidationError("ID inválido.");
     }
 
     return await Product.remove(id);

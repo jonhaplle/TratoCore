@@ -734,6 +734,39 @@ async function analyzePhoto() {
 // SALVAR PRODUTO
 // ======================================================
 
+// ======================================================
+// CHAVE ADMINISTRATIVA (somente em memória)
+// ======================================================
+//
+// Toda escrita na API de produtos exige a chave. Ela NUNCA é gravada em
+// localStorage nem sessionStorage: vive apenas nesta variável, enquanto a
+// página estiver aberta. Recarregar a página exige digitá-la novamente.
+//
+// NÃO existe ponte entre páginas: index.html -> produtos.html é navegação
+// de documento completo e recria `window`. A página de produtos tem o seu
+// próprio campo de chave.
+let chaveAdministrativa = "";
+
+function lerChaveAdministrativa() {
+    const campo = document.getElementById("adminKey");
+    chaveAdministrativa = campo ? campo.value.trim() : "";
+    return chaveAdministrativa;
+}
+
+/** Cabeçalhos para operações de escrita. */
+function cabecalhosComChave() {
+    const chave = lerChaveAdministrativa();
+
+    if (!chave) {
+        throw new Error("Informe a chave administrativa para salvar ou excluir produtos.");
+    }
+
+    return {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${chave}`
+    };
+}
+
 async function saveProduct() {
 
     try {
@@ -747,9 +780,7 @@ async function saveProduct() {
 
             method: "POST",
 
-            headers: {
-                "Content-Type": "application/json"
-            },
+            headers: cabecalhosComChave(),
 
             body: JSON.stringify({
 
@@ -864,10 +895,7 @@ async function saveProduct() {
 
                         method: "POST",
 
-                        headers: {
-                            "Content-Type":
-                                "application/json"
-                        },
+                        headers: cabecalhosComChave(),
 
                         body: JSON.stringify({
 

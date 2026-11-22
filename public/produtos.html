@@ -47,6 +47,26 @@
             </button>
         </div>
 
+        <!--
+            Chave administrativa.
+            Necessária para editar e excluir produtos nesta página.
+            fica apenas em memória — nunca em localStorage/sessionStorage.
+            Também pode ser digitada em index.html: as duas páginas leem e
+            gravam o mesmo campo de memória via window.__chaveAdmin.
+        -->
+        <div class="campo-chave-admin">
+
+            <label for="adminKey">Chave administrativa</label>
+
+            <input
+                type="password"
+                id="adminKey"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Necessária para editar ou excluir">
+
+        </div>
+
     </section>
 
 

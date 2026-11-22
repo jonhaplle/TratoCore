@@ -169,9 +169,20 @@ function renderImageManager(produto) {
         saveButton.textContent = "Salvando…";
         message.textContent = "Atualizando seleção no banco de dados…";
         try {
+            // A rota de seleção é de ESCRITA e exige a chave administrativa.
+            const campoChave = document.getElementById("adminKey");
+            const chave = campoChave ? campoChave.value.trim() : "";
+
+            if (!chave) {
+                throw new Error("Informe a chave administrativa para salvar a seleção de imagens.");
+            }
+
             const response = await fetch(`/api/product-images/product/${encodeURIComponent(id)}/selection`, {
                 method: "PUT",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${chave}`
+                },
                 body: JSON.stringify({ selected_image_ids: selectedIds, main_image_id: Number(main.id) })
             });
             const result = await response.json().catch(() => ({}));

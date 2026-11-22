@@ -124,6 +124,30 @@
 
     <section class="form-panel">
 
+        <!--
+            Chave administrativa.
+            Necessária para QUALQUER escrita na API de produtos (cadastrar,
+            editar, excluir). Fica apenas em memória: este campo não tem
+            autocomplete, não é salvo em localStorage/sessionStorage e é
+            limpo ao recarregar a página.
+        -->
+        <div class="field" id="campoChaveAdmin">
+
+            <label for="adminKey">Chave administrativa</label>
+
+            <input
+                id="adminKey"
+                type="password"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Informe a chave fornecida pelo administrador">
+
+            <small id="adminKeyAviso" class="field-hint">
+                Fica apenas em memória. Necessária para salvar ou excluir produtos.
+            </small>
+
+        </div>
+
         <div class="row">
 
             <div class="field">

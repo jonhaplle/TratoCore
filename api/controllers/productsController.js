@@ -1,4 +1,6 @@
 const ProductService = require("../services/productService");
+
+const { responderErro } = require("../errors");
 const { improveListing } = require("../services/local-ai.service");
 const listingPreparation = require("../services/listingPreparation.service");
 
@@ -18,14 +20,7 @@ async function getAll(req, res) {
 
     catch (err) {
 
-        console.error(err);
-
-        return res.status(500).json({
-
-            success: false,
-            message: err.message
-
-        });
+        return responderErro(res, err);
 
     }
 
@@ -58,14 +53,7 @@ async function getById(req, res) {
 
     catch (err) {
 
-        console.error(err);
-
-        return res.status(500).json({
-
-            success: false,
-            message: err.message
-
-        });
+        return responderErro(res, err);
 
     }
 
@@ -94,14 +82,7 @@ async function create(req, res) {
 
     catch (err) {
 
-        console.error(err);
-
-        return res.status(500).json({
-
-            success: false,
-            message: err.message
-
-        });
+        return responderErro(res, err);
 
     }
 
@@ -146,14 +127,7 @@ async function update(req, res) {
 
     catch (err) {
 
-        console.error(err);
-
-        return res.status(500).json({
-
-            success: false,
-            message: err.message
-
-        });
+        return responderErro(res, err);
 
     }
 
@@ -194,14 +168,7 @@ async function remove(req, res) {
 
     catch (err) {
 
-        console.error(err);
-
-        return res.status(500).json({
-
-            success: false,
-            message: err.message
-
-        });
+        return responderErro(res, err);
 
     }
 
@@ -242,11 +209,9 @@ async function improveWithAI(req, res) {
             suggested_price: Number(improved.suggested_price || 0)
         });
     } catch (err) {
+        // Falha da IA é erro de serviço externo: 500 é adequado.
         console.error("ERRO AO CORRIGIR COM IA", err);
-        return res.status(500).json({
-            success: false,
-            message: err.message || "Erro ao corrigir com IA."
-        });
+        return responderErro(res, err);
     }
 }
 
