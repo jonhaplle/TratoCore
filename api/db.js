@@ -1,4 +1,3 @@
-
 const { Pool } = require("pg");
 const path = require("path");
 
@@ -23,6 +22,15 @@ pool.connect()
     .then(async client => {
         try {
             console.log("PostgreSQL conectado");
+
+            // A entrevista inteligente e a preparação do anúncio leem e
+            // gravam a observação do vendedor. Esta coluna é necessária em
+            // todos os ambientes, não apenas no Render.
+            await client.query(`
+                ALTER TABLE products
+                ADD COLUMN IF NOT EXISTS seller_observation TEXT
+            `);
+            console.log("products.seller_observation verificada");
 
             if (process.env.RENDER === "true") {
                 await client.query(`
