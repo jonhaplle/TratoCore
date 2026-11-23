@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0">
+
+    <title>Pareamento TratoCap — Trato Core</title>
+
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="pareamento.css">
+</head>
+
+<body>
+
+<header class="topo">
+
+    <div>
+        <h1>TRATO CORE</h1>
+        <p>Pareamento de aparelhos TratoCap</p>
+    </div>
+
+    <nav>
+        <a href="index.html">Novo Produto</a>
+        <a href="produtos.html">Produtos</a>
+        <a href="pareamento.html" class="ativo">Pareamento</a>
+    </nav>
+
+</header>
+
+<main class="pareamento-conteudo">
+
+    <!--
+        Aviso de HTTPS.
+        A chave administrativa trafega no header Authorization. Em uma
+        conexão sem TLS ela poderia ser interceptada, por isso a página
+        bloqueia o uso fora de HTTPS (localhost é exceção para testes).
+    -->
+    <div id="avisoInseguro" class="aviso-seguranca" hidden>
+        <strong>Conexão não segura.</strong>
+        Esta página envia a chave administrativa. Use <code>https://</code>
+        em produção. Em <code>localhost</code> o teste local é permitido.
+    </div>
+
+    <!-- ==========================================================
+         GERAR CÓDIGO
+         ========================================================== -->
+    <section class="cartao">
+
+        <h2>Gerar código de pareamento</h2>
+
+        <p class="descricao">
+            O código vale por 10 minutos e serve para um único aparelho.
+            Digite-o no aplicativo TratoCap, em <strong>Configurações</strong>.
+        </p>
+
+        <div class="campo">
+            <label for="adminKey">Chave administrativa</label>
+
+            <input
+                type="password"
+                id="adminKey"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Chave fornecida pelo administrador">
+
+            <small class="dica">
+                Mantida apenas em memória. Apagada da tela ao exibir o código.
+            </small>
+        </div>
+
+        <div class="campo">
+            <label for="apelido">Nome do aparelho (opcional)</label>
+
+            <input
+                type="text"
+                id="apelido"
+                autocomplete="off"
+                maxlength="80"
+                placeholder="Ex.: Celular do balcão">
+        </div>
+
+        <button type="button" id="btnGerar" class="botao-primario">
+            GERAR CÓDIGO
+        </button>
+
+        <div id="resultadoCodigo" class="resultado" hidden></div>
+
+        <div id="mensagemGerar" class="mensagem" hidden></div>
+
+    </section>
+
+    <!-- ==========================================================
+         APARELHOS PAREADOS
+         ========================================================== -->
+    <section class="cartao">
+
+        <h2>Aparelhos pareados</h2>
+
+        <p class="descricao">
+            Um aparelho revogado deixa de acessar as rotas protegidas.
+            É preciso pareá-lo novamente para voltar a usar.
+        </p>
+
+        <button type="button" id="btnListar" class="botao-secundario">
+            ATUALIZAR LISTA
+        </button>
+
+        <div id="mensagemLista" class="mensagem" hidden></div>
+
+        <div class="tabela-wrapper">
+            <table id="tabelaDispositivos" hidden>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Apelido</th>
+                        <th>Criado em</th>
+                        <th>Último uso</th>
+                        <th>Situação</th>
+                        <th>Ação</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <p id="listaVazia" class="lista-vazia" hidden>
+            Nenhum aparelho pareado até agora.
+        </p>
+
+    </section>
+
+</main>
+
+<script src="pareamento.js"></script>
+
+</body>
+
+</html>
