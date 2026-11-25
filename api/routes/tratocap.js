@@ -481,6 +481,32 @@ async function importarAlbum(album, imported, skipped) {
             return;
         }
 
+        // C3 — Reconciliação por client_uuid quando NÃO há marcador.
+        //
+        // Antes: sem `.tratocore-import.json`, `product` ficava null mesmo
+        // havendo imagens deste álbum já vinculadas a um produto (caso dos
+        // IDs 210/211). Sem produto, o caminho "Nenhuma foto nova" caía no
+        // skip silencioso e o marcador NUNCA era gravado — o álbum ficava
+        // para sempre como `imported: false`.
+        if (!product) {
+            for (const file of files) {
+                let meta = {};
+                try { meta = JSON.parse(fs.readFileSync(file + ".json", "utf8")); } catch (_) {}
+
+                if (!meta.client_uuid) continue;
+
+                const imagemExistente = await ProductImageService.getByClientUuid(meta.client_uuid);
+
+                if (imagemExistente?.product_id) {
+                    product = await ProductService.getById(imagemExistente.product_id);
+
+                    // `getById` pode devolver null se o produto foi removido.
+                    // Nesse caso seguimos sem produto e o fluxo normal decide.
+                    if (product) break;
+                }
+            }
+        }
+
         const existingImages = product
             ? await ProductImageService.getByProductId(product.id)
             : [];
@@ -517,7 +543,47 @@ async function importarAlbum(album, imported, skipped) {
         }
 
         if (!newFiles.length) {
-            if (product) await SyncQueue.markAlbumImported(album, product.id);
+            // C3 — Nenhuma foto nova, mas o produto já existe.
+            //
+            // Antes: só a fila era marcada e o `.tratocore-import.json` NUNCA
+            // era gravado. Resultado: o álbum ficava para sempre como
+            // `imported: false` em /api/tratocap/albums, e a próxima
+            // recuperação tentava importá-lo de novo.
+            //
+            // Agora gravamos o marcador para refletir o estado real. O
+            // comportamento continua idempotente: nenhum produto é criado,
+            // nenhuma imagem é duplicada, e um marcador válido existente
+            // NÃO é sobrescrito.
+            if (product) {
+                await SyncQueue.markAlbumImported(album, product.id);
+
+                if (!fs.existsSync(markerPath)) {
+                    const marcadorConsolidado = {
+                        album,
+                        product_id: product.id,
+                        images: existingImages.length,
+                        new_images: 0,
+                        imported_at: new Date().toISOString(),
+                        incremental: true
+                    };
+
+                    fs.writeFileSync(markerPath, JSON.stringify(marcadorConsolidado, null, 2), "utf8");
+                }
+
+                // `product` pode ter vindo do marcador ou do client_uuid.
+                // O álbum está vinculado: não é um "skip" silencioso.
+                skipped.push({
+                    album,
+                    reason: "Nenhuma foto nova",
+                    product_id: product.id,
+                    vinculado: true,
+                    data: marker
+                });
+
+                return;
+            }
+
+            // Sem produto associado: realmente nada a fazer.
             skipped.push({ album, reason: "Nenhuma foto nova", data: marker });
             return;
         }
@@ -535,6 +601,28 @@ async function importarAlbum(album, imported, skipped) {
                 product_type: "",
                 ai_confidence: 0
             });
+
+            // Marca o produto recém-criado como pertencente a este álbum
+            // ANTES de processar as imagens. Se a conversão de uma foto
+            // falhar logo abaixo (sharp, disco, memória), o produto já está
+            // identificado: a próxima tentativa o reencontra pelo marcador em
+            // vez de criar um segundo — que era a origem dos IDs 210/211.
+            try {
+                if (!fs.existsSync(markerPath)) {
+                    fs.writeFileSync(markerPath, JSON.stringify({
+                        album,
+                        product_id: product.id,
+                        images: 0,
+                        new_images: 0,
+                        imported_at: new Date().toISOString(),
+                        incremental: false,
+                        pendente: true
+                    }, null, 2), "utf8");
+                }
+            } catch (_) {
+                // Sem o marcador a importação segue; a reconciliação por
+                // client_uuid continua como segunda barreira.
+            }
         }
 
         const savedImages = [];
@@ -650,7 +738,21 @@ function scheduleAutoImport(album) {
 }
 
 
-async function recoverUnimportedAlbums() {
+/**
+ * Reconstrói no disco os arquivos dos álbuns que a SyncQueue do PostgreSQL
+ * ainda considera pendentes.
+ *
+ * Necessário porque o disco do Render é efêmero: após um deploy/restart o
+ * diretório de álbuns pode estar vazio mesmo havendo fotos na fila.
+ *
+ * @param {object} [opcoes]
+ * @param {boolean} [opcoes.agendar=true] quando false, NÃO cria timers de
+ *        auto-import — o chamador é quem fará a importação (caso do C2, que
+ *        chama `recuperarAlbunsNoBoot` em seguida).
+ */
+async function recoverUnimportedAlbums({ agendar = true } = {}) {
+    const resumo = { albums: [], agendados: [], marcados: 0, erro: null };
+
     try {
         const jobs = await SyncQueue.getUnimportedProductImages();
         const albums = new Set();
@@ -723,20 +825,31 @@ async function recoverUnimportedAlbums() {
         }
 
         for (const album of albums) {
+            resumo.albums.push(album);
+
             const markerPath = path.join(albumsRoot, album, ".tratocore-import.json");
+
             if (fs.existsSync(markerPath)) {
                 const marker = JSON.parse(fs.readFileSync(markerPath, "utf8"));
-                if (marker.product_id) await SyncQueue.markAlbumImported(album, marker.product_id);
-            } else {
+
+                if (marker.product_id) {
+                    await SyncQueue.markAlbumImported(album, marker.product_id);
+                    resumo.marcados += 1;
+                }
+            } else if (agendar) {
                 scheduleAutoImport(album);
+                resumo.agendados.push(album);
             }
         }
         if (albums.size) {
             console.log(`[TratoCap] Recuperação de álbuns pendentes: ${albums.size} álbum(ns).`);
         }
     } catch (error) {
+        resumo.erro = String(error.message || "").slice(0, 200);
         console.error("[TratoCap] Falha ao recuperar álbuns persistidos:", error.message);
     }
+
+    return resumo;
 }
 
 // ------------------------------------------------------------------
@@ -938,6 +1051,10 @@ router.safeAlbumName = safeAlbumName;
 // C1 — recuperação determinística no boot (sem timer).
 // `recuperarAlbunsNoBoot` recebe `importar` opcional para permitir teste.
 router.recuperarAlbunsNoBoot = recuperarAlbunsNoBoot;
+
+// C2 — recuperação a partir da SyncQueue, usada ANTES do C1 no boot.
+// `agendar: false` evita timers concorrentes.
+router.recoverUnimportedAlbums = recoverUnimportedAlbums;
 
 // Controle de concorrência por álbum (usado pela recuperação e testável).
 router.comTravaDeAlbum = comTravaDeAlbum;
