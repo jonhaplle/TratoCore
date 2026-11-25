@@ -34,7 +34,7 @@ function criarStubs({ produto, review, importAlbums }) {
         // O middleware agora consulta dispositivos pareados antes da chave global.
         "./tratocap": {
             safeAlbumName(value) {
-                return String(value || "").trim().replace(/[\\/:*?"<>|]/g, "_").replace(/\\.+$/g, "").slice(0, 120);
+                return String(value || "").trim().replace(/[\\/:*?"<>|]/g, "_").replace(/\.+$/g, "").slice(0, 120);
             },
             async importAlbums(album) {
                 if (typeof importAlbums === "function") return importAlbums(album, estado);
