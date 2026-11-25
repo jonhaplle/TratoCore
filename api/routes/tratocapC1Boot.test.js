@@ -101,6 +101,7 @@ function carregar({ albumsRoot, getByClientUuid, markAlbumImported }) {
 
     const codigo = [
         pegar("imageFiles"),
+        pegar("marcadorValido"),
         "module.exports.recuperarAlbunsNoBoot = " + pegar("recuperarAlbunsNoBoot") + ";"
     ].join("\n\n");
 

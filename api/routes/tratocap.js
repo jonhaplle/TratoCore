@@ -882,6 +882,20 @@ async function recoverUnimportedAlbums({ agendar = true } = {}) {
 // timers pendentes DELE são cancelados; se já houver uma importação em
 // andamento, a recuperação aguarda a conclusão em vez de disparar outra.
 // ------------------------------------------------------------------
+
+/**
+ * Valida a ESTRUTURA do marcador lido do disco.
+ *
+ * `typeof obj === "object"` aceita `null` e ARRAYS — ambos inválidos para um
+ * marcador. Um arquivo contendo `[]` ou um número não deve ser tratado como
+ * marcador concluído, sob pena de o álbum ser silenciosamente ignorado.
+ */
+function marcadorValido(valor) {
+    return Boolean(valor)
+        && typeof valor === "object"
+        && !Array.isArray(valor);
+}
+
 async function recuperarAlbunsNoBoot({ importar = null } = {}) {
     const executarImportacao = importar || importAlbums;
 
@@ -945,13 +959,13 @@ async function recuperarAlbunsNoBoot({ importar = null } = {}) {
             // O auto-import agendado para este álbum nunca é necessário aqui.
             cancelarTimerDoAlbum(album);
 
-            if (corrompido || !marcadorLido || typeof marcadorLido !== "object") {
+            if (corrompido || !marcadorValido(marcadorLido)) {
                 // Marcador corrompido: NÃO criar produto por conta própria.
                 // Fica registrado para inspeção/reconciliação manual.
                 relatorio.erros.push({
                     album,
                     etapa: "marcador_corrompido",
-                    motivo: "arquivo .tratocore-import.json ilegível"
+                    motivo: "arquivo .tratocore-import.json ilegível ou em formato inesperado"
                 });
                 continue;
             }

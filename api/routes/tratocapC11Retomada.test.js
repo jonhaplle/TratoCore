@@ -461,6 +461,96 @@ test("extra: pendente=true sem product_id válido é erro controlado", async () 
 });
 
 // ==================================================================
+// Extra — marcador com estruturas JSON inválidas
+// ==================================================================
+
+test("extra: marcador `[]` (array vazio) é rejeitado como corrompido", async () => {
+    const estado = novoEstado();
+    const nome = "c11-array-" + selo();
+
+    // JSON válido, mas NÃO é um objeto — `typeof [] === "object"`
+    // deixaria passar na validação antiga.
+    criarAlbum(nome, ["uuid-c11-arr-" + selo()], { marcadorCru: "[]" });
+
+    const router = carregarRouter(estado);
+
+    try {
+        const rel = await router.recuperarAlbunsNoBoot();
+
+        assert.ok(rel.erros.some(e => e.album === nome && e.etapa === "marcador_corrompido"),
+            "array deve ser rejeitado como marcador corrompido");
+
+        assert.equal(estado.produtos.length, 0, "NENHUM produto criado");
+        assert.equal(estado.imagens.length, 0, "NENHUMA imagem vinculada");
+
+        // O arquivo permanece exatamente como estava (array vazio),
+        // para inspeção/reconciliação manual.
+        const bruto = fs.readFileSync(
+            path.join(ALBUMS, nome, ".tratocore-import.json"), "utf8"
+        );
+        assert.equal(bruto, "[]", "arquivo preservado intacto");
+    } finally {
+        limparAlbum(nome);
+    }
+});
+
+test("extra: marcador com array de objetos também é rejeitado", async () => {
+    const estado = novoEstado();
+    const nome = "c11-array2-" + selo();
+
+    criarAlbum(nome, ["uuid-c11-arr2-" + selo()], {
+        marcadorCru: JSON.stringify([{ product_id: 1, pendente: false }])
+    });
+
+    const router = carregarRouter(estado);
+
+    try {
+        const rel = await router.recuperarAlbunsNoBoot();
+
+        assert.ok(rel.erros.some(e => e.album === nome && e.etapa === "marcador_corrompido"));
+        assert.equal(estado.produtos.length, 0);
+    } finally {
+        limparAlbum(nome);
+    }
+});
+
+test("extra: marcador `null` é rejeitado como corrompido", async () => {
+    const estado = novoEstado();
+    const nome = "c11-null-" + selo();
+
+    criarAlbum(nome, ["uuid-c11-null-" + selo()], { marcadorCru: "null" });
+
+    const router = carregarRouter(estado);
+
+    try {
+        const rel = await router.recuperarAlbunsNoBoot();
+
+        assert.ok(rel.erros.some(e => e.album === nome && e.etapa === "marcador_corrompido"));
+        assert.equal(estado.produtos.length, 0);
+    } finally {
+        limparAlbum(nome);
+    }
+});
+
+test("extra: marcador com número/string é rejeitado como corrompido", async () => {
+    const estado = novoEstado();
+    const nome = "c11-scalar-" + selo();
+
+    criarAlbum(nome, ["uuid-c11-scalar-" + selo()], { marcadorCru: "42" });
+
+    const router = carregarRouter(estado);
+
+    try {
+        const rel = await router.recuperarAlbunsNoBoot();
+
+        assert.ok(rel.erros.some(e => e.album === nome && e.etapa === "marcador_corrompido"));
+        assert.equal(estado.produtos.length, 0);
+    } finally {
+        limparAlbum(nome);
+    }
+});
+
+// ==================================================================
 // Extra — não deixa timers nem travas remanescentes
 // ==================================================================
 
