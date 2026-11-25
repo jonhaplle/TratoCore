@@ -3,6 +3,7 @@ const express = require("express");
 const productService = require("../services/productService");
 const sellerListing = require("../services/seller/sellerListing.service");
 const tratocapDevice = require("../services/tratocapDevice.service");
+const tratocapRouter = require("./tratocap");
 
 const router = express.Router();
 
@@ -181,13 +182,34 @@ router.get("/interview/:album", requireSyncKey, async (req, res) => {
             return res.status(400).json({ success: false, error: "Informe o álbum." });
         }
 
-        const produto = await encontrarProdutoDoAlbum(album);
+        // Normaliza o nome antes de consultar disco ou iniciar a importação.
+        const nomeAlbum = typeof tratocapRouter.safeAlbumName === "function"
+            ? tratocapRouter.safeAlbumName(album)
+            : album;
+
+        let produto = await encontrarProdutoDoAlbum(nomeAlbum);
+
+        // O upload pode ter sido recebido, mas o auto-import ainda estar
+        // aguardando o intervalo de estabilização ou ter falhado. A entrevista
+        // tenta concluir a importação uma vez antes de declarar que não há produto.
+        if (!produto && typeof tratocapRouter.importAlbums === "function") {
+            const resultadoImportacao = await tratocapRouter.importAlbums(nomeAlbum);
+            produto = await encontrarProdutoDoAlbum(nomeAlbum);
+
+            if (!produto && resultadoImportacao?.skipped?.length) {
+                console.warn(
+                    "[Entrevista] Álbum ainda sem produto após importação:",
+                    nomeAlbum,
+                    String(resultadoImportacao.skipped[0]?.reason || "").slice(0, 160)
+                );
+            }
+        }
 
         if (!produto) {
             return res.status(404).json({
                 success: false,
                 code: "PRODUTO_NAO_ENCONTRADO",
-                error: "Nenhum produto vinculado a este álbum ainda. Envie as fotos primeiro."
+                error: "Não foi possível vincular este álbum a um produto. Verifique se as fotos terminaram de enviar e tente novamente."
             });
         }
 

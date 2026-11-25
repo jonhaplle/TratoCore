@@ -692,4 +692,9 @@ router.post("/import", async (req, res, next) => {
 const recoveryTimer = setTimeout(recoverUnimportedAlbums, 5000);
 if (typeof recoveryTimer.unref === "function") recoveryTimer.unref();
 
+// Expõe o importador para fluxos internos do backend (ex.: entrevista).
+// O endpoint público continua usando suas próprias regras de autenticação.
+router.importAlbums = importAlbums;
+router.safeAlbumName = safeAlbumName;
+
 module.exports = router;

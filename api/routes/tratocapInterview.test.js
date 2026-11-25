@@ -10,7 +10,7 @@ const routesPath = require.resolve("./tratocapInterview");
 // Banco e serviços simulados
 // ------------------------------------------------------------------
 
-function criarStubs({ produto, review }) {
+function criarStubs({ produto, review, importAlbums }) {
     const estado = { updates: [], produtos: produto ? [produto] : [] };
 
     const stubs = {
@@ -32,6 +32,15 @@ function criarStubs({ produto, review }) {
             }
         },
         // O middleware agora consulta dispositivos pareados antes da chave global.
+        "./tratocap": {
+            safeAlbumName(value) {
+                return String(value || "").trim().replace(/[\\/:*?"<>|]/g, "_").replace(/\.+$/g, "").slice(0, 120);
+            },
+            async importAlbums(album) {
+                if (typeof importAlbums === "function") return importAlbums(album, estado);
+                return { success: true, imported: [], skipped: [] };
+            }
+        },
         "../services/tratocapDevice.service": {
             // Simula um dispositivo pareado válido: o middleware aceita o token.
             async validarToken(token) {
@@ -222,6 +231,39 @@ function reviewColecionavel() {
 const PRODUTO = { id: 501, title: "Produto de teste", ml_attributes: null, seller_observation: null };
 
 // ------------------------------------------------------------------
+// Recuperação de álbum pendente antes de abrir a entrevista
+
+test("entrevista: importa álbum pendente e carrega perguntas na mesma chamada", async () => {
+    const { stubs } = criarStubs({
+        produto: null,
+        review: reviewSmartphone(),
+        importAlbums: async (album, estado) => {
+            assert.equal(album, "Produto_01");
+            estado.produtos.push({ ...PRODUTO, id: 777, title: "Produto 01 importado" });
+            return { success: true, imported: [{ album, product_id: 777 }], skipped: [] };
+        }
+    });
+    const router = carregar(stubs);
+    const r = await comChave(() => chamar(router, "GET", "/interview/Produto_01", autorizado()));
+    assert.equal(r.status, 200);
+    assert.equal(r.corpo.produto.id, 777);
+    assert.equal(r.corpo.produto.title, "Produto 01 importado");
+    assert.ok(r.corpo.perguntas.length > 0);
+});
+
+test("entrevista: mantém 404 claro se importação não gerar produto", async () => {
+    const { stubs } = criarStubs({
+        produto: null,
+        review: reviewSmartphone(),
+        importAlbums: async () => ({ success: true, imported: [], skipped: [{ album: "vazio", reason: "Nenhuma imagem" }] })
+    });
+    const router = carregar(stubs);
+    const r = await comChave(() => chamar(router, "GET", "/interview/vazio", autorizado()));
+    assert.equal(r.status, 404);
+    assert.equal(r.corpo.code, "PRODUTO_NAO_ENCONTRADO");
+    assert.match(r.corpo.error, /fotos terminaram de enviar/);
+});
+
 // Cenário 1 — SMARTPHONE USADO
 // ------------------------------------------------------------------
 
