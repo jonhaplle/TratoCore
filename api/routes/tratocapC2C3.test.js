@@ -190,12 +190,20 @@ test("1+2: C2 reconstrói da fila e C1 encontra os álbuns recuperados", async (
         assert.ok(fs.existsSync(path.join(ALBUMS, b, `${ub}.jpg`)), "arquivo B no disco");
 
         // (3) C1 agora ENCONTRA e importa.
+        //
+        // `recuperarAlbunsNoBoot` percorre TODO o diretório. Para o teste ser
+        // hermético e não depender de fixtures de outras execuções, filtramos
+        // o resultado pelos dois álbuns deste caso.
         const dep = await router.recuperarAlbunsNoBoot();
 
         assert.ok(dep.encontrados.includes(a), "C1 vê o álbum A após C2");
         assert.ok(dep.encontrados.includes(b), "C1 vê o álbum B após C2");
 
-        assert.equal(dep.importados.length, 2, "C1 importou os dois");
+        const importadosDoTeste = dep.importados.filter(
+            i => i.album === a || i.album === b
+        );
+
+        assert.equal(importadosDoTeste.length, 2, "C1 importou os dois deste teste");
 
         // (4) Markers gravados e produtos criados.
         assert.ok(lerMarcador(a), "marcador A gravado");
@@ -264,8 +272,11 @@ test("4: imagens já no banco sem marcador → C3 grava o marcador", async () =>
         assert.equal(marcador.product_id, 210);
         assert.equal(marcador.new_images, 0);
         assert.equal(marcador.images, 2);
-        assert.equal(marcador.incremental, true);
+        // Este álbum NÃO tinha marcador antes: incremental=false (C1.1 passou
+        // a usar Boolean(marker) em vez de constante true).
+        assert.equal(marcador.incremental, false);
         assert.ok(marcador.imported_at, "imported_at presente");
+        assert.ok(!marcador.pendente, "sem pendente: importação completa");
 
         // Fila deixa de indicar pendência.
         assert.ok(estado.marcados.some(m => m.album === nome && m.id === 210),

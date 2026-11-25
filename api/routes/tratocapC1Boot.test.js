@@ -89,6 +89,11 @@ function carregar({ albumsRoot, getByClientUuid, markAlbumImported }) {
         importTimers: new Map(),
         cancelarTimerDoAlbum: () => false,
         albumImportando: () => false,
+        // C1.1 — a retomada valida o product_id do marcador pendente e usa
+        // a mesma trava de importAlbums. Sem estes stubs o código extraído
+        // não executa.
+        ProductService: { getById: async () => null },
+        comTravaDeAlbum: (album, tarefa) => tarefa(),
         // `module` é definido aqui, não como parâmetro: o código extraído
         // referencia `module.exports` no final.
         module: { exports: {} }
