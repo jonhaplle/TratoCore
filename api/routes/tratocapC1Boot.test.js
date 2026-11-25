@@ -83,6 +83,12 @@ function carregar({ albumsRoot, getByClientUuid, markAlbumImported }) {
         ProductImageService: { getByClientUuid },
         SyncQueue: { markAlbumImported },
         sharp: null,
+        // Dependências de concorrência usadas por recuperarAlbunsNoBoot.
+        safeAlbumName: (v) => String(v || "").trim() || "Sem_Album",
+        importsEmAndamento: new Map(),
+        importTimers: new Map(),
+        cancelarTimerDoAlbum: () => false,
+        albumImportando: () => false,
         // `module` é definido aqui, não como parâmetro: o código extraído
         // referencia `module.exports` no final.
         module: { exports: {} }

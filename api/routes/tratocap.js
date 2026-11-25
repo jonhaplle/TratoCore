@@ -56,6 +56,70 @@ const router = express.Router();
 // Assim o TratoCap pode enviar várias imagens sem criar um produto parcial.
 const AUTO_IMPORT_DELAY_MS = Number(process.env.TRATOCAP_AUTO_IMPORT_DELAY_MS || 5000);
 const importTimers = new Map();
+
+// Travas de importação em andamento, por álbum.
+//
+// Existem várias entradas possíveis para `importAlbums`: o auto-import
+// agendado (setTimeout), o `/finalize`, a entrevista (`importAlbums` sob
+// demanda) e a recuperação no boot. Sem trava, duas delas podiam executar
+// `importarAlbum` do MESMO álbum ao mesmo tempo e criar dois produtos.
+//
+// `importsEmAndamento` guarda a Promise em execução; quem chega depois
+// aguarda a mesma Promise em vez de iniciar outra.
+const importsEmAndamento = new Map();
+
+/**
+ * Executa `tarefa` com exclusão mútua por álbum.
+ *
+ * - Se já houver uma importação do álbum em andamento, devolve a Promise
+ *   dela (não inicia outra e não interrompe a atual).
+ * - Falhas liberam a trava: a próxima tentativa pode executar de novo.
+ */
+function comTravaDeAlbum(album, tarefa) {
+    const chave = safeAlbumName(album);
+    const atual = importsEmAndamento.get(chave);
+
+    if (atual) return atual;
+
+    const execucao = (async () => {
+        try {
+            return await tarefa();
+        } finally {
+            importsEmAndamento.delete(chave);
+        }
+    })();
+
+    importsEmAndamento.set(chave, execucao);
+
+    return execucao;
+}
+
+/** True quando há importação em andamento para o álbum. */
+function albumImportando(album) {
+    return importsEmAndamento.has(safeAlbumName(album));
+}
+
+/**
+ * Cancela o auto-import agendado para UM álbum.
+ *
+ * Mantém a operação estreita de propósito: não limpa `importTimers` inteiro,
+ * porque o timer de outro álbum pode estar prestes a rodar e não deve ser
+ * afetado. Um timer já executando não está mais em `importTimers` (o próprio
+ * callback o remove na primeira linha), então não há como "cancelar" uma
+ * importação em andamento por engano — quem protege esse caso é a trava.
+ */
+function cancelarTimerDoAlbum(album) {
+    const chave = safeAlbumName(album);
+    const timer = importTimers.get(chave);
+
+    if (!timer) return false;
+
+    clearTimeout(timer);
+    importTimers.delete(chave);
+
+    return true;
+}
+
 const storageRoot = path.join(__dirname, "../../storage");
 const albumsRoot = path.join(storageRoot, "tratocap", "albums");
 const tempRoot = path.join(storageRoot, "tratocap", "temp");
@@ -376,7 +440,13 @@ async function importAlbums(requestedAlbum = null) {
         // Um álbum com problema NÃO pode interromper os demais.
         // Os arquivos e metadados ficam intactos para a próxima tentativa.
         try {
-            await importarAlbum(album, imported, skipped);
+            // Exclusão mútua por álbum: se outra entrada (auto-import,
+            // entrevista, boot) já está importando este álbum, aguarda a
+            // MESMA execução em vez de iniciar uma paralela — sem
+            // interromper a que já está em andamento.
+            await comTravaDeAlbum(album, () =>
+                importarAlbum(album, imported, skipped)
+            );
         } catch (error) {
             console.error(`[TratoCap] Erro ao importar o álbum "${album}":`, error.message);
 
@@ -686,8 +756,9 @@ async function recoverUnimportedAlbums() {
 //   (importação anterior concluiu mas o marcador se perdeu) e o vínculo é
 //   restaurado sem criar nada. Só importa os álbuns realmente pendentes.
 //
-// Não concorre com `scheduleAutoImport`: a limpeza de timers abaixo garante
-// que nenhum import agendado dispara durante esta execução.
+// Não concorre com `scheduleAutoImport`: antes de importar cada álbum, os
+// timers pendentes DELE são cancelados; se já houver uma importação em
+// andamento, a recuperação aguarda a conclusão em vez de disparar outra.
 // ------------------------------------------------------------------
 async function recuperarAlbunsNoBoot({ importar = null } = {}) {
     const executarImportacao = importar || importAlbums;
@@ -697,6 +768,7 @@ async function recuperarAlbunsNoBoot({ importar = null } = {}) {
         importados: [],
         jaVinculados: [],
         ignorados: [],
+        aguardando: [],
         erros: []
     };
 
@@ -731,7 +803,26 @@ async function recuperarAlbunsNoBoot({ importar = null } = {}) {
         const markerPath = path.join(albumDir, ".tratocore-import.json");
 
         if (fs.existsSync(markerPath)) {
+            // O auto-import agendado para este álbum é desnecessário.
+            cancelarTimerDoAlbum(album);
             relatorio.jaVinculados.push({ album, motivo: "marcador presente" });
+            continue;
+        }
+
+        // Há importação em andamento para este álbum? Não dispara outra:
+        // aguarda a atual terminar e reavalia o marcador.
+        if (albumImportando(album)) {
+            try {
+                await importsEmAndamento.get(safeAlbumName(album));
+
+                if (fs.existsSync(markerPath)) {
+                    relatorio.jaVinculados.push({ album, motivo: "importação em andamento concluída" });
+                } else {
+                    relatorio.aguardando.push({ album, motivo: "concluiu sem vincular" });
+                }
+            } catch (error) {
+                relatorio.erros.push({ album, etapa: "aguardar_em_andamento", motivo: String(error.message || "").slice(0, 200) });
+            }
             continue;
         }
 
@@ -767,6 +858,10 @@ async function recuperarAlbunsNoBoot({ importar = null } = {}) {
         }
 
         // Álbum realmente pendente: importa agora, sem timer.
+        // Cancela o auto-import agendado DESTE álbum para não executar duas
+        // vezes. Timers de OUTROS álbuns são preservados.
+        cancelarTimerDoAlbum(album);
+
         try {
             const resultado = await executarImportacao(album);
 
@@ -843,5 +938,12 @@ router.safeAlbumName = safeAlbumName;
 // C1 — recuperação determinística no boot (sem timer).
 // `recuperarAlbunsNoBoot` recebe `importar` opcional para permitir teste.
 router.recuperarAlbunsNoBoot = recuperarAlbunsNoBoot;
+
+// Controle de concorrência por álbum (usado pela recuperação e testável).
+router.comTravaDeAlbum = comTravaDeAlbum;
+router.albumImportando = albumImportando;
+router.cancelarTimerDoAlbum = cancelarTimerDoAlbum;
+router.importsEmAndamento = importsEmAndamento;
+router.importTimers = importTimers;
 
 module.exports = router;
