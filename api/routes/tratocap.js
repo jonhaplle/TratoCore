@@ -669,6 +669,149 @@ async function recoverUnimportedAlbums() {
     }
 }
 
+// ------------------------------------------------------------------
+// C1 — Recuperação de álbuns NO BOOT.
+//
+// Por que existe:
+//   `recoverUnimportedAlbums` apenas AGENDA a importação (`scheduleAutoImport`),
+//   que cria outro setTimeout de 5 s. Os dois timers usam `unref()`, então no
+//   Render free — onde o processo dorme — a janela de ~10 s após o boot é
+//   perdida com frequência e o álbum nunca é importado.
+//
+// Esta função importa DE FORMA SÍNCRONA (dentro do fluxo de boot), sem timer.
+//
+// Reconciliação (idempotência):
+//   Antes de importar, procura nas `product_images` uma imagem cujo
+//   `client_uuid` pertença a este álbum. Se encontrar, o produto JÁ existe
+//   (importação anterior concluiu mas o marcador se perdeu) e o vínculo é
+//   restaurado sem criar nada. Só importa os álbuns realmente pendentes.
+//
+// Não concorre com `scheduleAutoImport`: a limpeza de timers abaixo garante
+// que nenhum import agendado dispara durante esta execução.
+// ------------------------------------------------------------------
+async function recuperarAlbunsNoBoot({ importar = null } = {}) {
+    const executarImportacao = importar || importAlbums;
+
+    const relatorio = {
+        encontrados: [],
+        importados: [],
+        jaVinculados: [],
+        ignorados: [],
+        erros: []
+    };
+
+    let nomes = [];
+
+    try {
+        nomes = fs.readdirSync(albumsRoot, { withFileTypes: true })
+            .filter(entrada => entrada.isDirectory())
+            .map(entrada => entrada.name)
+            .sort();
+    } catch (error) {
+        relatorio.erros.push({ etapa: "listar_albuns", motivo: String(error.message || "").slice(0, 200) });
+        return relatorio;
+    }
+
+    relatorio.encontrados = nomes;
+
+    for (const album of nomes) {
+        const albumDir = path.join(albumsRoot, album);
+
+        try {
+            if (!imageFiles(albumDir).length) {
+                relatorio.ignorados.push({ album, motivo: "sem imagens" });
+                continue;
+            }
+        } catch (error) {
+            relatorio.ignorados.push({ album, motivo: "pasta ilegível" });
+            continue;
+        }
+
+        // Já importado pelo marcador habitual?
+        const markerPath = path.join(albumDir, ".tratocore-import.json");
+
+        if (fs.existsSync(markerPath)) {
+            relatorio.jaVinculados.push({ album, motivo: "marcador presente" });
+            continue;
+        }
+
+        // Reconciliação por client_uuid: o produto pode existir sem marcador.
+        let produtoExistente = null;
+
+        try {
+            for (const arquivo of imageFiles(albumDir)) {
+                let meta = {};
+                try { meta = JSON.parse(fs.readFileSync(arquivo + ".json", "utf8")); } catch (_) {}
+
+                if (!meta.client_uuid) continue;
+
+                const imagem = await ProductImageService.getByClientUuid(meta.client_uuid);
+
+                if (imagem?.product_id) {
+                    produtoExistente = Number(imagem.product_id);
+                    break;
+                }
+            }
+        } catch (error) {
+            relatorio.erros.push({ album, etapa: "reconciliar", motivo: String(error.message || "").slice(0, 200) });
+        }
+
+        if (produtoExistente) {
+            try {
+                await SyncQueue.markAlbumImported(album, produtoExistente);
+                relatorio.jaVinculados.push({ album, produto_id: produtoExistente, motivo: "reconciliado por client_uuid" });
+            } catch (error) {
+                relatorio.erros.push({ album, etapa: "marcar_reconciliado", motivo: String(error.message || "").slice(0, 200) });
+            }
+            continue;
+        }
+
+        // Álbum realmente pendente: importa agora, sem timer.
+        try {
+            const resultado = await executarImportacao(album);
+
+            const ids = (resultado?.imported || [])
+                .map(item => item?.product_id || item?.id)
+                .filter(Boolean);
+
+            if (ids.length) {
+                relatorio.importados.push({ album, produto_id: ids[0] });
+            } else {
+                const motivo = (resultado?.skipped || [])
+                    .map(item => item.reason)
+                    .filter(Boolean)
+                    .join("; ");
+
+                relatorio.ignorados.push({ album, motivo: motivo || "nada importado" });
+            }
+        } catch (error) {
+            relatorio.erros.push({ album, etapa: "importar", motivo: String(error.message || "").slice(0, 200) });
+        }
+    }
+
+    // Logs objetivos, sem dados sensíveis.
+    console.log("[TratoCap][C1] Álbuns encontrados:", relatorio.encontrados.length, JSON.stringify(relatorio.encontrados));
+
+    if (relatorio.importados.length) {
+        console.log("[TratoCap][C1] Importados:", JSON.stringify(relatorio.importados));
+    }
+
+    if (relatorio.jaVinculados.length) {
+        console.log("[TratoCap][C1] Já vinculados:", JSON.stringify(relatorio.jaVinculados));
+    }
+
+    if (relatorio.ignorados.length) {
+        console.log("[TratoCap][C1] Ignorados:", JSON.stringify(relatorio.ignorados));
+    }
+
+    if (relatorio.erros.length) {
+        console.error("[TratoCap][C1] Erros:", JSON.stringify(relatorio.erros));
+    }
+
+    return relatorio;
+}
+
+
 router.post("/finalize", async (req, res, next) => {
     try {
         const album = safeAlbumName(req.body && req.body.album);
@@ -696,5 +839,9 @@ if (typeof recoveryTimer.unref === "function") recoveryTimer.unref();
 // O endpoint público continua usando suas próprias regras de autenticação.
 router.importAlbums = importAlbums;
 router.safeAlbumName = safeAlbumName;
+
+// C1 — recuperação determinística no boot (sem timer).
+// `recuperarAlbunsNoBoot` recebe `importar` opcional para permitir teste.
+router.recuperarAlbunsNoBoot = recuperarAlbunsNoBoot;
 
 module.exports = router;

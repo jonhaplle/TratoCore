@@ -492,7 +492,7 @@ test("segurança: sem chave de sincronização retorna 401", async () => {
     assert.equal(r.status, 401);
 });
 
-test("segurança: token inválido sem chave global retorna 503", async () => {
+test("segurança: token inválido sem chave global retorna 401 REVOGADO", async () => {
     const { stubs } = criarStubs({ produto: PRODUTO, review: reviewSmartphone() });
     const router = carregar(stubs);
 
@@ -500,12 +500,13 @@ test("segurança: token inválido sem chave global retorna 503", async () => {
         headers: { authorization: "Bearer errada" }
     }));
 
-    // Token curto: o stub de validarToken rejeita e não há chave global -> falha fechada.
-    assert.equal(r.status, 503);
+    // Credencial enviada e não reconhecida: inválida, não indisponível.
+    assert.equal(r.status, 401);
+    assert.equal(r.corpo.code, "REVOGADO");
 
 });
 
-test("segurança: sem dispositivo e sem chave global retorna 503", async () => {
+test("segurança: sem dispositivo e sem chave global retorna 401 REVOGADO", async () => {
     const anterior = process.env.TRATOCAP_SYNC_KEY;
     delete process.env.TRATOCAP_SYNC_KEY;
 
@@ -516,8 +517,8 @@ test("segurança: sem dispositivo e sem chave global retorna 503", async () => {
         const r = await chamar(router, "GET", "/interview/album-x", {
             headers: { authorization: "Bearer curto" }
         });
-        assert.equal(r.status, 503);
-        assert.equal(r.corpo.code, "ATIVACAO_PENDENTE");
+        assert.equal(r.status, 401);
+        assert.equal(r.corpo.code, "REVOGADO");
     } finally {
         if (anterior !== undefined) process.env.TRATOCAP_SYNC_KEY = anterior;
     }
