@@ -242,6 +242,27 @@ app.listen(PORT, () => {
         try {
             const tratocap = require("./routes/tratocap");
 
+            // 1) C2 - reconstroi no disco o que a SyncQueue considera pendente.
+            //
+            // O disco do Render é efêmero: após um deploy/restart o diretório
+            // de álbuns pode estar vazio mesmo havendo fotos na fila. Sem
+            // esta etapa, o C1 (que lista o DIRETÓRIO) via zero álbuns.
+            //
+            // `agendar: false` impede que timers de auto-import sejam criados
+            // aqui: quem importa em seguida é o C1, com a trava por álbum.
+            if (typeof tratocap.recoverUnimportedAlbums === "function") {
+                const recuperados = await tratocap.recoverUnimportedAlbums({ agendar: false });
+
+                console.log(
+                    "[TratoCap][C2] Fila reconstruída:",
+                    (recuperados?.albums || []).length,
+                    "álbum(ns)",
+                    JSON.stringify(recuperados?.albums || [])
+                );
+            }
+
+            // 2) C1 - importa com a trava de concorrência, agora vendo o disco
+            // já reconstruído pela etapa acima.
             if (typeof tratocap.recuperarAlbunsNoBoot === "function") {
                 await tratocap.recuperarAlbunsNoBoot();
             }
