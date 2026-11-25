@@ -228,4 +228,26 @@ app.listen(PORT, () => {
     console.log("");
     console.log("======================================");
 
+
+    // ------------------------------------------------------------------
+    // C1 - recuperação determinística dos álbuns do TratoCap.
+    //
+    // Roda uma vez, logo após o servidor começar a escutar. Não usa timer:
+    // o scheduleAutoImport original (setTimeout + unref) se perdia quando
+    // o Render entrava em sleep, deixando álbuns sem produto para sempre.
+    //
+    // Falha aqui NÃO derruba o servidor: apenas registra o erro.
+    // ------------------------------------------------------------------
+    (async () => {
+        try {
+            const tratocap = require("./routes/tratocap");
+
+            if (typeof tratocap.recuperarAlbunsNoBoot === "function") {
+                await tratocap.recuperarAlbunsNoBoot();
+            }
+        } catch (erro) {
+            console.error("[TratoCap][C1] Falha na recuperação de boot:", String(erro.message || "").slice(0, 200));
+        }
+    })();
+
 });
