@@ -120,7 +120,14 @@ function cancelarTimerDoAlbum(album) {
     return true;
 }
 
-const storageRoot = path.join(__dirname, "../../storage");
+// Raiz do armazenamento. Padrão: <repo>/storage (usado em produção).
+//
+// `TRATOCAP_STORAGE_ROOT` permite isolar o diretório em testes — sem ele,
+// vários arquivos de teste que chamam `recuperarAlbunsNoBoot()` (que varre o
+// diretório inteiro) enxergam os fixtures uns dos outros ao rodar em paralelo.
+const storageRoot = process.env.TRATOCAP_STORAGE_ROOT
+    ? path.resolve(process.env.TRATOCAP_STORAGE_ROOT)
+    : path.join(__dirname, "../../storage");
 const albumsRoot = path.join(storageRoot, "tratocap", "albums");
 const tempRoot = path.join(storageRoot, "tratocap", "temp");
 const originalsRoot = path.join(storageRoot, "originals");
@@ -1011,7 +1018,13 @@ async function recuperarAlbunsNoBoot({ importar = null } = {}) {
         }
 
         // Reconciliação por client_uuid: o produto pode existir sem marcador.
-        let produtoExistente = null;
+        //
+        // C1.2 — consultamos TODAS as fotos do álbum, não apenas a primeira.
+        // Um álbum pode ter fotos vinculadas a produtos DIFERENTES (caso do
+        // "Produto 01", com as fotos nos produtos 210 e 211). Escolher a
+        // primeira que aparecer seria arbitrário e o marcador poderia apontar
+        // para o produto errado.
+        const produtosEncontrados = new Set();
 
         try {
             for (const arquivo of imageFiles(albumDir)) {
@@ -1023,13 +1036,16 @@ async function recuperarAlbunsNoBoot({ importar = null } = {}) {
                 const imagem = await ProductImageService.getByClientUuid(meta.client_uuid);
 
                 if (imagem?.product_id) {
-                    produtoExistente = Number(imagem.product_id);
-                    break;
+                    produtosEncontrados.add(Number(imagem.product_id));
                 }
             }
         } catch (error) {
             relatorio.erros.push({ album, etapa: "reconciliar", motivo: String(error.message || "").slice(0, 200) });
         }
+
+        const produtoExistente = produtosEncontrados.size === 1
+            ? [...produtosEncontrados][0]
+            : null;
 
         // C1.1 — a retomada reutiliza o produto do marcador pendente.
         // Antes da importação, confirmamos que o produto ainda existe:
@@ -1072,10 +1088,54 @@ async function recuperarAlbunsNoBoot({ importar = null } = {}) {
             }
         }
 
+        // C1.2 — mais de um produto para o mesmo álbum: NÃO escolher sozinho.
+        // O marcador apontaria para um cadastro possivelmente incorreto e a
+        // entrevista gravaria respostas no produto errado.
+        if (produtosEncontrados.size > 1 && !marcadorPendente) {
+            relatorio.erros.push({
+                album,
+                etapa: "produtos_duplicados",
+                motivo: "as fotos do álbum estão em " + produtosEncontrados.size +
+                    " produtos (" + [...produtosEncontrados].sort((a, b) => a - b).join(", ") +
+                    ") — reconciliação manual necessária"
+            });
+            continue;
+        }
+
         if (produtoExistente && !marcadorPendente) {
             try {
                 await SyncQueue.markAlbumImported(album, produtoExistente);
-                relatorio.jaVinculados.push({ album, produto_id: produtoExistente, motivo: "reconciliado por client_uuid" });
+
+                // C1.2 — grava o marcador que faltava.
+                //
+                // Antes, a reconciliação marcava a SyncQueue e saía sem gravar
+                // `.tratocore-import.json`. Consequência: /api/tratocap/albums
+                // mostrava `imported: false` e a entrevista não encontrava o
+                // produto, mesmo com todas as imagens já vinculadas.
+                const jaTemMarcador = fs.existsSync(markerPath);
+
+                if (!jaTemMarcador) {
+                    let totalImagens = 0;
+                    try { totalImagens = imageFiles(albumDir).length; } catch (_) {}
+
+                    const marcadorReconciliado = {
+                        album,
+                        product_id: produtoExistente,
+                        images: totalImagens,
+                        new_images: 0,
+                        imported_at: new Date().toISOString(),
+                        incremental: false,
+                        reconciliado: true
+                    };
+
+                    fs.writeFileSync(markerPath, JSON.stringify(marcadorReconciliado, null, 2), "utf8");
+                }
+
+                relatorio.jaVinculados.push({
+                    album,
+                    produto_id: produtoExistente,
+                    motivo: jaTemMarcador ? "reconciliado por client_uuid" : "reconciliado e marcador gravado"
+                });
             } catch (error) {
                 relatorio.erros.push({ album, etapa: "marcar_reconciliado", motivo: String(error.message || "").slice(0, 200) });
             }

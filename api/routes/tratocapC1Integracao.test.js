@@ -19,6 +19,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const Module = require("node:module");
+const { comIsolamento } = require("./__testIsolation");
 
 const RAIZ = path.join(__dirname, "..", "..");
 
@@ -53,7 +54,7 @@ function criarEstado() {
  * Usa `Module._load` apenas durante a carga, restaurando logo depois —
  * assim outros arquivos de teste não são afetados.
  */
-function carregarRouterReal(estado, { albumsRoot, originalsRoot, thumbsRoot }) {
+async function carregarRouterReal(estado, { albumsRoot, originalsRoot, thumbsRoot }) {
     const mapa = {};
 
     const originalLoad = Module._load;
@@ -157,7 +158,7 @@ function carregarRouterReal(estado, { albumsRoot, originalsRoot, thumbsRoot }) {
         const alvo = require.resolve(path.join(RAIZ, "api", "routes", "tratocap.js"));
         delete require.cache[alvo];
 
-        router = require(alvo);
+        router = await comIsolamento(() => require(alvo));
     } finally {
         Module._load = originalLoad;
     }
@@ -215,7 +216,7 @@ test("INTEGRAÇÃO: duas importAlbums() concorrentes criam UM único produto", a
         { nome: "foto1.jpg", client_uuid: uuidAlbum }
     ]);
 
-    const router = carregarRouterReal(estado, {
+    const router = await carregarRouterReal(estado, {
         albumsRoot: path.join(process.cwd(), "storage", "tratocap", "albums"),
         originalsRoot: path.join(process.cwd(), "storage", "originals"),
         thumbsRoot: path.join(process.cwd(), "storage", "thumbs")
@@ -270,7 +271,7 @@ test("INTEGRAÇÃO: falha na primeira importação permite nova tentativa", asyn
         { nome: "foto2.jpg", client_uuid: uuidAlbum }
     ]);
 
-    const router = carregarRouterReal(estado, {
+    const router = await carregarRouterReal(estado, {
         albumsRoot: path.join(process.cwd(), "storage", "tratocap", "albums"),
         originalsRoot: path.join(process.cwd(), "storage", "originals"),
         thumbsRoot: path.join(process.cwd(), "storage", "thumbs")
@@ -317,7 +318,7 @@ test("INTEGRAÇÃO: álbuns diferentes são processados em paralelo", async () =
     prepararAlbum(nomeA, [{ nome: "a.jpg", client_uuid: `uuid-${selo}-pa` }]);
     prepararAlbum(nomeB, [{ nome: "b.jpg", client_uuid: `uuid-${selo}-pb` }]);
 
-    const router = carregarRouterReal(estado, {
+    const router = await carregarRouterReal(estado, {
         albumsRoot: path.join(process.cwd(), "storage", "tratocap", "albums"),
         originalsRoot: path.join(process.cwd(), "storage", "originals"),
         thumbsRoot: path.join(process.cwd(), "storage", "thumbs")

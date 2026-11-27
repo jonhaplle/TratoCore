@@ -10,6 +10,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const Module = require("node:module");
+const { comIsolamento } = require("./__testIsolation");
 
 const RAIZ = path.join(__dirname, "..", "..");
 
@@ -116,7 +117,7 @@ test("CONTRA-PROVA: sem a trava, duas importações concorrentes criam DOIS prod
 
     try {
         delete require.cache[TEMP];
-        router = require(TEMP);
+        router = await comIsolamento(() => require(TEMP));
     } finally {
         Module._load = originalLoad;
     }

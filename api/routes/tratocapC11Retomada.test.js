@@ -7,9 +7,13 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const Module = require("node:module");
+const { comIsolamento, criarStorageIsolado } = require("./__testIsolation");
 
 const RAIZ = path.join(__dirname, "..", "..");
-const ALBUMS = path.join(RAIZ, "storage", "tratocap", "albums");
+// Storage exclusivo deste arquivo: isola os fixtures do diretório global,
+// que outros testes varrem em paralelo.
+const STORAGE = criarStorageIsolado("c11");
+const ALBUMS = path.join(STORAGE, "tratocap", "albums");
 
 const JPEG = Buffer.from([
     0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x00, 0x00
@@ -21,7 +25,7 @@ const selo = () => Date.now() + "-" + Math.random().toString(36).slice(2, 7);
 // Carregamento com stubs
 // ------------------------------------------------------------------
 
-function carregarRouter(estado) {
+async function carregarRouter(estado) {
     const mapa = {};
     const original = Module._load;
 
@@ -90,7 +94,7 @@ function carregarRouter(estado) {
     try {
         const alvo = require.resolve(path.join(RAIZ, "api", "routes", "tratocap.js"));
         delete require.cache[alvo];
-        router = require(alvo);
+        router = await comIsolamento(() => require(alvo));
     } finally {
         Module._load = original;
     }
@@ -169,7 +173,7 @@ test("1: marcador concluído NÃO é reimportado", async () => {
 
     estado.produtos.push({ id: 300, title: nome });
 
-    const router = carregarRouter(estado);
+    const router = await carregarRouter(estado);
 
     try {
         let importou = 0;
@@ -199,7 +203,7 @@ test("2: marcador pendente com produto existente é RETOMADO", async () => {
     // Produto JÁ existe (como 210), sem nenhuma imagem vinculada.
     estado.produtos.push({ id: 210, title: nome });
 
-    const router = carregarRouter(estado);
+    const router = await carregarRouter(estado);
 
     try {
         const rel = await router.recuperarAlbunsNoBoot();
@@ -236,7 +240,7 @@ test("3: marcador pendente com imagens já vinculadas não duplica nada", async 
     estado.produtos.push({ id: 211, title: nome });
     estado.imagens.push({ id: 1, product_id: 211, client_uuid: uuid });
 
-    const router = carregarRouter(estado);
+    const router = await carregarRouter(estado);
 
     try {
         const rel = await router.recuperarAlbunsNoBoot();
@@ -265,7 +269,7 @@ test("4: falha de sharp mantém o marcador pendente", async () => {
     estado.produtos.push({ id: 212, title: nome });
     estado.falharSharpAte = 1;
 
-    const router = carregarRouter(estado);
+    const router = await carregarRouter(estado);
 
     try {
         const rel = await router.recuperarAlbunsNoBoot();
@@ -300,7 +304,7 @@ test("5: novo boot após falha retoma com sucesso", async () => {
     estado.produtos.push({ id: 213, title: nome });
     estado.falharSharpAte = 1;
 
-    const router = carregarRouter(estado);
+    const router = await carregarRouter(estado);
 
     try {
         // 1º boot: falha.
@@ -334,7 +338,7 @@ test("6: sucesso grava marcador final sem pendente", async () => {
     criarAlbum(nome, ["uuid-c11-6-" + selo()], { marcador: marcadorPendente(nome, 214) });
     estado.produtos.push({ id: 214, title: nome });
 
-    const router = carregarRouter(estado);
+    const router = await carregarRouter(estado);
 
     try {
         await router.recuperarAlbunsNoBoot();
@@ -365,7 +369,7 @@ test("7: duas recuperações concorrentes geram uma única importação", async 
     criarAlbum(nome, ["uuid-c11-7-" + selo()], { marcador: marcadorPendente(nome, 215) });
     estado.produtos.push({ id: 215, title: nome });
 
-    const router = carregarRouter(estado);
+    const router = await carregarRouter(estado);
 
     try {
         await Promise.all([
@@ -392,7 +396,7 @@ test("8: marcador pendente com produto inexistente não cria outro", async () =>
     criarAlbum(nome, ["uuid-c11-8-" + selo()], { marcador: marcadorPendente(nome, 999) });
 
     // Nenhum produto com id 999.
-    const router = carregarRouter(estado);
+    const router = await carregarRouter(estado);
 
     try {
         const rel = await router.recuperarAlbunsNoBoot();
@@ -420,7 +424,7 @@ test("9: marcador corrompido gera erro sem duplicar", async () => {
 
     criarAlbum(nome, ["uuid-c11-9-" + selo()], { marcadorCru: "{ isso nao e json valido" });
 
-    const router = carregarRouter(estado);
+    const router = await carregarRouter(estado);
 
     try {
         const rel = await router.recuperarAlbunsNoBoot();
@@ -448,7 +452,7 @@ test("extra: pendente=true sem product_id válido é erro controlado", async () 
         marcador: { album: nome, pendente: true }
     });
 
-    const router = carregarRouter(estado);
+    const router = await carregarRouter(estado);
 
     try {
         const rel = await router.recuperarAlbunsNoBoot();
@@ -472,7 +476,7 @@ test("extra: marcador `[]` (array vazio) é rejeitado como corrompido", async ()
     // deixaria passar na validação antiga.
     criarAlbum(nome, ["uuid-c11-arr-" + selo()], { marcadorCru: "[]" });
 
-    const router = carregarRouter(estado);
+    const router = await carregarRouter(estado);
 
     try {
         const rel = await router.recuperarAlbunsNoBoot();
@@ -502,7 +506,7 @@ test("extra: marcador com array de objetos também é rejeitado", async () => {
         marcadorCru: JSON.stringify([{ product_id: 1, pendente: false }])
     });
 
-    const router = carregarRouter(estado);
+    const router = await carregarRouter(estado);
 
     try {
         const rel = await router.recuperarAlbunsNoBoot();
@@ -520,7 +524,7 @@ test("extra: marcador `null` é rejeitado como corrompido", async () => {
 
     criarAlbum(nome, ["uuid-c11-null-" + selo()], { marcadorCru: "null" });
 
-    const router = carregarRouter(estado);
+    const router = await carregarRouter(estado);
 
     try {
         const rel = await router.recuperarAlbunsNoBoot();
@@ -538,7 +542,7 @@ test("extra: marcador com número/string é rejeitado como corrompido", async ()
 
     criarAlbum(nome, ["uuid-c11-scalar-" + selo()], { marcadorCru: "42" });
 
-    const router = carregarRouter(estado);
+    const router = await carregarRouter(estado);
 
     try {
         const rel = await router.recuperarAlbunsNoBoot();
@@ -561,7 +565,7 @@ test("extra: retomada libera a trava e não agenda timers", async () => {
     criarAlbum(nome, ["uuid-c11-y-" + selo()], { marcador: marcadorPendente(nome, 216) });
     estado.produtos.push({ id: 216, title: nome });
 
-    const router = carregarRouter(estado);
+    const router = await carregarRouter(estado);
 
     try {
         await router.recuperarAlbunsNoBoot();
