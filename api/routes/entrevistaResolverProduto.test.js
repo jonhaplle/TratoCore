@@ -1,11 +1,11 @@
-// Testes de `resolverProdutoDoAlbum` — resolução determinística do produto.
+// Testes de `resolverProdutoDoAlbum` — resolução DETERMINÍSTICA e CONSISTENTE.
 //
-// Cobre os 5 cenários exigidos e prova que a divergência entre dois produtos
-// NUNCA resulta em escolha arbitrária.
+// C1.3: o marcador deixou de ter precedência cega. Todas as fontes
+// (marcador, imagens por client_uuid, jobs) precisam concordar.
 //
 // Carrega o módulo REAL `api/routes/tratocapInterview.js` com stubs de
-// `../db` e `../services/productService` ativos durante todo o `await`.
-// Sem banco real, sem dados de produção.
+// `../db` e `../services/productService`/`productImageService` ativos
+// durante todo o `await`. Sem banco real, sem dados de produção.
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -14,38 +14,47 @@ const path = require("node:path");
 const RAIZ = path.join(__dirname, "..", "..");
 const { comIsolamento, criarStorageIsolado } = require("./__testIsolation");
 
-// Storage exclusivo deste arquivo: isola os fixtures do diretório global,
-// que outros testes varrem em paralelo.
-const STORAGE = criarStorageIsolado("resolver");
+// Storage exclusivo deste arquivo (ver __testIsolation.js).
+const STORAGE = criarStorageIsolado("resolver13");
 const ALBUMS = path.join(STORAGE, "tratocap", "albums");
 
 const selo = () => Date.now() + "-" + Math.random().toString(36).slice(2, 7);
 
 // ------------------------------------------------------------------
-// Stubs em require.cache
-//
-// O módulo faz `require("../db")` DENTRO de `resolverProdutoDoAlbum`, ou
-// seja, a resolução acontece na chamada — não no carregamento. O cache
-// precisa permanecer trocado durante todo o `await`.
+// Stubs
 // ------------------------------------------------------------------
 
+/**
+ * Executa `acao` com stubs de db, productService e productImageService.
+ *
+ * @param {object} opcoes
+ * @param {Array} opcoes.linhasDoBanco linhas de tratocap_sync_jobs
+ * @param {object} opcoes.produtos mapa id -> produto
+ * @param {object} opcoes.imagens mapa client_uuid -> { product_id }
+ * @param {boolean} opcoes.falharBanco
+ */
 async function comStubs(opcoes, acao) {
-    const { linhasDoBanco = [], produtos = {}, falharBanco = false } = opcoes || {};
+    const {
+        linhasDoBanco = [],
+        produtos = {},
+        imagens = {},
+        falharBanco = false
+    } = opcoes || {};
 
     const caminhoDb = require.resolve(path.join(RAIZ, "api", "db.js"));
     const caminhoProduto = require.resolve(path.join(RAIZ, "api", "services", "productService.js"));
+    const caminhoImagem = require.resolve(path.join(RAIZ, "api", "services", "productImageService.js"));
     const caminhoAlvo = require.resolve(path.join(RAIZ, "api", "routes", "tratocapInterview.js"));
 
-    const anteriores = {
-        db: require.cache[caminhoDb],
-        produto: require.cache[caminhoProduto],
-        alvo: require.cache[caminhoAlvo]
-    };
+    const caminhos = { db: caminhoDb, produto: caminhoProduto, imagem: caminhoImagem, alvo: caminhoAlvo };
+    const anteriores = {};
+
+    for (const [nome, caminho] of Object.entries(caminhos)) {
+        anteriores[nome] = require.cache[caminho];
+    }
 
     require.cache[caminhoDb] = {
-        id: caminhoDb,
-        filename: caminhoDb,
-        loaded: true,
+        id: caminhoDb, filename: caminhoDb, loaded: true,
         exports: {
             query: async () => {
                 if (falharBanco) throw new Error("tabela inexistente");
@@ -55,11 +64,19 @@ async function comStubs(opcoes, acao) {
     };
 
     require.cache[caminhoProduto] = {
-        id: caminhoProduto,
-        filename: caminhoProduto,
-        loaded: true,
+        id: caminhoProduto, filename: caminhoProduto, loaded: true,
         exports: {
             getById: async (id) => produtos[String(id)] || null
+        }
+    };
+
+    require.cache[caminhoImagem] = {
+        id: caminhoImagem, filename: caminhoImagem, loaded: true,
+        exports: {
+            getByClientUuid: async (uuid) => {
+                const img = imagens[uuid];
+                return img ? { id: 1, client_uuid: uuid, product_id: img.product_id } : null;
+            }
         }
     };
 
@@ -69,26 +86,41 @@ async function comStubs(opcoes, acao) {
         const mod = await comIsolamento(() => require(caminhoAlvo));
         return await acao(mod);
     } finally {
-        if (anteriores.db) require.cache[caminhoDb] = anteriores.db;
-        else delete require.cache[caminhoDb];
-
-        if (anteriores.produto) require.cache[caminhoProduto] = anteriores.produto;
-        else delete require.cache[caminhoProduto];
-
-        if (anteriores.alvo) require.cache[caminhoAlvo] = anteriores.alvo;
-        else delete require.cache[caminhoAlvo];
+        for (const [nome, caminho] of Object.entries(caminhos)) {
+            if (anteriores[nome]) require.cache[caminho] = anteriores[nome];
+            else delete require.cache[caminho];
+        }
     }
 }
 
-function criarMarcador(album, conteudo) {
+/**
+ * Cria um álbum com as fotos informadas.
+ *
+ * @param {string} album
+ * @param {Array<{uuid: string|null}>} fotos uuid null = foto sem metadados
+ * @param {object|null} marcador conteúdo do marcador (null = ausente)
+ */
+function criarAlbum(album, fotos, marcador = null) {
     const dir = path.join(ALBUMS, album);
     fs.rmSync(dir, { recursive: true, force: true });
     fs.mkdirSync(dir, { recursive: true });
 
-    if (conteudo !== undefined) {
+    fotos.forEach((foto, i) => {
+        const nome = `foto${i}.jpg`;
+        fs.writeFileSync(path.join(dir, nome), Buffer.from([0xFF, 0xD8, 0xFF, 0xD9]));
+
+        if (foto.uuid !== null) {
+            fs.writeFileSync(
+                path.join(dir, nome + ".json"),
+                JSON.stringify({ client_uuid: foto.uuid })
+            );
+        }
+    });
+
+    if (marcador) {
         fs.writeFileSync(
             path.join(dir, ".tratocore-import.json"),
-            typeof conteudo === "string" ? conteudo : JSON.stringify(conteudo)
+            JSON.stringify({ album, ...marcador })
         );
     }
 
@@ -100,127 +132,151 @@ function limparAlbum(album) {
 }
 
 // ==================================================================
-// 1 — Nenhum produto encontrado
+// 1 — Marcador correto e banco correto
 // ==================================================================
 
-test("resolverProdutoDoAlbum: sem marcador e sem jobs → null", async () => {
-    const album = "res-zero-" + selo();
-    criarMarcador(album);
+test("marcador correto + banco correto → resolve o produto", async () => {
+    const album = "c13-ok-" + selo();
+    const u1 = "uuid-a-" + selo();
+    const u2 = "uuid-b-" + selo();
 
-    try {
-        const r = await comStubs({ linhasDoBanco: [] }, (mod) => mod.resolverProdutoDoAlbum(album));
-        assert.equal(r, null, "nenhum produto deve ser resolvido");
-    } finally {
-        limparAlbum(album);
-    }
-});
-
-test("resolverProdutoDoAlbum: id existe no banco mas produto foi removido → null", async () => {
-    const album = "res-orfao-" + selo();
-    criarMarcador(album);
-
-    try {
-        const r = await comStubs(
-            { linhasDoBanco: [{ imported_product_id: 999 }], produtos: {} },
-            (mod) => mod.resolverProdutoDoAlbum(album)
-        );
-        assert.equal(r, null);
-    } finally {
-        limparAlbum(album);
-    }
-});
-
-// ==================================================================
-// 2 — Um produto encontrado
-// ==================================================================
-
-test("resolverProdutoDoAlbum: um único job → devolve o produto", async () => {
-    const album = "res-um-" + selo();
-    criarMarcador(album);
+    criarAlbum(album, [{ uuid: u1 }, { uuid: u2 }], { product_id: 210 });
 
     try {
         const r = await comStubs(
             {
-                linhasDoBanco: [{ imported_product_id: 212 }],
-                produtos: { 212: { id: 212, title: "Isqueiro" } }
+                linhasDoBanco: [{ imported_product_id: 210 }],
+                produtos: { 210: { id: 210, title: "Produto 01" } },
+                imagens: { [u1]: { product_id: 210 }, [u2]: { product_id: 210 } }
             },
             (mod) => mod.resolverProdutoDoAlbum(album)
         );
 
-        assert.ok(r.produto, "deve devolver o produto");
-        assert.equal(r.produto.id, 212);
+        assert.ok(r.produto, "deve resolver");
+        assert.equal(r.produto.id, 210);
         assert.equal(r.erro, undefined);
     } finally {
         limparAlbum(album);
     }
 });
 
-// ==================================================================
-// 3 — Dois produtos encontrados
-// ==================================================================
+test("sem marcador, mas banco consistente → resolve o produto", async () => {
+    const album = "c13-sem-marcador-" + selo();
+    const u1 = "uuid-c-" + selo();
 
-test("resolverProdutoDoAlbum: dois jobs → divergência, SEM escolher", async () => {
-    const album = "res-dois-" + selo();
-    criarMarcador(album);
+    criarAlbum(album, [{ uuid: u1 }]);
 
     try {
         const r = await comStubs(
             {
-                linhasDoBanco: [{ imported_product_id: 211 }, { imported_product_id: 210 }],
-                produtos: { 210: { id: 210 }, 211: { id: 211 } }
+                linhasDoBanco: [{ imported_product_id: 212 }],
+                produtos: { 212: { id: 212 } },
+                imagens: { [u1]: { product_id: 212 } }
             },
             (mod) => mod.resolverProdutoDoAlbum(album)
         );
 
-        assert.equal(r.erro, "produtos_duplicados", "deve reportar divergência");
-        assert.equal(r.produto, undefined, "NÃO devolve um produto escolhido");
-        assert.deepEqual(r.produtos, [210, 211], "lista ordenada e completa");
+        assert.equal(r.produto.id, 212);
     } finally {
         limparAlbum(album);
     }
 });
 
-test("resolverProdutoDoAlbum: ordem dos jobs no banco NÃO altera o resultado", async () => {
-    const album = "res-ordem-" + selo();
-    criarMarcador(album);
+// ==================================================================
+// 2 — Marcador divergente do banco
+// ==================================================================
+
+test("marcador diz 210 mas as imagens estão no 211 → divergência", async () => {
+    const album = "c13-marcador-div-" + selo();
+    const u1 = "uuid-d-" + selo();
+
+    criarAlbum(album, [{ uuid: u1 }], { product_id: 210 });
 
     try {
-        const r1 = await comStubs(
+        const r = await comStubs(
             {
-                linhasDoBanco: [{ imported_product_id: 211 }, { imported_product_id: 210 }],
-                produtos: { 210: { id: 210 }, 211: { id: 211 } }
+                linhasDoBanco: [{ imported_product_id: 211 }],
+                produtos: { 210: { id: 210 }, 211: { id: 211 } },
+                imagens: { [u1]: { product_id: 211 } }
             },
             (mod) => mod.resolverProdutoDoAlbum(album)
         );
 
-        const r2 = await comStubs(
-            {
-                linhasDoBanco: [{ imported_product_id: 210 }, { imported_product_id: 211 }],
-                produtos: { 210: { id: 210 }, 211: { id: 211 } }
-            },
-            (mod) => mod.resolverProdutoDoAlbum(album)
-        );
-
-        assert.deepEqual(r1.produtos, r2.produtos, "mesma lista independente da ordem");
-        assert.equal(r1.erro, r2.erro);
+        assert.equal(r.erro, "produtos_duplicados", "marcador não pode esconder o banco");
+        assert.ok(!r.produto, "não devolve produto");
+        assert.deepEqual(r.produtos, [210, 211], "inclui o do marcador e o do banco");
+        assert.equal(r.marcador, 210, "reporta o valor do marcador");
+        assert.deepEqual(r.imagens, [211], "reporta o valor das imagens");
     } finally {
         limparAlbum(album);
     }
 });
 
-test("resolverProdutoDoAlbum: três produtos também divergem", async () => {
-    const album = "res-tres-" + selo();
-    criarMarcador(album);
+test("marcador aponta para produto que não existe mais → divergência com o banco", async () => {
+    const album = "c13-marcador-morto-" + selo();
+    const u1 = "uuid-e-" + selo();
+
+    criarAlbum(album, [{ uuid: u1 }], { product_id: 555 });
 
     try {
         const r = await comStubs(
             {
-                linhasDoBanco: [
-                    { imported_product_id: 3 },
-                    { imported_product_id: 1 },
-                    { imported_product_id: 2 }
-                ],
-                produtos: { 1: {}, 2: {}, 3: {} }
+                linhasDoBanco: [{ imported_product_id: 212 }],
+                produtos: { 212: { id: 212 } },     // 555 não existe
+                imagens: { [u1]: { product_id: 212 } }
+            },
+            (mod) => mod.resolverProdutoDoAlbum(album)
+        );
+
+        // O marcador cita 555; o banco diz 212. Divergência — não escolher.
+        assert.equal(r.erro, "produtos_duplicados");
+        assert.deepEqual(r.produtos, [212, 555]);
+    } finally {
+        limparAlbum(album);
+    }
+});
+
+// ==================================================================
+// 3 — Imagens divididas entre dois produtos
+// ==================================================================
+
+test("fotos do álbum em 210 e 211 (caso Produto 01) → divergência", async () => {
+    const album = "c13-divididas-" + selo();
+    const u1 = "uuid-f1-" + selo();
+    const u2 = "uuid-f2-" + selo();
+
+    criarAlbum(album, [{ uuid: u1 }, { uuid: u2 }]);
+
+    try {
+        const r = await comStubs(
+            {
+                linhasDoBanco: [],
+                produtos: { 210: { id: 210 }, 211: { id: 211 } },
+                imagens: { [u1]: { product_id: 210 }, [u2]: { product_id: 211 } }
+            },
+            (mod) => mod.resolverProdutoDoAlbum(album)
+        );
+
+        assert.equal(r.erro, "produtos_duplicados");
+        assert.deepEqual(r.produtos, [210, 211]);
+        assert.deepEqual(r.imagens, [210, 211], "as duas fontes de imagem aparecem");
+    } finally {
+        limparAlbum(album);
+    }
+});
+
+test("três produtos nas imagens → divergência", async () => {
+    const album = "c13-tres-" + selo();
+    const us = ["uuid-g1-" + selo(), "uuid-g2-" + selo(), "uuid-g3-" + selo()];
+
+    criarAlbum(album, us.map(u => ({ uuid: u })));
+
+    try {
+        const r = await comStubs(
+            {
+                linhasDoBanco: [],
+                produtos: { 1: {}, 2: {}, 3: {} },
+                imagens: { [us[0]]: { product_id: 1 }, [us[1]]: { product_id: 2 }, [us[2]]: { product_id: 3 } }
             },
             (mod) => mod.resolverProdutoDoAlbum(album)
         );
@@ -233,143 +289,194 @@ test("resolverProdutoDoAlbum: três produtos também divergem", async () => {
 });
 
 // ==================================================================
-// 4 — Marcador válido tem precedência
+// 4 — Imagem ainda pendente de sincronização
 // ==================================================================
 
-test("resolverProdutoDoAlbum: marcador válido tem precedência sobre o banco", async () => {
-    const album = "res-marcador-" + selo();
-    criarMarcador(album, { album, product_id: 210, imported_at: "2026-11-24T00:00:00.000Z" });
+test("foto do álbum sem imagem no banco → sincronizacao_pendente", async () => {
+    const album = "c13-pendente-" + selo();
+    const u1 = "uuid-h1-" + selo();
+    const u2 = "uuid-h2-" + selo();
+
+    criarAlbum(album, [{ uuid: u1 }, { uuid: u2 }]);
 
     try {
         const r = await comStubs(
             {
-                linhasDoBanco: [{ imported_product_id: 999 }],
-                produtos: { 210: { id: 210, title: "Produto 01" }, 999: { id: 999 } }
+                linhasDoBanco: [{ imported_product_id: 210 }],
+                produtos: { 210: { id: 210 } },
+                // u2 ainda não existe no banco.
+                imagens: { [u1]: { product_id: 210 } }
             },
             (mod) => mod.resolverProdutoDoAlbum(album)
         );
 
-        assert.equal(r.produto.id, 210, "marcador vence");
-        assert.equal(r.erro, undefined, "sem divergência — marcador decidiu");
+        assert.equal(r.erro, "sincronizacao_pendente");
+        assert.equal(r.pendentes, 1, "uma foto pendente");
+        assert.ok(!r.produto, "não decide com informação incompleta");
     } finally {
         limparAlbum(album);
     }
 });
 
-// ==================================================================
-// 5 — Marcador inválido cai para o banco
-// ==================================================================
+test("foto sem metadados (client_uuid ausente) → sincronizacao_pendente", async () => {
+    const album = "c13-sem-meta-" + selo();
+    const u1 = "uuid-i1-" + selo();
 
-test("resolverProdutoDoAlbum: marcador corrompido cai para a consulta no banco", async () => {
-    const album = "res-corrompido-" + selo();
-    criarMarcador(album, "{ nao e json");
+    criarAlbum(album, [{ uuid: u1 }, { uuid: null }]);
 
     try {
         const r = await comStubs(
-            { linhasDoBanco: [{ imported_product_id: 212 }], produtos: { 212: { id: 212 } } },
+            {
+                linhasDoBanco: [{ imported_product_id: 210 }],
+                produtos: { 210: { id: 210 } },
+                imagens: { [u1]: { product_id: 210 } }
+            },
             (mod) => mod.resolverProdutoDoAlbum(album)
         );
 
-        assert.equal(r.produto.id, 212, "usa o banco quando o marcador é ilegível");
-    } finally {
-        limparAlbum(album);
-    }
-});
-
-test("resolverProdutoDoAlbum: marcador com product_id inválido cai para o banco", async () => {
-    const album = "res-id-invalido-" + selo();
-    criarMarcador(album, { album, product_id: "abc" });
-
-    try {
-        const r = await comStubs(
-            { linhasDoBanco: [{ imported_product_id: 210 }], produtos: { 210: { id: 210 } } },
-            (mod) => mod.resolverProdutoDoAlbum(album)
-        );
-
-        assert.equal(r.produto.id, 210);
-    } finally {
-        limparAlbum(album);
-    }
-});
-
-test("resolverProdutoDoAlbum: marcador apontando para produto inexistente cai para o banco", async () => {
-    const album = "res-marcador-orfao-" + selo();
-    criarMarcador(album, { album, product_id: 555 });
-
-    try {
-        const r = await comStubs(
-            { linhasDoBanco: [{ imported_product_id: 212 }], produtos: { 212: { id: 212 } } },
-            (mod) => mod.resolverProdutoDoAlbum(album)
-        );
-
-        assert.equal(r.produto.id, 212);
+        assert.equal(r.erro, "sincronizacao_pendente");
+        assert.equal(r.pendentes, 1);
     } finally {
         limparAlbum(album);
     }
 });
 
 // ==================================================================
-// Divergência 210/211 — NUNCA escolha arbitrária
+// 5 — Jobs com produtos diferentes
 // ==================================================================
 
-test("resolverProdutoDoAlbum: nunca escolhe entre 210 e 211", async () => {
-    const album = "res-nunca-" + selo();
-    criarMarcador(album);
+test("jobs apontando para 210 e 211 → divergência mesmo com marcador 210", async () => {
+    const album = "c13-jobs-" + selo();
+    const u1 = "uuid-j1-" + selo();
+
+    criarAlbum(album, [{ uuid: u1 }], { product_id: 210 });
 
     try {
         const r = await comStubs(
             {
                 linhasDoBanco: [{ imported_product_id: 210 }, { imported_product_id: 211 }],
-                produtos: { 210: { id: 210 }, 211: { id: 211 } }
+                produtos: { 210: { id: 210 }, 211: { id: 211 } },
+                imagens: { [u1]: { product_id: 210 } }
             },
             (mod) => mod.resolverProdutoDoAlbum(album)
         );
 
         assert.equal(r.erro, "produtos_duplicados");
-        assert.ok(!r.produto, "não retorna produto algum");
-        assert.ok(r.produtos.includes(210) && r.produtos.includes(211));
+        assert.deepEqual(r.jobs, [210, 211], "reporta os dois jobs");
     } finally {
         limparAlbum(album);
     }
 });
 
-test("encontrarProdutoDoAlbum: devolve null quando há divergência", async () => {
-    const album = "res-encontrar-" + selo();
-    criarMarcador(album);
+// ==================================================================
+// 6 — Reinicialização durante a reconciliação
+// ==================================================================
+
+test("reinício apagou o marcador mas o banco está consistente → resolve", async () => {
+    const album = "c13-reboot-" + selo();
+    const u1 = "uuid-k1-" + selo();
+    const u2 = "uuid-k2-" + selo();
+
+    // Disco efêmero: fotos sincronizadas, mas sem marcador.
+    criarAlbum(album, [{ uuid: u1 }, { uuid: u2 }], null);
 
     try {
-        const produto = await comStubs(
+        const r = await comStubs(
             {
-                linhasDoBanco: [{ imported_product_id: 210 }, { imported_product_id: 211 }],
-                produtos: { 210: { id: 210 }, 211: { id: 211 } }
+                linhasDoBanco: [{ imported_product_id: 212 }],
+                produtos: { 212: { id: 212 } },
+                imagens: { [u1]: { product_id: 212 }, [u2]: { product_id: 212 } }
             },
-            (mod) => mod.encontrarProdutoDoAlbum(album)
+            (mod) => mod.resolverProdutoDoAlbum(album)
         );
 
-        assert.equal(produto, null, "divergência nunca vira um produto escolhido");
+        assert.equal(r.produto.id, 212, "o banco é durável; o marcador não é necessário");
+    } finally {
+        limparAlbum(album);
+    }
+});
+
+test("reinício no meio da reconciliação deixa divergência visível", async () => {
+    const album = "c13-reboot-meio-" + selo();
+    const u1 = "uuid-l1-" + selo();
+    const u2 = "uuid-l2-" + selo();
+
+    // Cenário real do Produto 01: marcador apagado, fotos em produtos distintos.
+    criarAlbum(album, [{ uuid: u1 }, { uuid: u2 }], null);
+
+    try {
+        const r = await comStubs(
+            {
+                linhasDoBanco: [{ imported_product_id: 210 }, { imported_product_id: 211 }],
+                produtos: { 210: { id: 210 }, 211: { id: 211 } },
+                imagens: { [u1]: { product_id: 210 }, [u2]: { product_id: 211 } }
+            },
+            (mod) => mod.resolverProdutoDoAlbum(album)
+        );
+
+        assert.equal(r.erro, "produtos_duplicados");
+        assert.deepEqual(r.produtos, [210, 211]);
     } finally {
         limparAlbum(album);
     }
 });
 
 // ==================================================================
-// Banco indisponível
+// 7 — Estados vazios / banco indisponível
 // ==================================================================
 
-test("resolverProdutoDoAlbum: banco indisponível devolve null (sem marcador)", async () => {
-    const album = "res-sem-banco-" + selo();
-    criarMarcador(album);
+test("álbum sem fotos e sem jobs → null", async () => {
+    const album = "c13-vazio-" + selo();
+    criarAlbum(album, []);
+
+    try {
+        const r = await comStubs(
+            { linhasDoBanco: [], produtos: {}, imagens: {} },
+            (mod) => mod.resolverProdutoDoAlbum(album)
+        );
+
+        assert.equal(r, null);
+    } finally {
+        limparAlbum(album);
+    }
+});
+
+test("banco indisponível → null", async () => {
+    const album = "c13-sem-banco-" + selo();
+    criarAlbum(album, [{ uuid: "uuid-m-" + selo() }]);
 
     try {
         const r = await comStubs({ falharBanco: true }, (mod) => mod.resolverProdutoDoAlbum(album));
-        assert.equal(r, null, "sem banco e sem marcador não há como resolver");
+        assert.equal(r, null);
+    } finally {
+        limparAlbum(album);
+    }
+});
+
+test("produto citado existe no banco mas foi removido → null", async () => {
+    const album = "c13-orfao-" + selo();
+    const u1 = "uuid-n-" + selo();
+
+    criarAlbum(album, [{ uuid: u1 }]);
+
+    try {
+        const r = await comStubs(
+            {
+                linhasDoBanco: [{ imported_product_id: 999 }],
+                produtos: {},
+                imagens: { [u1]: { product_id: 999 } }
+            },
+            (mod) => mod.resolverProdutoDoAlbum(album)
+        );
+
+        assert.equal(r, null);
     } finally {
         limparAlbum(album);
     }
 });
 
 // ==================================================================
-// A query NÃO usa LIMIT (auditoria)
+// 8 — Auditoria estática
 // ==================================================================
 
 test("a consulta de jobs NÃO usa LIMIT 1", () => {
@@ -377,8 +484,8 @@ test("a consulta de jobs NÃO usa LIMIT 1", () => {
         path.join(RAIZ, "api", "routes", "tratocapInterview.js"), "utf8"
     );
 
-    const inicio = fonte.indexOf("async function resolverProdutoDoAlbum");
-    const fim = fonte.indexOf("async function encontrarProdutoDoAlbum");
+    const inicio = fonte.indexOf("async function coletarEvidenciaDoAlbum");
+    const fim = fonte.indexOf("async function resolverProdutoDoAlbum");
 
     assert.ok(inicio > 0 && fim > inicio, "função não localizada");
 
@@ -386,5 +493,17 @@ test("a consulta de jobs NÃO usa LIMIT 1", () => {
 
     assert.ok(!/LIMIT\s+1/i.test(bloco), "a consulta não pode limitar a 1 linha");
     assert.match(bloco, /DISTINCT imported_product_id/);
-    assert.match(bloco, /sort\(/, "ids devem ser ordenados (determinístico)");
+});
+
+test("o marcador NÃO tem retorno antecipado com precedência cega", () => {
+    const fonte = fs.readFileSync(
+        path.join(RAIZ, "api", "routes", "tratocapInterview.js"), "utf8"
+    );
+
+    const inicio = fonte.indexOf("async function resolverProdutoDoAlbum");
+    const bloco = fonte.slice(inicio, inicio + 2000);
+
+    // O marcador entra na UNIÃO de fontes, não num `return` precoce.
+    assert.ok(!/if \(marcador\) \{\s*return/.test(bloco), "marcador não pode retornar antes da checagem");
+    assert.match(bloco, /fontes\.add\(marcador\.product_id\)/, "marcador entra no conjunto de fontes");
 });

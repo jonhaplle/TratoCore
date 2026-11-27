@@ -110,7 +110,11 @@ function novoEstado() {
 // Fixtures
 // ------------------------------------------------------------------
 
-function criarAlbum(nome, uuids, { marcador = null } = {}) {
+/**
+ * Cria um álbum. `semMetadados` adiciona fotos que acabaram de chegar:
+ * ainda não têm `.json` com `client_uuid` (upload em andamento).
+ */
+function criarAlbum(nome, uuids, { marcador = null, semMetadados = 0 } = {}) {
     const dir = path.join(ALBUMS, nome);
     fs.rmSync(dir, { recursive: true, force: true });
     fs.mkdirSync(dir, { recursive: true });
@@ -121,13 +125,16 @@ function criarAlbum(nome, uuids, { marcador = null } = {}) {
             JSON.stringify({ client_uuid: u, sha256: "sha-" + u, note: "" }));
     }
 
+    for (let i = 0; i < semMetadados; i++) {
+        fs.writeFileSync(path.join(dir, `recebendo_${i}.jpg`), JPEG);
+    }
+
     if (marcador) {
         fs.writeFileSync(path.join(dir, ".tratocore-import.json"), JSON.stringify(marcador));
     }
 
     return dir;
 }
-
 function limparAlbum(nome) {
     fs.rmSync(path.join(ALBUMS, nome), { recursive: true, force: true });
 }
@@ -433,6 +440,99 @@ test("extra: ordem das fotos no disco NÃO influencia a decisão", async () => {
         assert.ok(rel.erros.some(e => e.etapa === "produtos_duplicados"));
         assert.equal(lerMarcador(nome), null, "não escolheu nenhum dos dois");
         assert.equal(estado.marcados.length, 0);
+    } finally {
+        limparAlbum(nome);
+    }
+});
+
+// ==================================================================
+// C1.3 — condição de corrida: foto em trânsito não pode ser ignorada
+// ==================================================================
+
+test("C1.3: foto ainda sem metadados adia a reconciliação (não grava marcador)", async () => {
+    const estado = novoEstado();
+    const nome = "c13-corrida-" + selo();
+    const u1 = "uuid-c13a-" + selo();
+
+    // Uma foto já vinculada ao 210 + uma recém-recebida, sem `.json`.
+    criarAlbum(nome, [u1], { semMetadados: 1 });
+
+    estado.produtos.push({ id: 210, title: nome });
+    estado.imagens.push({ id: 1, product_id: 210, client_uuid: u1 });
+
+    const router = await carregarRouter(estado);
+
+    try {
+        const rel = await router.recuperarAlbunsNoBoot();
+
+        assert.equal(lerMarcador(nome), null, "marcador NÃO pode ser gravado");
+        assert.ok(rel.aguardando.some(a => a.album === nome && /sem metadados/.test(a.motivo)),
+            "registra que aguarda as fotos em trânsito");
+        assert.equal(estado.marcados.length, 0, "SyncQueue não é marcada");
+    } finally {
+        limparAlbum(nome);
+    }
+});
+
+test("C1.3: depois que a foto ganha metadados, a reconciliação conclui", async () => {
+    const estado = novoEstado();
+    const nome = "c13-corrida-ok-" + selo();
+    const u1 = "uuid-c13b1-" + selo();
+    const u2 = "uuid-c13b2-" + selo();
+
+    criarAlbum(nome, [u1], { semMetadados: 1 });
+
+    estado.produtos.push({ id: 210, title: nome });
+    estado.imagens.push({ id: 1, product_id: 210, client_uuid: u1 });
+
+    const router = await carregarRouter(estado);
+
+    try {
+        // 1º ciclo: adiado.
+        await router.recuperarAlbunsNoBoot();
+        assert.equal(lerMarcador(nome), null);
+
+        // A foto em trânsito termina de sincronizar.
+        const dir = path.join(ALBUMS, nome);
+        fs.writeFileSync(path.join(dir, "recebendo_0.jpg.json"), JSON.stringify({ client_uuid: u2 }));
+        estado.imagens.push({ id: 2, product_id: 210, client_uuid: u2 });
+
+        // 2º ciclo: conclui.
+        const rel2 = await router.recuperarAlbunsNoBoot();
+
+        const marcador = lerMarcador(nome);
+        assert.ok(marcador, "marcador gravado no 2º ciclo");
+        assert.equal(marcador.product_id, 210);
+        assert.equal(marcador.images, 2, "conta as duas fotos");
+        assert.ok(rel2.jaVinculados.some(j => j.album === nome));
+    } finally {
+        limparAlbum(nome);
+    }
+});
+
+test("C1.3: reconciliação é idempotente (dois ciclos não duplicam)", async () => {
+    const estado = novoEstado();
+    const nome = "c13-idem-" + selo();
+    const u1 = "uuid-c13c-" + selo();
+
+    criarAlbum(nome, [u1]);
+
+    estado.produtos.push({ id: 212, title: nome });
+    estado.imagens.push({ id: 1, product_id: 212, client_uuid: u1 });
+
+    const router = await carregarRouter(estado);
+
+    try {
+        await router.recuperarAlbunsNoBoot();
+        const primeiro = lerMarcador(nome);
+
+        await router.recuperarAlbunsNoBoot();
+        const segundo = lerMarcador(nome);
+
+        assert.equal(primeiro.product_id, segundo.product_id);
+        assert.equal(primeiro.imported_at, segundo.imported_at, "marcador não é reescrito");
+        assert.equal(estado.produtos.length, 1, "um produto");
+        assert.equal(estado.criacoes, 0, "create nunca chamado");
     } finally {
         limparAlbum(nome);
     }

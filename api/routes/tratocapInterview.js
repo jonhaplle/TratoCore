@@ -1,6 +1,7 @@
 const express = require("express");
 
 const productService = require("../services/productService");
+const productImageService = require("../services/productImageService");
 const sellerListing = require("../services/seller/sellerListing.service");
 const tratocapDevice = require("../services/tratocapDevice.service");
 const tratocapRouter = require("./tratocap");
@@ -216,7 +217,12 @@ router.get("/interview/:album", requireSyncKey, async (req, res) => {
             console.warn(
                 "[Entrevista] Álbum com produtos divergentes:",
                 nomeAlbum,
-                JSON.stringify(resolucao.produtos)
+                JSON.stringify({
+                    produtos: resolucao.produtos,
+                    marcador: resolucao.marcador,
+                    imagens: resolucao.imagens,
+                    jobs: resolucao.jobs
+                })
             );
 
             return res.status(409).json({
@@ -224,7 +230,28 @@ router.get("/interview/:album", requireSyncKey, async (req, res) => {
                 code: "PRODUTOS_DUPLICADOS",
                 error: "Este álbum está vinculado a mais de um produto. "
                     + "É preciso reconciliar os cadastros antes de responder a entrevista.",
-                produtos: resolucao.produtos
+                produtos: resolucao.produtos,
+                marcador: resolucao.marcador ?? null,
+                imagens: resolucao.imagens ?? [],
+                jobs: resolucao.jobs ?? []
+            });
+        }
+
+        // Fotos do álbum ainda sem vínculo: decidir agora escolheria errado.
+        if (resolucao?.erro === "sincronizacao_pendente") {
+            console.warn(
+                "[Entrevista] Álbum com fotos pendentes de sincronização:",
+                nomeAlbum,
+                resolucao.pendentes
+            );
+
+            return res.status(409).json({
+                success: false,
+                code: "SINCRONIZACAO_PENDENTE",
+                error: "Ainda há fotos deste álbum sendo sincronizadas. "
+                    + "Tente novamente em instantes.",
+                pendentes: resolucao.pendentes,
+                produtos: resolucao.produtos ?? []
             });
         }
 
@@ -304,7 +331,22 @@ router.post("/answers", requireSyncKey, async (req, res) => {
                 code: "PRODUTOS_DUPLICADOS",
                 error: "Este álbum está vinculado a mais de um produto. "
                     + "É preciso reconciliar os cadastros antes de salvar respostas.",
-                produtos: resolucao.produtos
+                produtos: resolucao.produtos,
+                marcador: resolucao.marcador ?? null,
+                imagens: resolucao.imagens ?? [],
+                jobs: resolucao.jobs ?? []
+            });
+        }
+
+        // Fotos do álbum ainda sem vínculo: não gravar em produto incerto.
+        if (resolucao?.erro === "sincronizacao_pendente") {
+            return res.status(409).json({
+                success: false,
+                code: "SINCRONIZACAO_PENDENTE",
+                error: "Ainda há fotos deste álbum sendo sincronizadas. "
+                    + "Nenhuma resposta foi gravada. Tente novamente em instantes.",
+                pendentes: resolucao.pendentes,
+                produtos: resolucao.produtos ?? []
             });
         }
 
@@ -434,35 +476,97 @@ function normalizarParaJson(overrides) {
  *     `imported_product_id` distintos, sem `LIMIT 1`.
  *  3. Se houver mais de um produto, devolve divergência em vez de escolher.
  */
-async function resolverProdutoDoAlbum(album) {
+/**
+ * Lê o marcador `.tratocore-import.json` do álbum.
+ *
+ * @returns {{ product_id: number } | null} null quando ausente/ilegível/inválido
+ */
+function lerMarcadorDoAlbum(album) {
+    const fs = require("fs");
+    const path = require("path");
+
+    try {
+        const raiz = process.env.TRATOCAP_STORAGE_ROOT
+            ? path.join(path.resolve(process.env.TRATOCAP_STORAGE_ROOT), "tratocap", "albums")
+            : path.join(__dirname, "..", "..", "storage", "tratocap", "albums");
+
+        const marcador = path.join(raiz, album, ".tratocore-import.json");
+
+        if (!fs.existsSync(marcador)) return null;
+
+        const meta = JSON.parse(fs.readFileSync(marcador, "utf8"));
+        const id = Number(meta?.product_id);
+
+        if (!Number.isFinite(id) || id <= 0) return null;
+
+        return { product_id: id };
+    } catch (_) {
+        return null;
+    }
+}
+
+/**
+ * Coleta a EVIDÊNCIA do banco sobre quem representa o álbum.
+ *
+ * Três fontes independentes:
+ *   - `imageProducts`: produtos das imagens do álbum, por `client_uuid`
+ *     (fonte física — reflete onde cada foto realmente está);
+ *   - `jobProducts`: `imported_product_id` dos jobs do álbum;
+ *   - `pendingImages`: fotos do álbum que ainda NÃO têm imagem vinculada
+ *     no banco (sincronização em andamento).
+ *
+ * @returns {{ imageProducts: number[], jobProducts: number[], pendingImages: string[] }}
+ */
+async function coletarEvidenciaDoAlbum(album) {
     const db = require("../db");
     const fs = require("fs");
     const path = require("path");
 
-    // 1) Marcador: fonte de maior confiança.
+    const imagemProdutos = new Set();
+    const pendentes = [];
+
+    // --- 1. Imagens do álbum, por client_uuid ---
     try {
-        // Mesma raiz de `tratocap.js`: env permite isolar em testes.
         const raiz = process.env.TRATOCAP_STORAGE_ROOT
             ? path.join(path.resolve(process.env.TRATOCAP_STORAGE_ROOT), "tratocap", "albums")
             : path.join(__dirname, "..", "..", "storage", "tratocap", "albums");
-        const marcador = path.join(raiz, album, ".tratocore-import.json");
+        const dir = path.join(raiz, album);
 
-        if (fs.existsSync(marcador)) {
-            const meta = JSON.parse(fs.readFileSync(marcador, "utf8"));
-            const idDoMarcador = Number(meta?.product_id);
+        if (fs.existsSync(dir)) {
+            const arquivos = fs.readdirSync(dir)
+                .filter(n => /\.(jpg|jpeg|png|webp)$/i.test(n));
 
-            if (Number.isFinite(idDoMarcador) && idDoMarcador > 0) {
-                const produto = await productService.getById(idDoMarcador);
+            for (const nome of arquivos) {
+                let meta = {};
+                try {
+                    meta = JSON.parse(fs.readFileSync(path.join(dir, nome + ".json"), "utf8"));
+                } catch (_) {}
 
-                if (produto) return { produto };
+                const uuid = meta?.client_uuid;
+                if (!uuid) {
+                    pendentes.push(nome);
+                    continue;
+                }
+
+                try {
+                    const imagem = await productImageService.getByClientUuid(uuid);
+
+                    if (imagem?.product_id) {
+                        imagemProdutos.add(Number(imagem.product_id));
+                    } else {
+                        pendentes.push(nome);
+                    }
+                } catch (_) {
+                    pendentes.push(nome);
+                }
             }
         }
     } catch (_) {
-        // Marcador ausente ou ilegível: cai para a consulta no banco.
+        // Diretório ausente: sem evidência física.
     }
 
-    // 2) Jobs importados — TODOS os produtos, sem LIMIT.
-    let ids = [];
+    // --- 2. Jobs importados do álbum ---
+    let jobProdutos = [];
 
     try {
         const { rows } = await db.query(
@@ -473,8 +577,8 @@ async function resolverProdutoDoAlbum(album) {
             [album]
         );
 
-        ids = rows
-            .map(row => Number(row.imported_product_id))
+        jobProdutos = rows
+            .map(r => Number(r.imported_product_id))
             .filter(id => Number.isFinite(id) && id > 0)
             .sort((a, b) => a - b);
     } catch (_) {
@@ -482,13 +586,69 @@ async function resolverProdutoDoAlbum(album) {
         return null;
     }
 
-    if (ids.length === 0) return null;
+    return {
+        imageProducts: [...imagemProdutos].sort((a, b) => a - b),
+        jobProducts: jobProdutos,
+        pendingImages: pendentes
+    };
+}
 
-    if (ids.length > 1) {
-        return { erro: "produtos_duplicados", produtos: ids };
+/**
+ * Resolve o produto vinculado a um álbum — com VERIFICAÇÃO DE CONSISTÊNCIA.
+ *
+ * C1.3 — o marcador deixou de ter precedência cega. Um marcador apontando
+ * para 210 não pode esconder que uma foto do mesmo álbum ainda está no 211:
+ * o vendedor responderia a entrevista e os dados cairiam num cadastro
+ * incompleto.
+ *
+ * Regras:
+ *  1. Todas as fontes (marcador, imagens, jobs) devem apontar para o MESMO
+ *     produto; qualquer divergência → `produtos_duplicados`.
+ *  2. Fotos pendentes de sincronização → `sincronizacao_pendente`, para não
+ *     decidir com informação incompleta.
+ *  3. Sem marcador, a evidência do banco decide — determinístico.
+ *
+ * @returns {{ produto: object } | { erro: string, ... } | null}
+ */
+async function resolverProdutoDoAlbum(album) {
+    const marcador = lerMarcadorDoAlbum(album);
+    const evidencia = await coletarEvidenciaDoAlbum(album);
+
+    if (!evidencia) return null;
+
+    const { imageProducts, jobProducts, pendingImages } = evidencia;
+
+    // 1) Fotos ainda sem vínculo no banco: não decidir com dados incompletos.
+    if (pendingImages.length > 0) {
+        return {
+            erro: "sincronizacao_pendente",
+            pendentes: pendingImages.length,
+            produtos: [...new Set([...imageProducts, ...jobProducts])].sort((a, b) => a - b)
+        };
     }
 
-    const produto = await productService.getById(ids[0]);
+    // 2) Reúne todas as fontes. O marcador é apenas UMA delas.
+    const fontes = new Set([...imageProducts, ...jobProducts]);
+
+    if (marcador) fontes.add(marcador.product_id);
+
+    const candidatos = [...fontes].sort((a, b) => a - b);
+
+    if (candidatos.length === 0) return null;
+
+    // 3) Divergência entre qualquer par de fontes → bloqueia.
+    if (candidatos.length > 1) {
+        return {
+            erro: "produtos_duplicados",
+            produtos: candidatos,
+            marcador: marcador ? marcador.product_id : null,
+            imagens: imageProducts,
+            jobs: jobProducts
+        };
+    }
+
+    // 4) Todas as fontes concordam.
+    const produto = await productService.getById(candidatos[0]);
 
     return produto ? { produto } : null;
 }

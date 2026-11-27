@@ -5,24 +5,38 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
+const { comIsolamento } = require("../../routes/__testIsolation");
+
 const servicePath = require.resolve("./identificationVendedor.service");
 
-function loadWith(stubs = {}) {
-    const originalLoad = Module._load;
-    delete require.cache[servicePath];
+/**
+ * Carrega o serviço com stubs, dentro da seção crítica global.
+ *
+ * `Module._load` é do processo inteiro. Sem o mutex, outro arquivo de teste
+ * que também troca `Module._load` (ou `require.cache`) ao mesmo tempo faz
+ * este `require` receber módulos errados — aparecia como timeout.
+ *
+ * O mutex é por processo; em execução paralela cada arquivo tem seu próprio
+ * processo e o custo é desprezível.
+ */
+async function loadWith(stubs = {}) {
+    return comIsolamento(() => {
+        const originalLoad = Module._load;
+        delete require.cache[servicePath];
 
-    Module._load = function (request, parent, isMain) {
-        if (parent?.filename === servicePath && Object.hasOwn(stubs, request)) {
-            return stubs[request];
+        Module._load = function (request, parent, isMain) {
+            if (parent?.filename === servicePath && Object.hasOwn(stubs, request)) {
+                return stubs[request];
+            }
+            return originalLoad.call(this, request, parent, isMain);
+        };
+
+        try {
+            return require(servicePath);
+        } finally {
+            Module._load = originalLoad;
         }
-        return originalLoad.call(this, request, parent, isMain);
-    };
-
-    try {
-        return require(servicePath);
-    } finally {
-        Module._load = originalLoad;
-    }
+    });
 }
 
 function sampleImage() {
@@ -33,7 +47,7 @@ function sampleImage() {
 }
 
 test("estado nunca é deduzido sem declaração do vendedor", async () => {
-    const service = loadWith({
+    const service = await loadWith({
         "../local-ai.service": {
             async analisarImagem() {
                 return {
@@ -56,7 +70,7 @@ test("estado nunca é deduzido sem declaração do vendedor", async () => {
 });
 
 test("observação do vendedor define estado, acessórios e defeitos", async () => {
-    const service = loadWith({
+    const service = await loadWith({
         "../local-ai.service": {
             async analisarImagem() {
                 throw new Error("IA fora do ar");
@@ -79,7 +93,7 @@ test("observação do vendedor define estado, acessórios e defeitos", async () 
 });
 
 test("capacidade só aparece como hipótese quando não há evidência", async () => {
-    const service = loadWith({
+    const service = await loadWith({
         "../local-ai.service": {
             async analisarImagem() {
                 return {
@@ -104,7 +118,7 @@ test("capacidade só aparece como hipótese quando não há evidência", async (
 });
 
 test("fatos da IA não viram condição, acessórios ou funcionamento", async () => {
-    const service = loadWith({
+    const service = await loadWith({
         "../local-ai.service": {
             async analisarImagem() {
                 return {
@@ -127,7 +141,7 @@ test("fatos da IA não viram condição, acessórios ou funcionamento", async ()
 });
 
 test("observação com 'nunca usado' declara produto novo", async () => {
-    const service = loadWith({
+    const service = await loadWith({
         "../local-ai.service": { async analisarImagem() { throw new Error("sem IA"); } }
     });
 
@@ -139,7 +153,7 @@ test("observação com 'nunca usado' declara produto novo", async () => {
 });
 
 test("declaração de usado prevalece sobre 'sem uso'", async () => {
-    const service = loadWith({
+    const service = await loadWith({
         "../local-ai.service": { async analisarImagem() { throw new Error("sem IA"); } }
     });
 
