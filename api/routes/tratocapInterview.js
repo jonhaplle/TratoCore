@@ -187,22 +187,45 @@ router.get("/interview/:album", requireSyncKey, async (req, res) => {
             ? tratocapRouter.safeAlbumName(album)
             : album;
 
-        let produto = await encontrarProdutoDoAlbum(nomeAlbum);
+        // Resolução determinística: devolve divergência em vez de escolher.
+        let resolucao = await resolverProdutoDoAlbum(nomeAlbum);
+        let produto = resolucao?.produto || null;
 
         // O upload pode ter sido recebido, mas o auto-import ainda estar
         // aguardando o intervalo de estabilização ou ter falhado. A entrevista
         // tenta concluir a importação uma vez antes de declarar que não há produto.
-        if (!produto && typeof tratocapRouter.importAlbums === "function") {
+        //
+        // NÃO importa quando há divergência de produtos: importar não resolve
+        // a ambiguidade e poderia criar um terceiro cadastro.
+        if (!produto && !resolucao?.erro && typeof tratocapRouter.importAlbums === "function") {
             const resultadoImportacao = await tratocapRouter.importAlbums(nomeAlbum);
-            produto = await encontrarProdutoDoAlbum(nomeAlbum);
+            resolucao = await resolverProdutoDoAlbum(nomeAlbum);
+            produto = resolucao?.produto || null;
 
-            if (!produto && resultadoImportacao?.skipped?.length) {
+            if (!produto && !resolucao?.erro && resultadoImportacao?.skipped?.length) {
                 console.warn(
                     "[Entrevista] Álbum ainda sem produto após importação:",
                     nomeAlbum,
                     String(resultadoImportacao.skipped[0]?.reason || "").slice(0, 160)
                 );
             }
+        }
+
+        // Divergência: mais de um produto para o mesmo álbum.
+        if (resolucao?.erro === "produtos_duplicados") {
+            console.warn(
+                "[Entrevista] Álbum com produtos divergentes:",
+                nomeAlbum,
+                JSON.stringify(resolucao.produtos)
+            );
+
+            return res.status(409).json({
+                success: false,
+                code: "PRODUTOS_DUPLICADOS",
+                error: "Este álbum está vinculado a mais de um produto. "
+                    + "É preciso reconciliar os cadastros antes de responder a entrevista.",
+                produtos: resolucao.produtos
+            });
         }
 
         if (!produto) {
@@ -272,7 +295,20 @@ router.post("/answers", requireSyncKey, async (req, res) => {
             });
         }
 
-        const produto = await encontrarProdutoDoAlbum(album);
+        // Resolução determinística: nunca gravar num produto arbitrário.
+        const resolucao = await resolverProdutoDoAlbum(album);
+
+        if (resolucao?.erro === "produtos_duplicados") {
+            return res.status(409).json({
+                success: false,
+                code: "PRODUTOS_DUPLICADOS",
+                error: "Este álbum está vinculado a mais de um produto. "
+                    + "É preciso reconciliar os cadastros antes de salvar respostas.",
+                produtos: resolucao.produtos
+            });
+        }
+
+        const produto = resolucao?.produto || null;
 
         if (!produto) {
             return res.status(404).json({
@@ -386,47 +422,83 @@ function normalizarParaJson(overrides) {
  * `product_id`, e `tratocap_sync_jobs.imported_product_id` também guarda.
  * Priorizamos a tabela (fonte durável) e caímos para o marcador em disco.
  */
-async function encontrarProdutoDoAlbum(album) {
+/**
+ * Resolve o produto vinculado a um álbum de forma DETERMINÍSTICA.
+ *
+ * Devolve `{ produto }`, `{ erro: "produtos_duplicados", produtos: [...] }`
+ * ou `null`. NUNCA escolhe o "primeiro" resultado:
+ *
+ *  1. O marcador `.tratocore-import.json` tem precedência — é a fonte
+ *     gravada pela própria importação, com o produto efetivamente vinculado.
+ *  2. Sem marcador utilizável, consulta `tratocap_sync_jobs` por TODOS os
+ *     `imported_product_id` distintos, sem `LIMIT 1`.
+ *  3. Se houver mais de um produto, devolve divergência em vez de escolher.
+ */
+async function resolverProdutoDoAlbum(album) {
     const db = require("../db");
+    const fs = require("fs");
+    const path = require("path");
 
-    // 1) Fonte durável: jobs já importados.
+    // 1) Marcador: fonte de maior confiança.
+    try {
+        // Mesma raiz de `tratocap.js`: env permite isolar em testes.
+        const raiz = process.env.TRATOCAP_STORAGE_ROOT
+            ? path.join(path.resolve(process.env.TRATOCAP_STORAGE_ROOT), "tratocap", "albums")
+            : path.join(__dirname, "..", "..", "storage", "tratocap", "albums");
+        const marcador = path.join(raiz, album, ".tratocore-import.json");
+
+        if (fs.existsSync(marcador)) {
+            const meta = JSON.parse(fs.readFileSync(marcador, "utf8"));
+            const idDoMarcador = Number(meta?.product_id);
+
+            if (Number.isFinite(idDoMarcador) && idDoMarcador > 0) {
+                const produto = await productService.getById(idDoMarcador);
+
+                if (produto) return { produto };
+            }
+        }
+    } catch (_) {
+        // Marcador ausente ou ilegível: cai para a consulta no banco.
+    }
+
+    // 2) Jobs importados — TODOS os produtos, sem LIMIT.
+    let ids = [];
+
     try {
         const { rows } = await db.query(
             `SELECT DISTINCT imported_product_id
                FROM tratocap_sync_jobs
               WHERE album_name = $1
-                AND imported_product_id IS NOT NULL
-              LIMIT 1`,
+                AND imported_product_id IS NOT NULL`,
             [album]
         );
 
-        if (rows[0]?.imported_product_id) {
-            const produto = await productService.getById(rows[0].imported_product_id);
-            if (produto) return produto;
-        }
+        ids = rows
+            .map(row => Number(row.imported_product_id))
+            .filter(id => Number.isFinite(id) && id > 0)
+            .sort((a, b) => a - b);
     } catch (_) {
-        // tabela pode não existir em ambiente novo; segue para o marcador.
+        // Tabela pode não existir em ambiente novo.
+        return null;
     }
 
-    // 2) Marcador deixado pelo import.
-    try {
-        const fs = require("fs");
-        const path = require("path");
-        const raiz = path.join(__dirname, "..", "..", "storage", "tratocap", "albums");
-        const marcador = path.join(raiz, album, ".tratocore-import.json");
+    if (ids.length === 0) return null;
 
-        if (fs.existsSync(marcador)) {
-            const meta = JSON.parse(fs.readFileSync(marcador, "utf8"));
-            if (meta?.product_id) {
-                const produto = await productService.getById(meta.product_id);
-                if (produto) return produto;
-            }
-        }
-    } catch (_) {
-        // marcador ausente: sem produto vinculado.
+    if (ids.length > 1) {
+        return { erro: "produtos_duplicados", produtos: ids };
     }
 
-    return null;
+    const produto = await productService.getById(ids[0]);
+
+    return produto ? { produto } : null;
+}
+
+async function encontrarProdutoDoAlbum(album) {
+    const resolucao = await resolverProdutoDoAlbum(album);
+
+    if (!resolucao || resolucao.erro) return null;
+
+    return resolucao.produto || null;
 }
 
 // ======================================================
@@ -630,3 +702,5 @@ module.exports = router;
 module.exports.classificarPergunta = classificarPergunta;
 module.exports.montarPerguntas = montarPerguntas;
 module.exports.extrairCredencial = extrairCredencial;
+module.exports.encontrarProdutoDoAlbum = encontrarProdutoDoAlbum;
+module.exports.resolverProdutoDoAlbum = resolverProdutoDoAlbum;
