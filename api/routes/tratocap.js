@@ -1102,6 +1102,37 @@ async function recuperarAlbunsNoBoot({ importar = null } = {}) {
             continue;
         }
 
+        // C1.3 — a reconciliação só grava quando TODAS as fotos do álbum já
+        // estão vinculadas a um produto.
+        //
+        // Condição de corrida (C1.2): `imageFiles()` lista qualquer foto no
+        // diretório, inclusive a que acabou de chegar e ainda não tem
+        // metadados (`.json` com client_uuid) nem linha em product_images.
+        // A reconciliação olhava só as fotos com client_uuid, gravava o
+        // marcador e "esquecia" a foto em trânsito. Quando ela sincronizava,
+        // aparecia em OUTRO produto — exatamente o quadro do "Produto 01".
+        //
+        // Agora contamos as fotos totais e as ainda sem vínculo; se houver
+        // alguma pendente, não gravamos nada e esperamos o próximo ciclo.
+        // Isso torna a reconciliação idempotente.
+        const fotosNoDisco = imageFiles(albumDir);
+        const fotosPendentesDeVinculo = fotosNoDisco.filter(arquivo => {
+            try {
+                const metaFoto = JSON.parse(fs.readFileSync(arquivo + ".json", "utf8"));
+                return !metaFoto?.client_uuid;
+            } catch (_) {
+                return true;
+            }
+        }).length;
+
+        if (fotosPendentesDeVinculo > 0) {
+            relatorio.aguardando.push({
+                album,
+                motivo: fotosPendentesDeVinculo + " foto(s) sem metadados — reconciliação adiada"
+            });
+            continue;
+        }
+
         if (produtoExistente && !marcadorPendente) {
             try {
                 await SyncQueue.markAlbumImported(album, produtoExistente);
