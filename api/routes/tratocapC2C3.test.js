@@ -7,9 +7,13 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const Module = require("node:module");
+const { comIsolamento, criarStorageIsolado } = require("./__testIsolation");
 
 const RAIZ = path.join(__dirname, "..", "..");
-const ALBUMS = path.join(RAIZ, "storage", "tratocap", "albums");
+// Storage exclusivo deste arquivo: isola os fixtures do diretório global,
+// que outros testes varrem em paralelo.
+const STORAGE = criarStorageIsolado("c2c3");
+const ALBUMS = path.join(STORAGE, "tratocap", "albums");
 
 const JPEG = Buffer.from([
     0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x00, 0x00
@@ -30,7 +34,7 @@ function novoEstado() {
     };
 }
 
-function carregarRouter(estado) {
+async function carregarRouter(estado) {
     const mapa = {};
     const original = Module._load;
 
@@ -94,7 +98,7 @@ function carregarRouter(estado) {
     try {
         const alvo = require.resolve(path.join(RAIZ, "api", "routes", "tratocap.js"));
         delete require.cache[alvo];
-        router = require(alvo);
+        router = await comIsolamento(() => require(alvo));
     } finally {
         Module._load = original;
     }
@@ -168,7 +172,7 @@ test("1+2: C2 reconstrói da fila e C1 encontra os álbuns recuperados", async (
 
     estado.fila = [job(a, ua), job(b, ub)];
 
-    const router = carregarRouter(estado);
+    const router = await carregarRouter(estado);
 
     try {
         // (1) ANTES do C2: o C1 veria zero.
@@ -191,10 +195,22 @@ test("1+2: C2 reconstrói da fila e C1 encontra os álbuns recuperados", async (
 
         // (3) C1 agora ENCONTRA e importa.
         //
-        // `recuperarAlbunsNoBoot` percorre TODO o diretório. Para o teste ser
-        // hermético e não depender de fixtures de outras execuções, filtramos
-        // o resultado pelos dois álbuns deste caso.
-        const dep = await router.recuperarAlbunsNoBoot();
+        // `recuperarAlbunsNoBoot` percorre TODO o diretório de álbuns. Com a
+        // suíte rodando em paralelo, outros arquivos de teste criam fixtures
+        // no mesmo diretório — o teste ficaria dependente de quem criou o quê.
+        //
+        // Para ser hermético, o importador injetado importa SOMENTE os álbuns
+        // deste caso; os demais são tratados como "nada a importar".
+        const reais = new Set([a, b]);
+
+        const dep = await router.recuperarAlbunsNoBoot({
+            importar: async (album) => {
+                if (!reais.has(album)) {
+                    return { imported: [], skipped: [{ album, reason: "fora deste teste" }] };
+                }
+                return router.importAlbums(album);
+            }
+        });
 
         assert.ok(dep.encontrados.includes(a), "C1 vê o álbum A após C2");
         assert.ok(dep.encontrados.includes(b), "C1 vê o álbum B após C2");
@@ -224,7 +240,7 @@ test("3: importações concorrentes continuam criando um único produto", async 
     const nome = "c2-conc-" + selo();
 
     criarAlbum(nome, ["uuid-conc-" + selo()]);
-    const router = carregarRouter(estado);
+    const router = await carregarRouter(estado);
 
     try {
         await Promise.all([
@@ -256,7 +272,7 @@ test("4: imagens já no banco sem marcador → C3 grava o marcador", async () =>
     estado.imagens.push({ id: 1, product_id: 210, client_uuid: u1 });
     estado.imagens.push({ id: 2, product_id: 210, client_uuid: u2 });
 
-    const router = carregarRouter(estado);
+    const router = await carregarRouter(estado);
 
     try {
         const r = await router.importAlbums(nome);
@@ -297,7 +313,7 @@ test("5: marcador já existente NÃO é sobrescrito", async () => {
     estado.produtos.push({ id: 212, title: nome });
     estado.imagens.push({ id: 1, product_id: 212, client_uuid: u1 });
 
-    const router = carregarRouter(estado);
+    const router = await carregarRouter(estado);
 
     try {
         await router.importAlbums(nome);
@@ -385,7 +401,7 @@ test("6: falha libera a trava e o retry consegue importar", async () => {
     try {
         const alvo = require.resolve(path.join(RAIZ, "api", "routes", "tratocap.js"));
         delete require.cache[alvo];
-        router = require(alvo);
+        router = await comIsolamento(() => require(alvo));
     } finally {
         Module._load = original;
     }
@@ -433,7 +449,7 @@ test("7: boot repetido (C2 + C1 duas vezes) não cria produtos duplicados", asyn
 
     estado.fila = [job(nome, uuid)];
 
-    const router = carregarRouter(estado);
+    const router = await carregarRouter(estado);
 
     try {
         // ---- 1º boot ----
